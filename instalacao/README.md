@@ -88,6 +88,23 @@ comando que não casa: **29 ms**. Para desligar, apague a chave `hooks`.
 As rotinas que ele injeta são dois markdown em `.claude/commands/` — editáveis pela aba
 **Configurações** da própria tela. Elas não vêm neste repo porque descrevem o processo do seu time.
 
+## Arquivos locais (todos no `.gitignore`)
+
+Nada do que é do **seu** time mora no código. São quatro arquivos, e nenhum é obrigatório:
+
+| Arquivo | Copie de | Para que serve |
+|---|---|---|
+| `regras.json` | `regras.example.json` | repos onde **não** se cria spec novo |
+| `bases.json` | `bases.example.json` | base de fallback por repo, quando não há PR mesclado para observar |
+| `.env` | `.env.example` | consulta de leitura ao banco de stage |
+| `LOCAL.md` | — | suas anotações: convenções do time, medições, onde o hook está |
+
+Sem `regras.json` a checagem de spec novo nunca dispara — é o comportamento certo para um projeto
+genérico, e o que você provavelmente quer mudar primeiro.
+
+A base de verdade é **observada** (para onde os PRs recentes mesclaram) e escolhida por topologia no
+diff. O `bases.json` só entra quando não há PR mesclado para consultar.
+
 ## Convenções que o projeto assume
 
 Sem elas ele abre vazio, e nenhuma é configurável hoje:

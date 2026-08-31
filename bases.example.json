@@ -1,0 +1,5 @@
+{
+  "_comentario": "Queda usada só quando o repo não tem PR mesclado para observar. Copie para bases.json.",
+  "nome-do-repo": "stage",
+  "outro-repo": "desenv"
+}

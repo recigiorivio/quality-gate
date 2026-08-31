@@ -8,3 +8,6 @@ gate.log
 # estado local, não código: nº de PR, nomes de repo, achados internos
 ocultos.json
 pontos-atencao.json
+bases.json
+regras.json
+LOCAL.md

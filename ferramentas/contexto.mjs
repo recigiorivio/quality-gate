@@ -5,19 +5,25 @@
 // uso: node qualidade/ferramentas/contexto.mjs [ID-DO-CHAMADO] [--json]
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WORKSPACE } from '../lib/diff.mjs';
 
+const RAIZ_PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const PADRAO_CHAMADO = /^[A-Z]{2,5}-\d+$/;
-const BASE_POR_PROJETO = {
-    'drmarvin-integration-client': 'stage',
-    'rivio-deployment-query-mapping': 'stage',
-    'rivio-deployment-cortex': 'stage',
-    'workflow-manager': 'stage'
-};
-const BASE_PADRAO = 'desenv';
+// A base de cada repo é OBSERVADA (para onde os PRs recentes mesclaram). Este mapa é só a queda
+// quando não há PR mesclado para consultar, e vive num arquivo porque é do seu time, não do projeto:
+// `bases.json` no formato { "nome-do-repo": "branch-base" }.
+const BASE_PADRAO = process.env.QUALIDADE_BASE_PADRAO || 'main';
+const BASE_POR_PROJETO = (() => {
+    try {
+        return JSON.parse(readFileSync(join(RAIZ_PROJETO, 'bases.json'), 'utf8'));
+    } catch {
+        return {};
+    }
+})();
 
 class Contexto {
     constructor(chamado) {
@@ -157,7 +163,7 @@ class Contexto {
             const achados = this.ambiguo || [];
             return achados.length
                 ? `Mais de um chamado aberto no workspace: ${achados.join(', ')}\nRode com o ID: node contexto.mjs ${achados[0]}`
-                : 'Nenhuma branch no padrão ID do chamado (ex: UND-1638). Rode com o ID explícito.';
+                : 'Nenhuma branch no padrão ID do chamado (ex: ABC-1234). Rode com o ID explícito.';
         }
         const repos = this.listarRepos().map(p => this.inspecionar(p, chamado)).filter(Boolean);
         if (!repos.length) {

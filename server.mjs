@@ -210,7 +210,7 @@ class Servidor {
         }
     }
 
-    // O lint é o passo lento (83 problemas no crohc-server levam segundos) — só sob demanda.
+    // O lint é o passo lento em repo grande — só sob demanda.
     // O linter do projeto, sobre os arquivos do diff. Antes era `npm run check` no repo inteiro:
     // segundos de espera e 83 problemas de código que ninguém tocou.
     async lint(projeto, ref = '') {

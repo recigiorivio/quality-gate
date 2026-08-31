@@ -1,9 +1,9 @@
 # vendor/
 
-`acorn.mjs` — parser JS (ECMAScript), copiado de `crohc-server/node_modules/acorn/dist/acorn.mjs`
-na versão **8.14.1**. Arquivo único, sem dependências, licença MIT.
+`acorn.mjs` — parser JS (ECMAScript), copiado de um `node_modules/acorn/dist/acorn.mjs` na versão
+**8.14.1**. Arquivo único, sem dependências, licença MIT.
 
-**Por que copiado e não importado do node_modules de outro projeto:** um `npm ci` no `crohc-server`
+**Por que copiado e não importado do node_modules de outro projeto:** um `npm ci` naquele repo
 apagaria o caminho e quebraria esta tela. Projeto independente não empresta node_modules.
 
 **Por que AST e não regex:** duas regras desta ferramenta já acusaram o jeito CERTO por olharem uma

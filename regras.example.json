@@ -1,0 +1,4 @@
+{
+  "_comentario": "Regras do seu time, não do projeto. Copie para regras.json.",
+  "specNovoProibido": ["nome-do-repo-onde-nao-se-cria-spec"]
+}

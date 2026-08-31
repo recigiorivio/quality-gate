@@ -10,10 +10,22 @@
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Diff, WORKSPACE } from '../lib/diff.mjs';
 
 const RAIZ_WS = WORKSPACE;
+const RAIZ_PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
+
+// Regras que são do SEU time, não do projeto: `regras.json` ao lado do package.json.
+// Ex.: { "specNovoProibido": ["nome-do-repo"] }
+const REGRAS = (() => {
+    try {
+        return JSON.parse(readFileSync(join(RAIZ_PROJETO, 'regras.json'), 'utf8'));
+    } catch {
+        return {};
+    }
+})();
 
 export class ChecarDiff {
     constructor() {
@@ -61,9 +73,9 @@ export class ChecarDiff {
                 aplicar: a => this._consoleEmMigration(a)
             },
             {
-                nome: 'spec-novo-no-workflow-manager',
+                nome: 'spec-novo-onde-a-politica-nao-permite',
                 severidade: 'aviso',
-                doc: 'feedback: só ajustar spec existente neste repo',
+                doc: 'política do time: neste repo, só ajustar spec existente (regras.json)',
                 aplicar: a => this._specNovoProibido(a)
             },
             {
@@ -115,7 +127,7 @@ export class ChecarDiff {
         return this.ref ? ['diff', ...extras, base, this.ref] : ['diff', ...extras, base];
     }
 
-    // Um `git diff -U0` para todos os arquivos. Um por arquivo eram 13 processos e 220 ms.
+    // Um `git diff -U0` para todos os arquivos. Um por arquivo eram N processos e 220 ms.
     _mapaDeAdicionadas(projeto, base) {
         const bruto = this.git(projeto, ...this._argsDiff(base, ['-U0']), '--');
         const mapa = new Map();
@@ -327,10 +339,12 @@ export class ChecarDiff {
         return achados;
     }
 
-    // A decisão não é "proibido": o que mudou a resposta em 28/08 foi as actions vizinhas já terem
-    // spec. Então a checagem traz esse número em vez de vetar.
+    // A decisão não é "proibido": o que muda a resposta é as classes vizinhas já terem spec.
+    // Então a checagem traz esse número em vez de vetar.
     _specNovoProibido(a) {
-        if (!a.novo || !/\.spec\.js$/.test(a.caminho) || !/workflow-manager/.test(this.projeto || '')) {
+        const proibidos = REGRAS.specNovoProibido || [];
+        const nesteRepo = proibidos.some(r => (this.projeto || '').endsWith(r));
+        if (!a.novo || !/\.spec\.js$/.test(a.caminho) || !nesteRepo) {
             return [];
         }
         const irmas = this._contarIrmas(a.caminho);
@@ -454,12 +468,12 @@ export class ChecarDiff {
             ['comentario-bloco-longo', 'certo', 'import a from "b";\nconst z = 1;\n// ordem importa: publicar depois\n// senão a resposta é descartada\nconst y = 2;\n', 0],
             ['comentario-em-migration', 'errado', 'import C from "./C.js";\n\n// explica o porquê\nconst filter = {};\n', 1],
             ['comentario-em-migration', 'certo', 'import C from "./C.js";\n\nconst filter = {};\n', 0],
-            ['comentario-em-migration', 'certo-todo', 'import C from "./C.js";\n// TODO: apagar quando o UND-1721 subir\nconst filter = {};\n', 0]
+            ['comentario-em-migration', 'certo-todo', 'import C from "./C.js";\n// TODO: apagar quando o chamado ABC-123 subir\nconst filter = {};\n', 0]
         ];
         let falhas = 0;
         for (const [nomeRegra, esperado, fonte, qtd] of casos) {
             const regra = this.regras.find(r => r.nome === nomeRegra);
-            const a = { caminho: nomeRegra === 'comentario-em-migration' ? 'src/crohc/migrations/X/1-x.js' : 'src/foo.js', novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
+            const a = { caminho: nomeRegra === 'comentario-em-migration' ? 'src/migrations/X/1-x.js' : 'src/foo.js', novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
             const achados = regra.aplicar(a);
             const ok = achados.length === qtd;
             if (!ok) {
@@ -474,7 +488,6 @@ export class ChecarDiff {
 
 // Importado como módulo (pelo servidor) não deve executar o CLI: era um processo node por
 // requisição, 243 ms só de startup.
-import { fileURLToPath } from 'node:url';
 if (process.argv[1] !== fileURLToPath(import.meta.url)) {
     // usado como biblioteca
 } else {
