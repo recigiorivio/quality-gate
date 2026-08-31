@@ -8,8 +8,7 @@ const api = (r,p) => fetch(r + '?' + new URLSearchParams(p)).then(x => x.json())
 const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar', indisponivel:'indisponível',
   carregando:'consultando…'};
 const GRUPOS = [
-  { id:'chamado', rotulo:'Chamado' },
-  { id:'testes', rotulo:'Testes e lint' },
+  { id:'trabalho', rotulo:'Chamado, testes e lint' },
   { id:'dados', rotulo:'Dados e performance' },
   { id:'refatoracao', rotulo:'Refatoração' },
   { id:'atencao', rotulo:'Pontos de atenção da IA' }
@@ -60,11 +59,11 @@ function cartaoDoLint(r) {
   const linters = (r.linters || []).join(', ');
   if (!linters) {
     return { id: 'lint', titulo: 'Lint do projeto', status: 'indisponivel',
-      detalhe: r.nota || 'nenhum linter configurado', evidencia: [], grupo: 'testes' };
+      detalhe: r.nota || 'nenhum linter configurado', evidencia: [], grupo: 'trabalho' };
   }
   if (!r.total) {
     return { id: 'lint', titulo: 'Lint do projeto', status: 'ok',
-      detalhe: `${linters} — nada nos arquivos do diff`, evidencia: [], grupo: 'testes' };
+      detalhe: `${linters} — nada nos arquivos do diff`, evidencia: [], grupo: 'trabalho' };
   }
   return {
     id: 'lint',
@@ -73,7 +72,7 @@ function cartaoDoLint(r) {
     detalhe: `${linters} — ${r.total} achado(s), ${r.erros} erro(s)`,
     evidencia: (r.achados || []).map(a =>
       `${a.arquivo}:${a.linha} [${a.ferramenta}/${a.regra}] ${a.mensagem}`),
-    grupo: 'testes'
+    grupo: 'trabalho'
   };
 }
 

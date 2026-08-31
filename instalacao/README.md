@@ -117,8 +117,26 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 ## Antes de rodar contra código de verdade
 
 ```bash
+npm test
+```
+
+20 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+e o comportamento do cache, roda cada ferramenta de linha de comando, e valida o de-para do
+`doutrina.json`.
+
+```bash
 node ferramentas/checar-diff.mjs --autoteste
 ```
 
-13 casos com exemplo do jeito **certo** e do **errado**. Se algum falhar, não confie na saída: uma
-checagem que acusa o jeito certo ensina a ignorar o aviso. É a regra para mexer nas regras.
+16 casos com exemplo do jeito **certo** e do **errado** para cada regra. Se algum falhar, não confie
+na saída: uma checagem que acusa o jeito certo ensina a ignorar o aviso. É a regra para mexer nas
+regras.
+
+## Depois de algumas semanas
+
+```bash
+npm run log
+```
+
+Diz quantos disparos do hook mudaram algo. Se a resposta for zero por semanas, o hook virou paisagem
+— e a sugestão do próprio comando é desligá-lo.

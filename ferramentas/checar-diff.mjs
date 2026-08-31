@@ -468,12 +468,18 @@ export class ChecarDiff {
             ['comentario-bloco-longo', 'certo', 'import a from "b";\nconst z = 1;\n// ordem importa: publicar depois\n// senão a resposta é descartada\nconst y = 2;\n', 0],
             ['comentario-em-migration', 'errado', 'import C from "./C.js";\n\n// explica o porquê\nconst filter = {};\n', 1],
             ['comentario-em-migration', 'certo', 'import C from "./C.js";\n\nconst filter = {};\n', 0],
-            ['comentario-em-migration', 'certo-todo', 'import C from "./C.js";\n// TODO: apagar quando o chamado ABC-123 subir\nconst filter = {};\n', 0]
+            ['comentario-em-migration', 'certo-todo', 'import C from "./C.js";\n// TODO: apagar quando o chamado ABC-123 subir\nconst filter = {};\n', 0],
+            ['console-log-em-migration', 'errado', 'export const up = async db => {\n    console.log("subindo");\n    await db.x();\n};\n', 1],
+            ['console-log-em-migration', 'certo', 'export const up = async db => {\n    await db.x();\n};\n', 0],
+            ['console-log-em-migration', 'certo-fora-de-migration', 'const x = 1;\nconsole.log("ok");\n', 0]
         ];
         let falhas = 0;
         for (const [nomeRegra, esperado, fonte, qtd] of casos) {
             const regra = this.regras.find(r => r.nome === nomeRegra);
-            const a = { caminho: nomeRegra === 'comentario-em-migration' ? 'src/migrations/X/1-x.js' : 'src/foo.js', novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
+            // Caso `certo-fora-de-migration` precisa de caminho que NÃO é migration: é o que prova que
+            // a regra não vaza para o resto do repo.
+            const ehMigration = /migration/.test(nomeRegra) && esperado !== 'certo-fora-de-migration';
+            const a = { caminho: ehMigration ? 'src/migrations/X/1-x.js' : 'src/foo.js', novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
             const achados = regra.aplicar(a);
             const ok = achados.length === qtd;
             if (!ok) {

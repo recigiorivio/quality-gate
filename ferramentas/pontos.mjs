@@ -35,8 +35,9 @@ export class Pontos {
             (!p.chamado || p.chamado === chamado) && (!p.projeto || p.projeto === projeto));
     }
 
-    // Teto de 10 com descarte do mais antigo: ponto novo só entra empurrando um velho, que é o
-    // freio contra a lista virar despejo.
+    // Teto de 10: ponto novo só entra empurrando um velho, que é o freio contra a lista virar
+    // despejo. Mas o descarte olha a SEVERIDADE antes da idade — descartar por idade pura deixava
+    // uma `nota` de hoje empurrar fora um `atencao` da semana passada.
     add(ponto) {
         if (!SEVERIDADES.includes(ponto.severidade)) {
             throw new Error(`severidade deve ser uma de: ${SEVERIDADES.join(', ')}`);
@@ -44,11 +45,34 @@ export class Pontos {
         const dados = this.ler();
         const semDuplicata = dados.pontos.filter(p => p.id !== ponto.id);
         semDuplicata.push({ criadoEm: new Date().toISOString().slice(0, 10), ...ponto });
-        const excedente = Math.max(0, semDuplicata.length - dados.teto);
-        const descartados = semDuplicata.splice(0, excedente).map(p => p.id);
+
+        const descartados = [];
+        while (semDuplicata.length > dados.teto) {
+            const vitima = this._proximoADescartar(semDuplicata, ponto);
+            if (!vitima) {
+                // Só sobrou `atencao`: recusar é melhor que apagar em silêncio o que mais importa.
+                throw new Error(`teto de ${dados.teto} atingido e todos os pontos são 'atencao'.\n`
+                    + `Tire um à mão antes: node ferramentas/pontos.mjs remover <id>\n`
+                    + `Atuais: ${semDuplicata.filter(p => p.id !== ponto.id).map(p => p.id).join(', ')}`);
+            }
+            descartados.push(vitima.id);
+            semDuplicata.splice(semDuplicata.indexOf(vitima), 1);
+        }
         dados.pontos = semDuplicata;
         this.gravar(dados);
         return { total: dados.pontos.length, descartados };
+    }
+
+    // `nota` sai antes de `aviso`, que sai antes de `atencao`. Dentro da mesma severidade, o mais
+    // antigo. O ponto que está entrando nunca é a vítima.
+    _proximoADescartar(pontos, entrando) {
+        for (const severidade of ['nota', 'aviso']) {
+            const candidatos = pontos.filter(p => p.severidade === severidade && p.id !== entrando.id);
+            if (candidatos.length) {
+                return candidatos.reduce((a, b) => ((a.criadoEm || '') <= (b.criadoEm || '') ? a : b));
+            }
+        }
+        return null;
     }
 
     remover(id) {

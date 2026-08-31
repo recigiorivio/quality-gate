@@ -231,13 +231,53 @@ Sem estas o projeto abre vazio, e nenhuma é configurável hoje:
 E duas cegueiras: a varredura só vê **clones locais**, e **não faz `git fetch`** — então `origin/*`
 pode estar semanas atrasado. Toda afirmação de ausência aqui é sobre o disco, não sobre o remoto.
 
+## Testes
+
+```bash
+npm test        # 20 casos: rotas, forma das respostas, cache, CLIs e o de-para da doutrina
+```
+
+Existe porque, num único dia de desenvolvimento, **cinco quebras passaram em silêncio**: uma função
+apagada numa reescrita, um método apagado ao substituir outro, uma flag ignorada depois de acrescentar
+outra, um nome de regra renomeado num lugar só (o cartão nunca achava nada), e uma cópia de função que
+fez uma otimização virar regressão de 16×. Todas eram detectáveis batendo nas rotas e conferindo a
+forma da resposta.
+
+O teste **descobre o alvo** em vez de fixar nome de repo — vale em qualquer workspace — e faz `skip`
+com motivo declarado quando não há trabalho aberto, em vez de passar em falso.
+
+### `doutrina.json` — o de-para que impede "metade implementado"
+
+Cada regra do time aparece com a checagem que a implementa, ou com o **motivo de não ter**. O
+`teste/doutrina.mjs` falha se:
+
+- uma regra declarada não existe como checagem
+- uma checagem existe e não está declarada (de onde ela veio?)
+- a flag `corrige` divergir do que o `--corrigir` realmente apaga
+- uma checagem que **apaga código** não tiver exemplo do jeito certo **e** do errado
+
+O último pegou uma falha na primeira execução: `console-log-em-migration` apagava linha sem ter o par
+de calibração. É o furo que motivou o arquivo: `migration não leva comentário NEM console.log` é uma
+frase da doutrina, e ficou implementada pela metade sem ninguém ter como saber.
+
+## O log dos disparos
+
+```bash
+npm run log                  # resumo desde o início
+npm run log -- --dias=30
+```
+
+Responde a pergunta que o `gate.log` existe para responder: **isto pegou algo ou virou paisagem?**
+Agrupa por ação e resultado, mostra os projetos mais tocados, e diz na última linha quantos disparos
+mudaram algo — sugerindo desligar o hook se a resposta for zero por semanas.
+
 ## Regra para mexer nas checagens
 
 Uma checagem só entra depois de um erro que aconteceu de verdade, e só com **exemplo do jeito certo
 e do errado** em `autoteste()`, os dois passando:
 
 ```bash
-node ferramentas/checar-diff.mjs --autoteste     # 13 casos
+node ferramentas/checar-diff.mjs --autoteste     # 16 casos
 ```
 
 Checagem que acusa o jeito certo ensina a ignorar o aviso — e aí o conjunto inteiro morre. Isso já
