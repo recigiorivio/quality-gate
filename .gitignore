@@ -1,0 +1,10 @@
+.env
+node_modules/
+relatorios/
+gate.log
+*.local
+*.bak
+
+# estado local, não código: nº de PR, nomes de repo, achados internos
+ocultos.json
+pontos-atencao.json

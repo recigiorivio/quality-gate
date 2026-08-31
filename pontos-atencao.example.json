@@ -1,0 +1,14 @@
+{
+  "teto": 10,
+  "pontos": [
+    {
+      "id": "exemplo-build-pulado",
+      "chamado": "ABC-123",
+      "projeto": null,
+      "severidade": "atencao",
+      "titulo": "Build SKIPPED no PR aberto",
+      "detalhe": "Pulado não é passando: é ausência de sinal lida como sucesso. Trocar por um exemplo real e apagar este.",
+      "criadoEm": "2026-01-01"
+    }
+  ]
+}

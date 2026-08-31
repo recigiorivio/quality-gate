@@ -1,0 +1,15 @@
+{
+  "name": "qualidade",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tela local para ver o diff das tarefas, e as ferramentas de qualidade do workspace",
+  "scripts": {
+    "start": "node server.mjs",
+    "checagens": "node ferramentas/checar-diff.mjs",
+    "autoteste": "node ferramentas/checar-diff.mjs --autoteste",
+    "contexto": "node ferramentas/contexto.mjs",
+    "indices": "node ferramentas/indices.mjs"
+  },
+  "engines": { "node": ">=20.11" }
+}

@@ -1,0 +1,390 @@
+// Tela local para ver o diff das tarefas. Sem dependência: node:http puro.
+// O diff é montado a cada requisição, então não existe arquivo temporário para envelhecer.
+//
+// uso: npm start   (ou node server.mjs)   →   http://localhost:4100
+
+import { createServer } from 'node:http';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { join } from 'node:path';
+import { Diff, WORKSPACE } from './lib/diff.mjs';
+import { Workspace } from './lib/workspace.mjs';
+import { Qualidade } from './lib/qualidade.mjs';
+import { Pontos } from './ferramentas/pontos.mjs';
+import lint from './lib/lint.mjs';
+import prs from './lib/prs.mjs';
+import { pagina } from './web/pagina.mjs';
+
+const PORTA = Number(process.env.PORT || 4100);
+const execFileAsync = promisify(execFile);
+
+// Allowlist por chave, nunca caminho vindo do cliente: é o que impede escrever fora daqui.
+const CONFIGS = {
+    inicio: {
+        caminho: '.claude/commands/inicio-trabalho.md',
+        rotulo: 'Rotina de início',
+        resumo: 'O que conferir antes de planejar ou escrever código'
+    },
+    fim: {
+        caminho: '.claude/commands/final-trabalho.md',
+        rotulo: 'Rotina de fim',
+        resumo: 'O que corrigir e o que conferir antes de entregar'
+    },
+    regras: {
+        caminho: '.claude/docs/qualidade-de-codigo.md',
+        rotulo: 'Regras de código',
+        resumo: 'Comentários, estrutura, testes — as regras que as checagens cobram'
+    }
+};
+
+// Chamado some do menu porque o usuario mandou, nunca porque o programa achou que era velho:
+// "antigo" aqui e a branch parada, e branch parada e exatamente a que se esquece de terminar.
+const ARQUIVO_OCULTOS = join(import.meta.dirname, 'ocultos.json');
+
+class Servidor {
+    constructor() {
+        this.workspace = new Workspace();
+        this.qualidade = new Qualidade();
+        this.pontos = new Pontos();
+        this.cache = new Map();
+        this.ouvintes = new Set();
+        this.ocultos = new Set(this.lerOcultos());
+    }
+
+    lerOcultos() {
+        try {
+            return existsSync(ARQUIVO_OCULTOS) ? JSON.parse(readFileSync(ARQUIVO_OCULTOS, 'utf8')) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    gravarOcultos() {
+        writeFileSync(ARQUIVO_OCULTOS, JSON.stringify([...this.ocultos], null, 2));
+        this.cache.delete('chamados');
+    }
+
+    json(res, dados, codigo = 200) {
+        const corpo = JSON.stringify(dados);
+        res.writeHead(codigo, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(corpo) });
+        res.end(corpo);
+    }
+
+    // Roda a ferramenta de linha de comando e devolve a saída crua: uma implementação só,
+    // usada pela tela e pelo terminal.
+    ferramenta(nome, args) {
+        try {
+            return { codigo: 0, saida: execFileSync('node', [join(import.meta.dirname, 'ferramentas', nome), ...args], {
+                encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe']
+            }) };
+        } catch (e) {
+            return { codigo: e.status ?? 1, saida: `${e.stdout || ''}${e.stderr || ''}` };
+        }
+    }
+
+    // Cache com invalidação explícita: o TTL é a rede de segurança, o gatilho de verdade é o commit.
+    emCache(chave, calcular, ttl = 300000) {
+        const guardado = this.cache.get(chave);
+        if (guardado && Date.now() - guardado.quando < ttl) {
+            return { ...guardado.valor, doCache: true, desde: guardado.quando };
+        }
+        const valor = calcular();
+        this.cache.set(chave, { quando: Date.now(), valor });
+        return { ...valor, doCache: false, desde: Date.now() };
+    }
+
+    // Versão assíncrona do cache, para o que é rede. Guarda a PROMESSA: duas requisições
+    // simultâneas do mesmo dado esperam a mesma chamada em vez de disparar duas.
+    async emCacheAsync(chave, calcular, ttl = 300000) {
+        const guardado = this.cache.get(chave);
+        if (guardado && Date.now() - guardado.quando < ttl) {
+            const valor = await guardado.valor;
+            return { ...valor, doCache: true, desde: guardado.quando };
+        }
+        const promessa = calcular();
+        this.cache.set(chave, { quando: Date.now(), valor: promessa });
+        try {
+            const valor = await promessa;
+            return { ...valor, doCache: false, desde: Date.now() };
+        } catch (e) {
+            this.cache.delete(chave);
+            throw e;
+        }
+    }
+
+    // Grava só o conteúdo, no caminho que a allowlist define. Backup ao lado antes de sobrescrever:
+    // é arquivo de instrução editado à mão, e um salvamento errado apaga regra que custou caro.
+    salvarConfig(req, res) {
+        let corpo = '';
+        req.on('data', d => {
+            corpo += d;
+            if (corpo.length > 512 * 1024) {
+                req.destroy();
+            }
+        });
+        req.on('end', () => {
+            try {
+                const { chave, conteudo } = JSON.parse(corpo || '{}');
+                const c = CONFIGS[chave];
+                if (!c) {
+                    return this.json(res, { erro: 'chave desconhecida' }, 400);
+                }
+                if (typeof conteudo !== 'string' || !conteudo.trim()) {
+                    return this.json(res, { erro: 'conteúdo vazio recusado' }, 400);
+                }
+                const alvo = join(WORKSPACE, c.caminho);
+                writeFileSync(`${alvo}.bak`, readFileSync(alvo));
+                writeFileSync(alvo, conteudo);
+                this.avisar({ tipo: 'config-salva', chave });
+                return this.json(res, { ok: true, chave, bytes: Buffer.byteLength(conteudo), quando: Date.now() });
+            } catch (e) {
+                return this.json(res, { erro: e.message }, 500);
+            }
+        });
+    }
+
+    registrar(acao, resultado, detalhe = '') {
+        try {
+            appendFileSync(join(import.meta.dirname, 'gate.log'),
+                `${new Date().toISOString()}\t${acao}\t${resultado}\t${String(detalhe).slice(0, 200)}\n`);
+        } catch {
+            // log é observabilidade, não pode derrubar a rota
+        }
+    }
+
+    invalidar(projeto) {
+        let n = 0;
+        for (const chave of [...this.cache.keys()]) {
+            if (!projeto || chave.includes(projeto)) {
+                this.cache.delete(chave);
+                n++;
+            }
+        }
+        this.avisar({ tipo: 'invalidado', projeto: projeto || null, chaves: n });
+        return { invalidadas: n, projeto: projeto || 'todos' };
+    }
+
+    // SSE: a tela aberta descobre sozinha que o diff mudou, sem ficar perguntando de 5 em 5 segundos.
+    avisar(dados) {
+        const corpo = `data: ${JSON.stringify(dados)}\n\n`;
+        for (const res of this.ouvintes) {
+            try {
+                res.write(corpo);
+            } catch {
+                this.ouvintes.delete(res);
+            }
+        }
+    }
+
+    eventos(req, res) {
+        res.writeHead(200, {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive'
+        });
+        res.write('data: {"tipo":"ligado"}\n\n');
+        this.ouvintes.add(res);
+        const ping = setInterval(() => {
+            try {
+                res.write(': ping\n\n');
+            } catch {
+                clearInterval(ping);
+            }
+        }, 25000);
+        req.on('close', () => {
+            clearInterval(ping);
+            this.ouvintes.delete(res);
+        });
+    }
+
+    // Rede e processo externo sempre assíncronos: um execFileSync aqui trava todas as outras rotas.
+    async ferramentaAsync(nome, args) {
+        try {
+            const { stdout } = await execFileAsync('node', [join(import.meta.dirname, 'ferramentas', nome), ...args], {
+                cwd: WORKSPACE, encoding: 'utf8', timeout: 120000, maxBuffer: 32 * 1024 * 1024
+            });
+            return { codigo: 0, saida: stdout };
+        } catch (e) {
+            return { codigo: e.code ?? 1, saida: `${e.stdout || ''}${e.stderr || ''}` };
+        }
+    }
+
+    // O lint é o passo lento (83 problemas no crohc-server levam segundos) — só sob demanda.
+    // O linter do projeto, sobre os arquivos do diff. Antes era `npm run check` no repo inteiro:
+    // segundos de espera e 83 problemas de código que ninguém tocou.
+    async lint(projeto, ref = '') {
+        const d = new Diff(projeto, ref);
+        const arquivos = d.listarArquivos(d.resolverBase()).map(a => a.caminho);
+        const r = await lint.rodar(projeto, arquivos);
+        const erros = r.achados.filter(a => a.severidade === 'erro');
+        return {
+            projeto,
+            linters: r.linters,
+            nota: r.nota ?? null,
+            total: r.total ?? 0,
+            erros: erros.length,
+            achados: r.achados
+        };
+    }
+
+    // Sem laço por arquivo: o Diff.listarArquivos já traz +/- de todos numa chamada só.
+    listaDeArquivos(projeto, base, ref = '') {
+        const d = new Diff(projeto, ref);
+        const baseReal = d.resolverBase(base);
+        return {
+            projeto, branch: d.branch(), base: baseReal,
+            baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
+            arquivos: d.listarArquivos(baseReal)
+        };
+    }
+
+    rotear(req, res) {
+        const url = new URL(req.url, `http://localhost:${PORTA}`);
+        const q = url.searchParams;
+
+        if (url.pathname === '/') {
+            const corpo = pagina(this.qualidade.esqueleto());
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+            return res.end(corpo);
+        }
+        // Só nome simples dentro de web/: sem barra e sem `..`, para o caminho não escapar da pasta.
+        if (/^\/[\w-]+\.(css|js)$/.test(url.pathname)) {
+            try {
+                const corpo = readFileSync(join(import.meta.dirname, 'web', url.pathname.slice(1)));
+                res.writeHead(200, {
+                    'content-type': `${url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript'}; charset=utf-8`,
+                    'cache-control': 'no-store'
+                });
+                return res.end(corpo);
+            } catch {
+                res.writeHead(404, { 'content-type': 'text/plain' });
+                return res.end('não encontrado');
+            }
+        }
+        if (url.pathname === '/api/eventos') {
+            return this.eventos(req, res);
+        }
+        if (url.pathname === '/api/invalidar') {
+            return this.json(res, this.invalidar(q.get('projeto')));
+        }
+        if (url.pathname === '/api/chamados') {
+            const dados = this.emCache('chamados', () => ({ lista: this.workspace.chamados() }), 30000);
+            // Os ocultos saem aqui, e nao na varredura: o Workspace responde o que existe, e o
+            // que se escolhe ver e decisao da tela. Trocar isso esconderia repo esquecido do
+            // proprio calculo que existe para achar repo esquecido.
+            return this.json(res, {
+                ...dados,
+                lista: dados.lista.filter(c => !this.ocultos.has(c.chamado)),
+                ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado)).map(c => c.chamado)
+            });
+        }
+        if (url.pathname === '/api/ocultar') {
+            this.ocultos.add(q.get('chamado'));
+            this.gravarOcultos();
+            return this.json(res, { ocultos: [...this.ocultos] });
+        }
+        if (url.pathname === '/api/mostrar') {
+            const chamado = q.get('chamado');
+            if (chamado) {
+                this.ocultos.delete(chamado);
+            } else {
+                this.ocultos.clear();
+            }
+            this.gravarOcultos();
+            return this.json(res, { ocultos: [...this.ocultos] });
+        }
+        if (url.pathname === '/api/arquivos') {
+            return this.json(res, this.emCache(`arquivos|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('base') || ''}`,
+                () => this.listaDeArquivos(q.get('projeto'), q.get('base'), q.get('ref') || '')));
+        }
+        if (url.pathname === '/api/arquivo') {
+            const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}`;
+            return this.json(res, this.emCache(chave, () => {
+                const d = new Diff(q.get('projeto'), q.get('ref') || '');
+                const base = d.resolverBase(q.get('base'));
+                return d.montarColunas(base, q.get('caminho'), {
+                    completo: q.get('completo') === '1',
+                    margem: Number(q.get('margem')) || 6
+                });
+            }));
+        }
+        if (url.pathname === '/api/configs') {
+            return this.json(res, {
+                configs: Object.entries(CONFIGS).map(([chave, c]) => ({
+                    chave, rotulo: c.rotulo, resumo: c.resumo, caminho: c.caminho
+                }))
+            });
+        }
+        if (url.pathname === '/api/config') {
+            const c = CONFIGS[q.get('chave')];
+            if (!c) {
+                return this.json(res, { erro: 'chave desconhecida' }, 404);
+            }
+            try {
+                return this.json(res, {
+                    chave: q.get('chave'), rotulo: c.rotulo, caminho: c.caminho,
+                    conteudo: readFileSync(join(WORKSPACE, c.caminho), 'utf8')
+                });
+            } catch (e) {
+                return this.json(res, { erro: e.message }, 500);
+            }
+        }
+        if (url.pathname === '/api/config-salvar' && req.method === 'POST') {
+            return this.salvarConfig(req, res);
+        }
+        if (url.pathname === '/api/prs') {
+            const chamado = q.get('chamado');
+            const projetos = (q.get('projetos') || '').split(',').filter(Boolean);
+            return this.emCacheAsync(`prs|${chamado}|${projetos.join(',')}`,
+                async () => ({ prs: await prs.doChamado(chamado, projetos) }))
+                .then(r => this.json(res, r));
+        }
+        if (url.pathname === '/api/pontos') {
+            return this.json(res, { pontos: this.pontos.para(q.get('chamado'), q.get('projeto')) });
+        }
+        if (url.pathname === '/api/ponto-remover') {
+            const r = this.pontos.remover(q.get('id'));
+            // Remoção deixa rastro: sem isso não há como responder depois quem tirou um ponto.
+            this.registrar('ponto-remover', r.removidos ? 'removido' : 'nao-encontrado', q.get('id'));
+            return this.json(res, r);
+        }
+        if (url.pathname === '/api/qualidade') {
+            return this.json(res, this.emCache(`local|${q.get('projeto')}|${q.get('ref') || ''}`,
+                () => this.qualidade.local(q.get('chamado'), q.get('projeto'), q.get('ref') || '')));
+        }
+        if (url.pathname === '/api/qualidade-remoto') {
+            return this.emCacheAsync(`remoto|${q.get('chamado')}|${q.get('projeto')}`,
+                () => this.qualidade.remoto(q.get('chamado'), q.get('projeto')))
+                .then(valor => this.json(res, valor));
+        }
+        if (url.pathname === '/api/lint') {
+            return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}`,
+                () => this.lint(q.get('projeto'), q.get('ref') || ''))
+                .then(r => this.json(res, r));
+        }
+        if (url.pathname === '/api/checagens') {
+            const r = this.ferramenta('checar-diff.mjs', [q.get('projeto')]);
+            return this.json(res, r);
+        }
+        if (url.pathname === '/api/contexto') {
+            return this.ferramentaAsync('contexto.mjs', [q.get('chamado')]).then(r => this.json(res, r));
+        }
+        res.writeHead(404, { 'content-type': 'text/plain' });
+        res.end('não encontrado');
+    }
+
+    subir() {
+        createServer((req, res) => {
+            try {
+                this.rotear(req, res);
+            } catch (e) {
+                this.json(res, { erro: e.message }, 500);
+            }
+        }).listen(PORTA, '127.0.0.1', () => {
+            console.log(`qualidade → http://localhost:${PORTA}   (workspace: ${WORKSPACE})`);
+        });
+    }
+}
+
+new Servidor().subir();
