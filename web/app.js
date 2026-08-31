@@ -7,6 +7,15 @@ const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>
 const api = (r,p) => fetch(r + '?' + new URLSearchParams(p)).then(x => x.json());
 const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar', indisponivel:'indisponível',
   carregando:'consultando…'};
+
+// Esqueleto na forma do que vem, em vez da palavra "carregando": mostra quanto vem e onde, e a tela
+// não pula quando o conteúdo entra no lugar.
+const esq = (classe = '') => `<div class="esq ${classe}"></div>`;
+const esqLinhas = (...larguras) => larguras.map(l => esq(`esq-linha esq-${l}`)).join('');
+const esqRepos = n => Array.from({ length: n }, () =>
+  `<div class="esq-repo">${esq('esq-nome esq-linha')}${esq('esq-tag')}</div>`).join('');
+const esqCodigo = n => `<div class="esq-codigo">${Array.from({ length: n },
+  (_, i) => esq(`esq-linha esq-l${(i % 4) + 1}`)).join('')}</div>`;
 const GRUPOS = [
   { id:'trabalho', rotulo:'Chamado, testes e lint' },
   { id:'dados', rotulo:'Dados e performance' },
@@ -77,6 +86,12 @@ function cartaoDoLint(r) {
 }
 
 function cartao(i) {
+  if (i.status === 'carregando') {
+    return `<div class="check st-carregando" aria-busy="true">
+      <div class="topo"><span class="titulo">${esc(i.titulo)}</span></div>
+      ${esqLinhas('l1', 'l2')}
+    </div>`;
+  }
   return `<div class="check st-${i.status}">
     <div class="topo"><span class="titulo">${esc(i.titulo)}</span>
       ${i.pontoId ? `<button class="tirar" title="tirar este ponto da lista"
@@ -129,7 +144,9 @@ async function listarPrs(chamados) {
     if (!caixa) {
       continue;
     }
-    caixa.innerHTML = '<span class="prs-carregando">consultando PRs…</span>';
+    caixa.innerHTML = `<div class="prs-titulo">Pull requests</div>
+      <div class="prs-carregando" aria-busy="true" aria-label="consultando pull requests">
+        ${esqRepos(Math.min(c.repos.length, 5))}</div>`;
     let r;
     try {
       r = await api('/api/prs', { chamado: c.chamado, projetos: c.repos.map(x => x.projeto).join(',') });
@@ -208,12 +225,12 @@ async function abrir(botao, manterAba) {
       ${atual.ref ? `<span class="fora-aviso" title="o diff é da branch do chamado, não do checkout atual">diff de ${esc(atual.ref)}</span>` : ''}
       <span class="carimbo" id="carimbo"></span>
       <button class="recarregar" onclick="recarregar()">recarregar</button>
-      <span class="selo pr-carregando" id="selo-pr">consultando…</span>
+      <span class="selo pr-carregando" id="selo-pr" aria-busy="true">${esq('esq-pilula')}</span>
     </header>
     <div class="abas" id="abas"></div>
     <div id="paineis"></div>
     <h3 class="secao">Diff — antes | depois</h3>
-    <div id="arquivos" class="aviso">carregando diff…</div>`;
+    <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>`;
 
   let locais = [];
   let remotos = [];
@@ -327,7 +344,7 @@ function linhaDeArquivo(a, aberto) {
     <summary><b>${esc(a.nome || a.caminho)}</b><span class="badge">${a.estado}</span>
       <span class="mais">+${a.adicionadas}</span><span class="menos">-${a.removidas}</span>
       <span class="dobra"></span></summary>
-    <div class="corpo">carregando…</div>
+    <div class="corpo"></div>
   </details>`;
 }
 
@@ -411,7 +428,7 @@ function avisarNaTela(texto) {
 async function pintar(det, completo) {
   const corpo = det.querySelector('.corpo') || det.querySelector('.par');
   if (!corpo || (corpo.dataset.pronto && !completo)) { return; }
-  corpo.innerHTML = '<div class="l ctx"><span class="n"></span><code>carregando…</code></div>';
+  corpo.innerHTML = esqCodigo(6);
   const r = await api('/api/arquivo', {
     projeto: atual.projeto, base: atual.base, ref: atual.ref,
     caminho: det.dataset.caminho, completo: completo ? 1 : 0
@@ -540,7 +557,7 @@ async function abrirConfig(chave) {
   document.querySelectorAll('.item-config').forEach(b => b.classList.toggle('ativo', b.dataset.k === chave));
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
-  alvo.innerHTML = '<p class="aviso">carregando…</p>';
+  alvo.innerHTML = `<div style="padding:6px 0">${esq('esq-titulo')}${esqLinhas('l1','l3','l2','l4')}</div>`;
   const c = await api('/api/config', { chave });
   if (c.erro) {
     alvo.innerHTML = `<p class="aviso">erro: ${esc(c.erro)}</p>`;

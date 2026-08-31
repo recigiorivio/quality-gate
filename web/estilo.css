@@ -85,7 +85,7 @@ aside{background:var(--painel);border-right:1px solid var(--linha);overflow-y:au
 .prs{margin:8px 0 4px;padding-top:8px;border-top:1px dashed var(--linha)}
 .prs-titulo{font:600 9px/1 inherit;text-transform:uppercase;letter-spacing:.1em;color:var(--fraco);
   padding:0 8px 6px}
-.prs-carregando{font:11px inherit;color:var(--fraco);padding:0 8px;opacity:.7}
+.prs-carregando{padding:2px 8px}
 .pr-link{display:flex;align-items:baseline;gap:6px;padding:4px 8px;border-radius:6px;
   text-decoration:none;color:var(--fraco);font:11px/1.35 ui-monospace,monospace;transition:background .12s}
 .pr-link:hover{background:var(--bg);color:var(--fg)}
@@ -201,6 +201,32 @@ body.arrastando{user-select:none;cursor:col-resize}
   border-bottom:1px solid var(--linha)}
 .lacuna code{opacity:.75}
 .inteiro{background:none;border:0;color:var(--acento);cursor:pointer;font:11px inherit;text-decoration:underline;padding:0}
+/* ── esqueleto de carregamento ──────────────────────────────────────────────
+   Bloco na FORMA do que está chegando, não a palavra "carregando": o texto não
+   diz quanto vem nem onde, e a tela pula quando o conteúdo entra. */
+@keyframes brilho{0%{background-position:180% 0}100%{background-position:-80% 0}}
+.esq{border-radius:5px;background:linear-gradient(90deg,
+  var(--linha) 8%, var(--painel) 22%, var(--linha) 36%);
+  background-size:260% 100%;animation:brilho 1.5s linear infinite}
+@media(prefers-reduced-motion:reduce){.esq{animation:none;background:var(--linha)}}
+.esq-linha{height:11px;margin:7px 0}
+.esq-l1{width:82%}.esq-l2{width:58%}.esq-l3{width:70%}.esq-l4{width:44%}
+.esq-pilula{height:19px;width:82px;border-radius:20px}
+.esq-titulo{height:13px;width:56%;margin-bottom:10px}
+
+/* na barra: uma linha por repo esperado */
+.esq-repo{display:flex;align-items:center;gap:8px;padding:7px 9px}
+.esq-repo .esq-nome{height:11px;flex:1 1 auto}
+.esq-repo .esq-tag{height:14px;width:56px;border-radius:20px;flex:0 0 auto}
+
+/* nos cartões: título e duas linhas, no lugar da etiqueta "consultando" */
+.check.st-carregando{border-left:3px solid var(--linha);opacity:1}
+.check.st-carregando .titulo{color:var(--fraco)}
+
+/* no corpo do arquivo: linhas de código de larguras diferentes */
+.esq-codigo{padding:14px 12px}
+.esq-codigo .esq-linha{height:9px;margin:6px 0}
+
 .aviso{color:var(--fraco);padding:34px 0}
 .dica{color:var(--fraco);font-size:12px;margin:14px 0 10px;max-width:70ch}
 .dica code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;padding:1px 5px;

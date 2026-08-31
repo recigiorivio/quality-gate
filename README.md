@@ -1,3 +1,5 @@
+<img src="web/favicon.svg" width="72" align="right" alt="">
+
 # quality-gate
 
 Tela local para conferir a qualidade de uma tarefa antes de abrir a PR: os checks em cima, o diff
@@ -155,6 +157,19 @@ vendorizar um highlighter inteiro (100 KB para realçar 40 linhas por vez).
 
 O estado atravessa as linhas, porque `/* */` e docstring de Python não cabem numa linha só — e
 **zera na lacuna**: errar limitado é melhor que pintar o resto do arquivo como comentário.
+
+## Esqueleto no lugar de "carregando…"
+
+Cada elemento que espera dado mostra um bloco na **forma** do que vem: linhas na barra, linhas de
+código no diff, pílula no selo da PR, e nos cartões o **título já visível** com o conteúdo em shimmer.
+A palavra "carregando" não diz quanto vem nem onde, e a tela pula quando o conteúdo entra.
+
+Duas decisões que importam:
+
+- o esqueleto do corpo de cada arquivo entra **quando o arquivo é aberto**, não no HTML inicial.
+  Colocá-lo antes deixava **102 animações rodando** para conteúdo dentro de `<details>` fechado —
+  medido, não suposto
+- `prefers-reduced-motion` desliga o shimmer e deixa o bloco estático
 
 ## Cache e recarregamento
 

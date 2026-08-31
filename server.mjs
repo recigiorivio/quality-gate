@@ -249,11 +249,12 @@ class Servidor {
             return res.end(corpo);
         }
         // Só nome simples dentro de web/: sem barra e sem `..`, para o caminho não escapar da pasta.
-        if (/^\/[\w-]+\.(css|js)$/.test(url.pathname)) {
+        if (/^\/[\w-]+\.(css|js|svg)$/.test(url.pathname)) {
+            const tipos = { css: 'text/css', js: 'text/javascript', svg: 'image/svg+xml' };
             try {
                 const corpo = readFileSync(join(import.meta.dirname, 'web', url.pathname.slice(1)));
                 res.writeHead(200, {
-                    'content-type': `${url.pathname.endsWith('.css') ? 'text/css' : 'text/javascript'}; charset=utf-8`,
+                    'content-type': `${tipos[url.pathname.split('.').pop()]}; charset=utf-8`,
                     'cache-control': 'no-store'
                 });
                 return res.end(corpo);

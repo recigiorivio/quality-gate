@@ -4,6 +4,7 @@ export function pagina(esqueleto) {
     return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Qualidade — conferência por chamado</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/estilo.css">
 </head><body>
 <aside>
@@ -12,7 +13,7 @@ export function pagina(esqueleto) {
     <button data-v="config" onclick="trocarVisao('config')">Configurações</button>
   </nav>
   <div id="painel-chamados">
-    <div id="lista">carregando…</div>
+    <div id="lista" aria-busy="true"><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div></div>
     <div id="ocultos"></div>
   </div>
   <div id="painel-config" hidden></div>

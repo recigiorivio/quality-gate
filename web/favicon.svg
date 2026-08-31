@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="quality-gate">
+  <!-- A linha vertical é a divisão antes|depois do diff, que é a única interação central da tela.
+       Aos 16px ela desaparece e o ícone degrada para um check limpo — legível é mais importante
+       que distintivo naquele tamanho. -->
+  <rect width="64" height="64" rx="15" fill="#7D70E4"/>
+  <rect x="30.5" y="9" width="3" height="46" rx="1.5" fill="#fff" opacity=".32"/>
+  <path d="M17 34 L27 44 L47 21" fill="none" stroke="#fff" stroke-width="7.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
