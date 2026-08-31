@@ -45,6 +45,21 @@ Cada linha traz o pino com o pior estado da conferência daquele repo, a branch 
 quando difere da do chamado) e `N ✎` para arquivos alterados e não commitados. Abaixo dos repos, os
 **links das PRs**, que abrem em aba nova.
 
+As PRs vêm de **duas fontes**, porque uma sozinha mente:
+
+| Fonte | Acha | Perde |
+|---|---|---|
+| branch local | PR do repo clonado cuja branch é exatamente o ID | repo não clonado, e branch com sufixo |
+| busca na organização | o resto, pelo ID no título | nada — mas casa o número do PR, então filtra por palavra |
+
+Medido num chamado real: a varredura local achava 7 PRs e **perdia 3** — um em repo que não está
+clonado aqui (o de gitops) e dois em branch com sufixo (`UND-1638-envelope`, `UND-1638-hml`). Os que
+só a busca encontra levam `◇` e uma borda âmbar.
+
+O dedup é pela **URL do PR**. Nome de pasta não serve (os forks renomearam o remote) e nome do remote
+também não: um repo local aponta para o fork, mas o `gh` resolve o PR no repo **pai**, então as duas
+chaves discordavam e o mesmo PR aparecia duas vezes.
+
 **Configurações** — os markdown que governam as rotinas, editáveis na tela. É markdown cru de
 propósito: o arquivo **é** a instrução que o agente lê, e um formulário só saberia representar os
 campos que alguém previu. `Cmd+S` salva, cada salvamento grava um `.bak`, conteúdo vazio é recusado,

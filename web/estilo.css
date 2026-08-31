@@ -104,6 +104,8 @@ aside{background:var(--painel);border-right:1px solid var(--linha);overflow-y:au
 .pr-link.pr-merged .pr-estado{background:var(--add);color:var(--ok)}
 .pr-link.pr-closed .pr-estado{background:var(--rem);color:var(--erro)}
 .pr-link::after{content:'↗';opacity:.4;font-size:9px;flex:0 0 auto}
+.pr-link.achado-na-org{border-left:2px solid var(--aviso);padding-left:6px}
+.pr-fora{color:var(--aviso);font-size:9px;flex:0 0 auto;cursor:help}
 .pr-falta{font:11px/1.4 inherit;color:var(--erro);padding:5px 8px;overflow-wrap:anywhere}
 .sujo{margin-left:auto;font:600 10px/1 -apple-system,system-ui,sans-serif;background:var(--rem);
   color:var(--erro);padding:3px 6px;border-radius:20px;white-space:nowrap;cursor:help}

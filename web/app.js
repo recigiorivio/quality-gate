@@ -162,10 +162,14 @@ async function listarPrs(chamados) {
     caixa.innerHTML = `
       <div class="prs-titulo">Pull requests</div>
       ${comPr.map(x => `
-        <a class="pr-link pr-${x.estado.toLowerCase()}" href="${x.url}" target="_blank" rel="noopener"
-           title="${esc(x.titulo || '')}">
+        <a class="pr-link pr-${x.estado.toLowerCase()} ${x.foraDaVarredura ? 'achado-na-org' : ''}"
+           href="${x.url}" target="_blank" rel="noopener"
+           title="${esc(x.titulo || '')}${x.foraDaVarredura
+             ? '\n\nAchado pela busca na organização, não pela varredura local: o repo não está clonado aqui, ou a branch tem sufixo (ex: UND-1638-hml).'
+             : ''}">
           <span class="pr-num">#${x.numero}</span>
           <span class="pr-repo">${esc(x.projeto)}</span>
+          ${x.foraDaVarredura ? '<span class="pr-fora" title="fora da varredura local">◇</span>' : ''}
           <span class="pr-estado">${esc(x.rotulo)}</span>
         </a>`).join('')}
       ${semPr.length ? `<div class="pr-falta">sem PR: ${semPr.map(x => esc(x.projeto)).join(', ')}</div>` : ''}`;
