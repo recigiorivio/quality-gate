@@ -55,6 +55,13 @@ aside{background:var(--painel);border-right:1px solid var(--linha);overflow-y:au
 .chamado.aberto>button::before{transform:rotate(90deg)}
 .chamado .qtd{margin-left:auto;font:400 11px/1 inherit;color:var(--fraco);background:var(--linha);
   padding:3px 7px;border-radius:20px}
+@keyframes gira{to{transform:rotate(360deg)}}
+.chamado .recarregar-chamado{opacity:0;color:var(--fraco);font:400 13px/1 inherit;padding:2px 5px;
+  border-radius:5px;transition:opacity .12s,background .12s,color .12s;display:inline-block}
+.chamado>button:hover .recarregar-chamado{opacity:1}
+.chamado .recarregar-chamado:hover{background:var(--bg);color:var(--acento)}
+.chamado .recarregar-chamado.girando{opacity:1;color:var(--acento);animation:gira .8s linear infinite}
+@media(prefers-reduced-motion:reduce){.chamado .recarregar-chamado.girando{animation:none}}
 .chamado .ocultar{opacity:0;color:var(--fraco);font:400 15px/1 inherit;padding:1px 5px;border-radius:5px;
   transition:opacity .12s,background .12s,color .12s}
 .chamado>button:hover .ocultar{opacity:1}

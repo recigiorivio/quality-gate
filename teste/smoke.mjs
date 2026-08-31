@@ -14,7 +14,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)));
-const PORTA = 40000 + Math.floor(Math.random() * 20000);
+// Porta fixa e distinta da do app (4100): porta sorteada tornava impossível saber, olhando o
+// terminal, se o que subiu era o servidor de verdade ou o do teste.
+const PORTA = Number(process.env.PORTA_TESTE || 4199);
 const BASE = `http://127.0.0.1:${PORTA}`;
 
 let servidor;
@@ -123,7 +125,12 @@ test('/api/arquivos e /api/arquivo devolvem diff coerente', async t => {
     assert.equal(um.status, 200);
     // As colunas têm que estar alinhadas: é o que faz o painel lado a lado não desalinhar.
     assert.equal(um.corpo.antes.length, um.corpo.depois.length, 'colunas antes/depois com tamanhos diferentes');
-    assert.ok(um.corpo.total >= um.corpo.antes.length, 'total menor que o renderizado');
+    // `total` mede o arquivo no disco; `antes.length` conta LINHAS RENDERIZADAS, que incluem lacuna e
+    // linha de alinhamento. A invariante certa é sobre as linhas reais do lado depois.
+    const reaisDepois = um.corpo.depois.filter(l => l.n !== null).length;
+    assert.ok(reaisDepois <= um.corpo.total,
+        `linhas reais do depois (${reaisDepois}) maior que o total do arquivo (${um.corpo.total})`);
+    assert.ok(um.corpo.total >= 0, `total negativo: ${um.corpo.total}`);
 });
 
 test('a dobra reduz o payload e o modo completo traz tudo', async t => {

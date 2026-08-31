@@ -109,6 +109,8 @@ async function carregarChamados() {
     <div class="chamado" data-c="${c.chamado}">
       <button onclick="this.parentNode.classList.toggle('aberto')">
         <span>${c.chamado}</span><span class="qtd">${c.repos.length} repo${c.repos.length>1?'s':''}</span>
+        <span class="recarregar-chamado" title="recarregar todos os ${c.repos.length} repos deste chamado"
+          onclick="recarregarChamado(event,'${c.chamado}')">↻</span>
         <span class="ocultar" title="Tirar do menu" onclick="ocultar(event,'${c.chamado}')">×</span>
       </button>
       <div class="repos">${c.repos.map(r => `
@@ -392,9 +394,32 @@ async function tirarPonto(id) {
   abrir(atual.botao, true);
 }
 
+// Recarrega o chamado inteiro: derruba o cache dos N repos dele, dos PRs e da lista, e refaz a
+// barra. Antes só dava para recarregar o repo aberto, e os outros ficavam com dado velho.
+async function recarregarChamado(evento, chamado) {
+  evento.stopPropagation();
+  const alvo = evento.target;
+  alvo.classList.add('girando');
+  try {
+    // `silencioso`: quem pede e recarrega sozinho não deve receber o aviso de volta.
+    await api('/api/invalidar', { chamado, silencioso: 1 });
+    await carregarChamados();
+    if (atual && atual.chamado === chamado) {
+      const botao = document.querySelector(
+        `.repos button[data-p="${atual.projeto}"][data-c="${chamado}"]`);
+      if (botao) {
+        abrir(botao, true);
+      }
+    }
+    avisarNaTela(`${chamado} recarregado`);
+  } finally {
+    alvo.classList.remove('girando');
+  }
+}
+
 async function recarregar() {
   if (!atual) { return; }
-  await api('/api/invalidar', { projeto: atual.projeto });
+  await api('/api/invalidar', { projeto: atual.projeto, silencioso: 1 });
   abrir(atual.botao, true);
 }
 
@@ -611,6 +636,6 @@ async function salvarConfig(chave) {
 
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
-  abrir, trocarAba, pintar, verInteiro, recarregar, ocultar, mostrar, tirarPonto,
+  abrir, trocarAba, pintar, verInteiro, recarregar, recarregarChamado, ocultar, mostrar, tirarPonto,
   trocarVisao, abrirConfig, salvarConfig
 });

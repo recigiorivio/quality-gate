@@ -153,16 +153,44 @@ class Servidor {
         }
     }
 
-    invalidar(projeto) {
+    // Invalida por projeto, por chamado, ou tudo. Por chamado é o recorte que faltava: um chamado
+    // toca vários repos, e derrubar só o que está aberto deixava os outros seis com dado velho.
+    // Lê do cache; só varre o disco se a lista ainda não foi pedida uma vez.
+    _reposDoChamado(chamado) {
+        const guardado = this.cache.get('chamados');
+        const lista = guardado?.valor?.lista ?? this.workspace.chamados();
+        return (lista.find(x => x.chamado === chamado)?.repos || []).map(r => r.projeto);
+    }
+
+    invalidar({ projeto, chamado, silencioso } = {}) {
+        const alvos = new Set();
+        if (projeto) {
+            alvos.add(projeto);
+        }
+        if (chamado) {
+            alvos.add(chamado);
+            // Os repos do chamado: as chaves de cache são por projeto, não por chamado. Vem da lista
+            // JÁ em cache — refazer a varredura dos repos aqui custava 6,1 s de event loop bloqueado,
+            // e a barra que disparou a invalidação acabou de ler essa mesma lista.
+            for (const r of this._reposDoChamado(chamado)) {
+                alvos.add(r);
+            }
+        }
         let n = 0;
         for (const chave of [...this.cache.keys()]) {
-            if (!projeto || chave.includes(projeto)) {
+            const casa = !alvos.size || [...alvos].some(a => chave.includes(a));
+            if (casa || (chamado && chave === 'chamados')) {
                 this.cache.delete(chave);
                 n++;
             }
         }
-        this.avisar({ tipo: 'invalidado', projeto: projeto || null, chaves: n });
-        return { invalidadas: n, projeto: projeto || 'todos' };
+        // `silencioso` é para quem pediu e vai recarregar sozinho: o eco do próprio pedido disputava
+        // com o reload explícito, e o do evento populava o cache que o explícito então lia.
+        // O hook (PostToolUse) não passa silencioso, então outras abas continuam sendo avisadas.
+        if (!silencioso) {
+            this.avisar({ tipo: 'invalidado', projeto: projeto || null, chamado: chamado || null, chaves: n });
+        }
+        return { invalidadas: n, escopo: chamado ? `chamado ${chamado}` : (projeto || 'tudo'), alvos: [...alvos] };
     }
 
     // SSE: a tela aberta descobre sozinha que o diff mudou, sem ficar perguntando de 5 em 5 segundos.
@@ -267,7 +295,11 @@ class Servidor {
             return this.eventos(req, res);
         }
         if (url.pathname === '/api/invalidar') {
-            return this.json(res, this.invalidar(q.get('projeto')));
+            return this.json(res, this.invalidar({
+                projeto: q.get('projeto'),
+                chamado: q.get('chamado'),
+                silencioso: q.get('silencioso') === '1'
+            }));
         }
         if (url.pathname === '/api/chamados') {
             const dados = this.emCache('chamados', () => ({ lista: this.workspace.chamados() }), 30000);
