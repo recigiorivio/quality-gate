@@ -89,6 +89,18 @@ antes do merge não responde nada.
 Cada aba tem um pino com o **pior estado do grupo**, para dizer se vale abrir antes de você abrir.
 Ao lado do título fica o selo da PR: **sem PR / PR aberta / mesclada** (clicável).
 
+### O que cada camada cobre, e o que não cobre
+
+| Camada | Cobre | Não cobre |
+|---|---|---|
+| regras de texto (`checar-diff`) | `.js .mjs .cjs .jsx` **`.ts .tsx`** | qualquer outra extensão — declarada arquivo a arquivo |
+| análise por AST (`lib/ast.mjs`) | `.js .mjs .cjs .jsx` | **TypeScript**, Python, Java — o acorn recusa e o cartão diz `indisponível` |
+| lint | o que o linter do repo cobrir | repo sem linter — o cartão diz "nenhum linter configurado" |
+
+As regras de texto valem em TS porque são sobre comentário e declaração no topo, que não precisam de
+parser. A análise de AST não: o acorn é um parser de JS e **recusa anotação de tipo**. Um cartão que
+não leu o arquivo diz que não leu.
+
 ### Nada aqui é regex
 
 `lib/ast.mjs` lê o código por **AST** (`vendor/acorn.mjs`, arquivo único, MIT). Duas regras deste

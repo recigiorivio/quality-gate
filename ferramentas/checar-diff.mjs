@@ -15,6 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { Diff, WORKSPACE } from '../lib/diff.mjs';
 
 const RAIZ_WS = WORKSPACE;
+// Extensões que as regras de texto cobrem. Fora daqui o arquivo é DECLARADO não analisado — silêncio
+// lido como aprovação é o modo de falha que esta ferramenta existe para evitar.
+const COBERTAS = /\.(js|mjs|cjs|jsx|ts|tsx)$/;
 const RAIZ_PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 
 // Regras que são do SEU time, não do projeto: `regras.json` ao lado do package.json.
@@ -158,12 +161,20 @@ export class ChecarDiff {
             return [];
         }
         const arquivos = [];
+        const naoAnalisados = [];
         const mapaAdicionadas = this._mapaDeAdicionadas(projeto, base);
         for (const linha of nomes.split('\n')) {
             const partes = linha.split('\t');
             const estado = partes[0];
             const caminho = partes[partes.length - 1];
-            if (estado === 'D' || !/\.(js|mjs|cjs)$/.test(caminho)) {
+            if (estado === 'D') {
+                continue;
+            }
+            // As regras aqui são de TEXTO (comentário, declaração no topo, literal), então valem em
+            // TS e JSX sem parser. O que precisa de AST é a análise em lib/ast.mjs, e essa declara
+            // separadamente o que não conseguiu ler.
+            if (!COBERTAS.test(caminho)) {
+                naoAnalisados.push(caminho);
                 continue;
             }
             // `git diff <base>` compara com a ÁRVORE; `--staged`, com o ÍNDICE. O conteúdo lido tem
@@ -191,6 +202,7 @@ export class ChecarDiff {
                 adicionadas: mapaAdicionadas.get(caminho) || new Set()
             });
         }
+        this.naoAnalisados = naoAnalisados;
         return arquivos;
     }
 
@@ -392,7 +404,14 @@ export class ChecarDiff {
                 }
             }
         }
-        return { baseReal, arquivos: arquivos.length, achados };
+        return {
+            baseReal,
+            arquivos: arquivos.length,
+            naoAnalisados: this.naoAnalisados || [],
+            extensoesNaoCobertas: [...new Set((this.naoAnalisados || [])
+                .map(c => (c.match(/\.[a-z0-9]+$/i) || ['(sem extensão)'])[0]))].sort(),
+            achados
+        };
     }
 
     // `// qualidade:ok <regra>` na linha, na anterior, ou no topo do arquivo. Sem escape, a regra
@@ -539,7 +558,14 @@ if (comoJson) {
     process.stdout.write(JSON.stringify(r));
     process.exit(0);
 }
-console.log(`${r.arquivos} arquivo(s) .js no diff · base ${r.baseReal === '--staged' ? 'índice (staged)' : r.baseReal.slice(0, 12)}`);
+console.log(`${r.arquivos} arquivo(s) analisado(s) · base ${r.baseReal === '--staged' ? 'índice (staged)' : r.baseReal.slice(0, 12)}`);
+if (r.naoAnalisados.length) {
+    console.log(`⚠ ${r.naoAnalisados.length} arquivo(s) do diff NÃO analisados (${r.extensoesNaoCobertas.join(', ')})`);
+    console.log('  Isso não é aprovação, é ausência de cobertura.');
+}
+if (!r.arquivos) {
+    console.log('Nenhum arquivo coberto: não há o que aprovar aqui.');
+}
 if (!r.achados.length) {
     console.log('nenhum achado');
 } else {

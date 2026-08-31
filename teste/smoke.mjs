@@ -228,6 +228,56 @@ test('rota inexistente devolve 404 em vez de estourar', async () => {
     assert.equal(status, 404);
 });
 
+test('nenhum cartão diz "ok" sobre arquivo que não foi analisado', async t => {
+    // A invariante que motivou este teste: um diff de 56 arquivos Python devolvia "nenhum achado" em
+    // todos os cartões, e ausência de cobertura era lida como aprovação.
+    const { corpo } = await pegar('/api/chamados');
+    const alvos = (corpo.lista || []).flatMap(c => c.repos.map(r => ({ chamado: c.chamado, ...r })));
+    if (!alvos.length) {
+        return t.skip('nenhum chamado aberto');
+    }
+    const mentiras = [];
+    for (const alvo of alvos) {
+        const q = (await pegar('/api/qualidade', {
+            chamado: alvo.chamado, projeto: alvo.projeto, ref: alvo.ref || ''
+        })).corpo;
+        const cobertura = (q.itens || []).find(i => i.id === 'cobertura');
+        if (!cobertura) {
+            mentiras.push(`${alvo.projeto}: sem cartão de cobertura`);
+            continue;
+        }
+        // "0 de N analisados" com N > 0 é ausência de cobertura: nada pode estar verde.
+        const nadaAnalisado = /^0 de [1-9]/.test(cobertura.detalhe);
+        if (!nadaAnalisado) {
+            continue;
+        }
+        for (const i of q.itens) {
+            if (i.status === 'ok' && i.id !== 'branch') {
+                mentiras.push(`${alvo.projeto}: '${i.titulo}' diz ok, mas 0 arquivo foi analisado`);
+            }
+        }
+    }
+    assert.deepEqual(mentiras, [], mentiras.join('\n  '));
+});
+
+test('o cartão de cobertura declara as extensões que ficaram de fora', async t => {
+    const { corpo } = await pegar('/api/chamados');
+    const alvo = (corpo.lista || []).flatMap(c => c.repos.map(r => ({ chamado: c.chamado, ...r })))[0];
+    if (!alvo) {
+        return t.skip('nenhum chamado aberto');
+    }
+    const q = (await pegar('/api/qualidade', {
+        chamado: alvo.chamado, projeto: alvo.projeto, ref: alvo.ref || ''
+    })).corpo;
+    const c = (q.itens || []).find(i => i.id === 'cobertura');
+    assert.ok(c, 'cartão de cobertura ausente');
+    assert.match(c.detalhe, /arquivo\(s\)|alteração/, `detalhe sem denominador: ${c.detalhe}`);
+    if (/de \d+ arquivo/.test(c.detalhe) && !/^(\d+) de \1 /.test(c.detalhe)) {
+        assert.ok(c.evidencia.some(e => /extens/i.test(e)),
+            'cobertura parcial sem dizer quais extensões ficaram de fora');
+    }
+});
+
 // ---------- ferramentas de linha de comando ----------
 
 function rodar(script, args) {
