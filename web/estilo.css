@@ -21,17 +21,17 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
    linhas e o ícone ficava órfão no meio. Uma linha, caixa normal, ícone na mesma base. */
 /* Um wordmark, não um rótulo: o mago numa pastilha, o nome ao lado, e a margem esquerda igual à
    das linhas de chamado abaixo (10px do painel + 10px da linha), para o olho descer reto. */
-#titulo-barra{margin:0;padding:12px 10px 12px 20px;background:var(--painel);
+#titulo-barra{margin:0;padding:14px 10px 14px 20px;background:var(--painel);
   border-bottom:1px solid var(--linha);flex:0 0 auto;
   display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden}
-#titulo-barra .mago{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;
-  font-size:17px;line-height:1;border-radius:9px;
+#titulo-barra .mago{flex:0 0 auto;width:38px;height:38px;display:grid;place-items:center;
+  font-size:22px;line-height:1;border-radius:11px;
   background:linear-gradient(135deg,var(--acento) 0%,#5b4fd6 100%);
   box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 2px 6px rgba(125,112,228,.28)}
 #titulo-barra>span:last-child{overflow:hidden;text-overflow:ellipsis;display:flex;
-  flex-direction:column;gap:1px;line-height:1.15}
-#titulo-barra .nome{font-weight:700;font-size:14.5px;letter-spacing:-.02em;color:var(--fg)}
-#titulo-barra .sub{font-weight:500;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  flex-direction:column;gap:3px;line-height:1.1}
+#titulo-barra .nome{font-weight:700;font-size:19px;letter-spacing:-.025em;color:var(--fg)}
+#titulo-barra .sub{font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--fraco)}
 #painel-chamados,#painel-config{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0}
 
