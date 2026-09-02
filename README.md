@@ -315,9 +315,28 @@ em paralelo** — é I/O de rede, não tem por que bloquear a conferência.
 ─────────── agente de qualidade · fim · ABC-123 ───────────
 ```
 
-A de fim carrega o **veredito**, não um "pronto": contagem de atenção, aviso, o denominador de
-**não coberto**, o estado dos PRs e os repos sem PR. Banner que só diz "terminou" é o
-silêncio-lido-como-aprovação em outra forma — e a linha `não coberto` nunca é omitida, mesmo em zero.
+A de fim carrega o **veredito**, não um "pronto". Os alertas são **uma linha**: contagens primeiro,
+e depois do travessão o pior achado **com o lugar** — número sozinho manda a pessoa procurar.
+
+```
+─────────── agente de qualidade · fim · ABC-123 ───────────
+  <título do chamado> · <status>
+  <url do Linear>
+
+  2 atenção · 1 aviso · 14 fora de cobertura (.py) — build PULADO em #121 e #37
+  PRs 25 · 0 abertas · 23 mescladas · nenhum repo sem PR
+  9 repos · tela: http://localhost:4100
+────────────────────────────────────────────────────────
+```
+
+Sem nenhum achado, a mesma linha — e `fora de cobertura` continua ali:
+
+```
+  0 achados · 14 fora de cobertura (.py) — nada nesses arquivos foi conferido
+```
+
+Banner que só diz "terminou" é o silêncio-lido-como-aprovação em outra forma, e `fora de cobertura`
+**nunca é omitido, nem em zero**: é o denominador que impede ler "nenhum achado" como aprovado.
 
 ## Testes
 
