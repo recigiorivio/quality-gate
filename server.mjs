@@ -485,7 +485,10 @@ class Servidor {
                     ultimo: this.agenteFim || null
                 },
                 lista: dados.lista.filter(c => !this.ocultos.has(c.chamado)),
-                ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado)).map(c => c.chamado)
+                // Com o título: só o `UND-1638` na lista de ocultos não diz o que se está trazendo
+                // de volta, exatamente como não dizia nas linhas visíveis.
+                ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado))
+                    .map(c => ({ chamado: c.chamado, titulo: c.titulo || null }))
             });
         }
         if (url.pathname === '/api/ocultar') {

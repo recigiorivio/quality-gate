@@ -149,8 +149,11 @@ async function carregarChamados() {
   document.getElementById('ocultos').innerHTML = ocultos.length
     ? `<button class="conta-ocultos" onclick="this.parentNode.classList.toggle('aberto')">
          ${ocultos.length} oculto${ocultos.length > 1 ? 's' : ''}</button>
-       <div class="lista-ocultos">${ocultos
-         .map(c => `<button onclick="mostrar('${c}')" title="Trazer de volta">${c}</button>`).join('')}</div>`
+       <div class="lista-ocultos">${ocultos.map(o => `
+         <button onclick="mostrar('${o.chamado}')" title="Trazer de volta">
+           <span class="oc-id">${o.chamado}</span>
+           ${o.titulo ? `<span class="oc-sub">${esc(o.titulo)}</span>` : ''}
+         </button>`).join('')}</div>`
     : '';
   marcarPinosDaBarra(chamados);
   if (!atual && chamados.length) {

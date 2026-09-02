@@ -74,10 +74,14 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 #ocultos.aberto .conta-ocultos::before{transform:rotate(90deg)}
 .lista-ocultos{display:none;padding:2px 0 0 18px}
 #ocultos.aberto .lista-ocultos{display:flex;flex-direction:column;gap:2px}
-.lista-ocultos button{background:none;border:0;color:var(--fraco);cursor:pointer;text-align:left;
-  padding:4px 8px;border-radius:6px;font:12px/1.3 ui-monospace,monospace}
+.lista-ocultos button{width:100%;display:flex;flex-direction:column;gap:1px;background:none;
+  border:0;color:var(--fraco);cursor:pointer;text-align:left;padding:4px 7px;border-radius:6px;
+  font:inherit}
+.oc-id{font:600 11.5px/1.2 inherit}
+.oc-sub{font:400 10px/1.3 inherit;opacity:.75;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:100%}
 .lista-ocultos button:hover{background:var(--bg);color:var(--acento)}
-.lista-ocultos button::after{content:' ↩';opacity:.5}
+.lista-ocultos button .oc-id::after{content:' ↩';opacity:.5}
 .vazio{color:var(--fraco);font-size:12px;padding:8px 4px;margin:0}
 
 #painel-config{padding:10px}
