@@ -523,7 +523,11 @@ function marcarCarimbo(d) {
     ? `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`
     : `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ ${d.erroDaDecisao
       ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`;
+  // `??` não entra em diff nenhum: sem esta frase, "12 ✎" no chip ao lado de um diff de 5 parecia
+  // bug do diff — era o diff sendo fiel ao git. O passo 1.0 da rotina de fim é quem resolve.
+  const novos = (d.naoRastreados || []).length;
   c.textContent = `${d.arquivos.length} arquivo(s) · ${fonte}`
+    + (novos ? ` · ⚠ ${novos} novo(s) fora do diff — nunca passaram pelo git add` : '')
     + (d.via !== 'local' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
     + (d.via === 'local' && d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
     + (d.ref ? '' : '')

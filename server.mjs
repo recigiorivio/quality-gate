@@ -507,6 +507,7 @@ class Servidor {
             baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
             comoSoube: d.comoSoube || null,
             via, erroDaDecisao: erroDaDecisao || null,
+            naoRastreados: d.naoRastreados(),
             decisao: decisao ? { pr: decisao.pr ?? null, branch: decisao.branch, estado: decisao.estado ?? null } : null,
             arquivos: d.listarArquivos(baseReal)
         };
