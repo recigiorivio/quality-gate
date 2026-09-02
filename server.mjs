@@ -45,7 +45,7 @@ A partir de /Users/recigiorivio/node_workspace:
    cd <repo> && gh pr view <N> --json files -q '.files | length'
    curl -s "http://localhost:4100/api/arquivos?projeto=<repo>&chamado=${chamado}" | node -e "let t='';process.stdin.on('data',d=>t+=d).on('end',()=>console.log(JSON.parse(t).arquivos.length))"
 
-Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100 — ele relê as decisões sozinho; se um número não bater, o problema é a decisão, não o servidor. Responda em no máximo 3 linhas: quantos repos, quantos decididos, e o que não bateu.`
+Só o chamado ${chamado}: não olhe, não decida e não grave nada de nenhum outro. Não rode teste de projeto (npm test, pytest, mvn) — não é disso que se trata aqui. Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100 — ele relê as decisões sozinho; se um número não bater, o problema é a decisão, não o servidor. Responda em no máximo 3 linhas: quantos repos, quantos decididos, e o que não bateu.`
 
 const PORTA = Number(process.env.PORT || 4100);
 const execFileAsync = promisify(execFile);
@@ -310,7 +310,12 @@ class Servidor {
             '-p', PROMPT_COMPARACAO(chamado),
             '--output-format', 'stream-json', '--verbose', '--max-turns', '60',
             '--allowedTools', 'Bash(node:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(cd:*)', 'Read', 'Grep', 'Glob'
-        ], { cwd: WORKSPACE, stdio: ['ignore', 'pipe', 'pipe'] });
+        ], {
+            cwd: WORKSPACE,
+            stdio: ['ignore', 'pipe', 'pipe'],
+            // O hook lê isto para NÃO injetar a rotina de fim: a corrida é uma tarefa fechada.
+            env: { ...process.env, QUALIDADE_AGENTE: chamado }
+        });
 
         let resto = '';
         let ultimoTexto = '';

@@ -406,3 +406,35 @@ body.arrastando{user-select:none;cursor:col-resize}
 .est.parcial{color:var(--aviso)}
 .est.nada{color:var(--erro)}
 .est.rodando{color:var(--acento)}
+
+/* ── faixa de mesclagem, antes do diff ────────────────────────────────────
+   O estado deste repo como selo, e o chamado inteiro como trilha de células clicáveis: dá para ver
+   de longe o que já entrou. Antes "mesclado" era uma palavra no meio do carimbo e o resto do
+   chamado não aparecia em lugar nenhum. */
+.fm-topo{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.fm-selo{font:700 9px/1 -apple-system,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.06em;padding:4px 7px;border-radius:5px;background:var(--linha);color:var(--fraco)}
+.fm-selo.s-mesclado{background:var(--ok);color:#fff}
+.fm-selo.s-aberto{background:var(--aviso);color:#fff}
+.fm-selo.s-indefinido{background:var(--erro);color:#fff}
+.fm-onde{font:500 10px/1.3 ui-monospace,monospace;color:var(--fg);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-conta{margin-top:5px;font:400 10px/1.3 inherit;color:var(--fraco)}
+.fm-conta b{color:var(--erro);font-weight:600}
+.fm-trilha{display:flex;gap:3px;margin-top:6px}
+.fm-cel{flex:1 1 0;min-width:0;height:7px;border:0;border-radius:3px;padding:0;cursor:pointer;
+  background:var(--linha)}
+.fm-cel.c-ok{background:var(--ok)}
+.fm-cel.c-aberto{background:var(--aviso)}
+.fm-cel.c-nada{background:var(--erro);opacity:.45}
+.fm-cel:hover{filter:brightness(1.15)}
+.fm-cel.aqui{height:9px;margin-top:-1.5px;box-shadow:0 0 0 1.5px var(--cartao),0 0 0 3px var(--acento)}
+
+/* Seções recolhíveis da trilha: o diff é a coisa mais larga do app e às vezes branches e PRs só
+   estorvam. O triângulo fica no título, e a escolha é lembrada por seção. */
+.tr-dobra > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:5px}
+.tr-dobra > summary::-webkit-details-marker{display:none}
+.tr-dobra > summary::before{content:'';width:0;height:0;border:3px solid transparent;
+  border-left-color:var(--fraco);transition:transform .15s;transform-origin:1.5px 50%;flex:0 0 auto}
+.tr-dobra[open] > summary::before{transform:rotate(90deg)}
+.tr-dobra > summary:hover{color:var(--fg)}

@@ -181,6 +181,12 @@ class Gate {
     }
 
     tratarPrompt() {
+        // Corrida disparada pela tela: o prompt dela é uma tarefa fechada de um chamado só, e
+        // injetar a rotina de fim inteira fazia o agente considerar coisa que não foi pedida.
+        if (process.env.QUALIDADE_AGENTE) {
+            this.registrar('prompt', 'sem-injecao', `agente ${process.env.QUALIDADE_AGENTE}`);
+            return this.liberar();
+        }
         const prompt = this.payload?.prompt || '';
         const chamado = (prompt.match(PADRAO_CHAMADO) || [])[1];   // só para separar o dedup por chamado
         const fimDeTrabalho = /\b(commit|comita|comitar|push|pr|merge|mescla|mesclar|finaliza|finalizar|fechar o chamado|abrir o pr|subir|entregar)\b/i.test(prompt);

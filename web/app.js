@@ -209,8 +209,9 @@ async function abrirChamado(chamado) {
       <div class="tr-titulo">Chamado</div>
       <div class="tr-carregando">${esqLinhas('l1', 'l3', 'l4')}</div>
     </div>
-    <div class="tr-secao">
-      <div class="tr-titulo">Branches</div>
+    <div class="tr-secao" id="tr-merge"></div>
+    <details class="tr-secao tr-dobra" id="tr-dobra-branches" ${aberta('branches')}>
+      <summary class="tr-titulo">Branches</summary>
       <div class="tr-chips" id="tr-chips">${c.repos.map(r => `
         <button class="chip ${r.naBranch ? '' : 'fora'}" data-p="${r.projeto}" data-c="${chamado}"
                 data-ref="${r.ref || ''}" onclick="abrir(this)"
@@ -226,11 +227,11 @@ async function abrirChamado(chamado) {
           ${r.sujo ? `<span class="chip-sujo" title="${r.sujo} não commitado(s)">${r.sujo}✎</span>` : ''}
           ${r.naBranch || (r.branch && r.branch === r.branchAtual) ? '' : `<span class="chip-fora" title="o checkout local está em ${esc(r.branchAtual)}, não nesta branch">≠</span>`}
         </button>`).join('')}</div>
-    </div>
-    <div class="tr-secao" id="tr-prs">
-      <div class="tr-titulo">Pull requests</div>
+    </details>
+    <details class="tr-secao tr-dobra" id="tr-prs" ${aberta('prs')}>
+      <summary class="tr-titulo">Pull requests</summary>
       <div class="tr-carregando">${esqLinhas('l2', 'l1')}</div>
-    </div>
+    </details>
     <div class="tr-pe">
       <div class="tr-estado" id="tr-estado">${estadoDaComparacao(c)}</div>
       <button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
@@ -242,6 +243,10 @@ async function abrirChamado(chamado) {
         <span class="tr-cog" aria-hidden="true">⚙</span><span>recarregar</span>
       </button>
     </div>`;
+  for (const [secao, id] of [['branches', 'tr-dobra-branches'], ['prs', 'tr-prs']]) {
+    const el = document.getElementById(id);
+    if (el) { lembrarDobra(secao, el); }
+  }
   aplicarRecolhido();
 
   // Identidade e PRs chegam depois: é rede.
@@ -276,9 +281,18 @@ async function abrirChamado(chamado) {
       const comPr = prsDoChamado.filter(x => x.temPr);
       const abertas = comPr.filter(x => x.estado === 'OPEN').length;
       const semPr = prsDoChamado.filter(x => x.temPr === false).map(x => x.projeto);
-      prAlvo.innerHTML = `
-        <div class="tr-titulo">Pull requests
-          <span class="tr-conta">${comPr.length}${abertas ? ` · ${abertas} aberta(s)` : ''}</span></div>
+      // Trocar o innerHTML da seção inteira apagava o <summary> e o listener da dobra: o corpo é
+      // um elemento próprio, e só ele é redesenhado.
+      prAlvo.querySelector('summary').innerHTML = `Pull requests
+        <span class="tr-conta">${comPr.length}${abertas ? ` · ${abertas} aberta(s)` : ''}</span>`;
+      let corpoPr = prAlvo.querySelector('.tr-corpo');
+      if (!corpoPr) {
+        corpoPr = document.createElement('div');
+        corpoPr.className = 'tr-corpo';
+        prAlvo.appendChild(corpoPr);
+      }
+      prAlvo.querySelector('.tr-carregando')?.remove();
+      corpoPr.innerHTML = `
         ${comPr.map(x => `
           <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')}"
              href="${x.url}" target="_blank" rel="noopener"
@@ -524,10 +538,46 @@ function renderNo(no, aberto, nivel) {
 
 let totalDeArquivosGlobal = 0;
 
+// A mesclagem vinha só como uma palavra no meio do carimbo, e o resto do chamado não aparecia em
+// lugar nenhum. Aqui o estado deste repo é um selo, e os outros repos são uma trilha de células —
+// dá para ver de longe o que já entrou e o que falta, sem abrir um por um.
+function desenharFaixaMerge(d) {
+  const alvo = document.getElementById('tr-merge');
+  if (!alvo) { return; }
+  const c = chamados.find(x => x.chamado === atual?.chamado);
+  const repos = c?.repos || [];
+  const estado = d.via === 'local' ? 'indefinido' : (d.mesclado ? 'mesclado' : 'aberto');
+  const selo = { mesclado: 'mesclado', aberto: 'aberto', indefinido: 'não decidido' }[estado];
+  const feitos = repos.filter(r => r.situacao === 'resolvido').length;
+  const semDecisao = repos.filter(r => !r.situacao).length;
+  const celulas = repos.map(r => {
+    const st = r.situacao === 'resolvido' ? 'ok' : r.situacao === 'aberto' ? 'aberto' : 'nada';
+    const nota = r.situacao
+      ? `${r.pr ? `PR #${r.pr} · ` : ''}${r.situacao}`
+      : 'sem decisão — a tela usa o palpite local';
+    return `<button class="fm-cel c-${st} ${r.projeto === atual.projeto ? 'aqui' : ''}"
+      title="${esc(r.projeto)} — ${esc(nota)}" onclick="irParaRepo('${r.projeto}')"></button>`;
+  }).join('');
+  alvo.innerHTML = `<div class="tr-titulo">Mesclagem</div>
+    <div class="fm-topo">
+      <span class="fm-selo s-${estado}">${selo}</span>
+      <span class="fm-onde">${esc(d.baseNome || (d.base || '').slice(0, 8))}</span>
+    </div>
+    <div class="fm-trilha">${celulas}</div>
+    <div class="fm-conta">${feitos} de ${repos.length} mesclados${
+      semDecisao ? ` · <b>${semDecisao} sem decisão</b>` : ''}</div>`;
+}
+
+function irParaRepo(projeto) {
+  const chip = document.querySelector(`.chip[data-p="${projeto}"][data-c="${atual?.chamado}"]`);
+  if (chip) { abrir(chip); }
+}
+
 function montarArquivos(d) {
   const caixa = document.getElementById('arquivos');
   if (!caixa) { return; }
   caixa.className = '';
+  desenharFaixaMerge(d);
   totalDeArquivosGlobal = d.arquivos.length;
   if (!d.arquivos.length) {
     caixa.innerHTML = d.mesclado
@@ -618,6 +668,15 @@ function escutarEventos() {
 
 // Três estados, e a diferença entre eles é o que a pessoa precisa saber antes de clicar: o agente
 // ainda está de pé? já calculou? calculou TUDO? Antes só se descobria vendo a tela mudar (ou não).
+// Recolher e a tela esquecer no próximo clique não serve para nada: o estado fica no localStorage.
+const aberta = secao => (localStorage.getItem(`dobra-${secao}`) === 'fechada' ? '' : 'open');
+
+function lembrarDobra(secao, el) {
+  el.addEventListener('toggle', () => {
+    localStorage.setItem(`dobra-${secao}`, el.open ? 'aberta' : 'fechada');
+  });
+}
+
 function estadoDaComparacao(c) {
   if (estadoAgente.rodando === c.chamado) {
     return `<span class="est rodando"><span class="giro"></span>agente rodando${
@@ -914,7 +973,7 @@ async function salvarConfig(chave) {
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
-  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto, pedirAoAgente,
+  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.
