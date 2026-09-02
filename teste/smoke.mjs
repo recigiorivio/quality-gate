@@ -314,8 +314,11 @@ test('o cartão de cobertura declara as extensões que ficaram de fora', async t
 
 function rodar(script, args) {
     try {
+        // Sem gh: o teste é da FORMA da saída, não do estado das PRs — e bater no GitHub de 11
+        // repos fazia este ser o único caso intermitente da suíte.
         return { codigo: 0, saida: execFileSync('node', [join(RAIZ, 'ferramentas', script), ...args], {
-            cwd: RAIZ, encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe']
+            cwd: RAIZ, encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'],
+            env: { ...process.env, QUALIDADE_SEM_GH: '1' }
         }) };
     } catch (e) {
         return { codigo: e.status ?? 1, saida: `${e.stdout || ''}${e.stderr || ''}` };

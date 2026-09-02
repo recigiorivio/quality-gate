@@ -478,3 +478,7 @@ body.arrastando{user-select:none;cursor:col-resize}
   display:flex;align-items:center;gap:6px}
 .carga-texto:not(:empty)::before{content:'';width:9px;height:9px;border:2px solid var(--linha);
   border-top-color:var(--acento);border-radius:50%;animation:girar .7s linear infinite}
+/* A PR decidida pelo agente e as preteridas do mesmo repo. */
+.tr-pr.decidida .tr-pr-num{color:var(--acento);font-weight:700}
+.tr-pr.preterida{opacity:.5}
+.tr-pr.preterida:hover{opacity:1}

@@ -20,32 +20,25 @@ import { pagina } from './web/pagina.mjs';
 
 // O prompt do agente, fixo. É a tarefa que a máquina não faz: num repo com 7 PRs do mesmo chamado,
 // seis mescladas e a aberta sendo outra, nenhuma regra local diz qual importa.
-const PROMPT_COMPARACAO = chamado => `Decida a comparação de diff correta de cada repo do chamado ${chamado} e grave. Nada além disso.
+const PROMPT_COMPARACAO = (chamado, inventario) => `Decida a comparação de diff correta de cada repo do chamado ${chamado} e grave. Nada além disso.
 
-A partir de /Users/recigiorivio/node_workspace:
+O inventário JÁ ESTÁ LEVANTADO abaixo — não refaça gh pr list nem contexto.mjs. Para cada repo há as PRs cujo título tem o ID (número, estado, branch, base, atualização) e as branches locais que contêm o ID.
 
-1. Repos do chamado:
-   node qualidade/ferramentas/contexto.mjs ${chamado} --json
+${inventario}
 
-2. Em cada repo, as PRs que existem:
-   cd <repo> && gh pr list --search "${chamado} in:title" --state all --json number,state,headRefName,baseRefName,updatedAt,title
+Regra de decisão, por repo:
+- PR aberta ganha de PR mesclada (é onde está o trabalho de agora)
+- todas mescladas: a de updatedAt mais recente, e --nota dizendo que as outras já entraram
+- nenhuma PR: --stage
+- PR mesclada mas com commit local depois dela (confira com git log origin/<base>..<branch> só se houver dúvida): --pr=N --aberto
 
-3. Decida por repo:
-   - PR aberta ganha de PR mesclada (é onde está o trabalho de agora)
-   - todas mescladas: a de updatedAt mais recente, e --nota dizendo que as outras já entraram
-   - nenhuma PR: --stage
-   - PR mesclada mas com commit depois dela: --pr=N --aberto
+Grave a partir de /Users/recigiorivio/node_workspace, um comando por repo:
+  node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que, em uma frase>"
+  ou  node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
 
-4. Grave (de volta em node_workspace):
-   node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que>"
-   ou
-   node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
-
-5. Confirme com número, repo por repo — não bater é decisão errada, não tela errada:
-   cd <repo> && gh pr view <N> --json files -q '.files | length'
-   curl -s "http://localhost:4100/api/arquivos?projeto=<repo>&chamado=${chamado}" | node -e "let t='';process.stdin.on('data',d=>t+=d).on('end',()=>console.log(JSON.parse(t).arquivos.length))"
-
-Só o chamado ${chamado}: não olhe, não decida e não grave nada de nenhum outro. Não rode teste de projeto (npm test, pytest, mvn) — não é disso que se trata aqui. Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100 — ele relê as decisões sozinho; se um número não bater, o problema é a decisão, não o servidor. Responda em no máximo 3 linhas: quantos repos, quantos decididos, e o que não bateu.`
+NÃO confira número de arquivos: o servidor confere ao final e mostra o que não bateu.
+Só o chamado ${chamado}: não olhe, não decida e não grave nada de nenhum outro. Não rode teste de projeto. Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100.
+Responda em no máximo 3 linhas: quantos repos, quantos decididos, e alguma dúvida que ficou.`;
 
 const PORTA = Number(process.env.PORT || 4100);
 const execFileAsync = promisify(execFile);
@@ -81,6 +74,7 @@ class Servidor {
         this.cache = new Map();
         this.ouvintes = new Set();
         this.ocultos = new Set(this.lerOcultos());
+        this.mostradosEm = {};
     }
 
     lerOcultos() {
@@ -306,8 +300,35 @@ class Servidor {
         this.agenteDesde = Date.now();
         this.registrar('agente', 'inicio', chamado);
         const inicio = Date.now();
+        this.json(res, { ok: true, chamado, aviso: 'acompanhe pelo SSE' });
+        // Inventário pronto no prompt: a primeira corrida gastou ~50 passos e 7 min, e mais da metade
+        // era o agente levantando PRs e branches repo a repo — trabalho de máquina, não de julgamento.
+        this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: 0, texto: 'levantando PRs e branches dos repos…' });
+        this._inventario(chamado).then(inventario => this._rodarAgente(chamado, inventario, inicio));
+    }
+
+    async _inventario(chamado) {
+        const repos = this._reposDoChamado(chamado);
+        const blocos = await Promise.all(repos.map(async projeto => {
+            const raiz = join(WORKSPACE, projeto);
+            const [prs, branches] = await Promise.all([
+                execFileAsync('gh', ['pr', 'list', '--search', `${chamado} in:title`, '--state', 'all', '--limit', '20',
+                    '--json', 'number,state,headRefName,baseRefName,updatedAt,title'], { cwd: raiz, encoding: 'utf8' })
+                    .then(r => JSON.parse(r.stdout || '[]')).catch(() => null),
+                execFileAsync('git', ['-C', raiz, 'branch', '-a', '--list', `*${chamado}*`, '--format=%(refname:short)'],
+                    { encoding: 'utf8' }).then(r => r.stdout.trim().split('\n').filter(Boolean)).catch(() => [])
+            ]);
+            const linhasPr = prs === null ? '  (gh falhou neste repo — decida pelo que souber ou use --stage)'
+                : prs.length ? prs.map(p => `  PR #${p.number} ${p.state} ${p.headRefName} → ${p.baseRefName} (${p.updatedAt.slice(0, 10)}) ${p.title.slice(0, 70)}`).join('\n')
+                    : '  (nenhuma PR com o ID no título)';
+            return `### ${projeto}\n${linhasPr}\n  branches locais: ${branches.join(', ') || '(nenhuma)'}`;
+        }));
+        return blocos.join('\n\n');
+    }
+
+    _rodarAgente(chamado, inventario, inicio) {
         const filho = spawn('claude', [
-            '-p', PROMPT_COMPARACAO(chamado),
+            '-p', PROMPT_COMPARACAO(chamado, inventario),
             '--output-format', 'stream-json', '--verbose', '--max-turns', '60',
             '--allowedTools', 'Bash(node:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(cd:*)', 'Read', 'Grep', 'Glob'
         ], {
@@ -349,12 +370,40 @@ class Servidor {
             this.registrar('agente', codigo === 0 ? 'fim' : 'erro', `${chamado} em ${segundos}s`);
             // O cache cai depois do agente: as decisões novas mudam base, alvo e as checagens.
             this.invalidar({ chamado, silencioso: true });
-            this.avisar({
-                tipo: 'agente', fase: 'fim', chamado, ok: codigo === 0, segundos,
-                texto: codigo === 0 ? (ultimoTexto || 'terminou') : (erro.trim().split('\n')[0] || `saiu com código ${codigo}`)
+            this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: passos + 1, texto: 'conferindo os números contra as PRs…' });
+            this._conferirDecisoes(chamado).then(divergentes => {
+                const resumo = divergentes.length
+                    ? `${divergentes.length} não bateu: ${divergentes.join(' · ')}`
+                    : 'todos os números batem com as PRs';
+                this.avisar({
+                    tipo: 'agente', fase: 'fim', chamado, ok: codigo === 0 && !divergentes.length, segundos,
+                    texto: codigo === 0 ? `${ultimoTexto || 'terminou'} — ${resumo}` : (erro.trim().split('\n')[0] || `saiu com código ${codigo}`)
+                });
             });
         });
-        return this.json(res, { ok: true, chamado, aviso: 'acompanhe pelo SSE' });
+    }
+
+    // Depois da corrida, o servidor confere o que o agente decidiu: nº de arquivos da PR (gh) contra o
+    // que a tela mostra com a decisão. Era o agente que fazia isso, a 2 comandos por repo.
+    async _conferirDecisoes(chamado) {
+        const divergentes = [];
+        for (const d of comparacao.listar(chamado)) {
+            if (d.via !== 'pr') {
+                continue;
+            }
+            try {
+                const { stdout } = await execFileAsync('gh', ['pr', 'view', String(d.pr), '--json', 'files', '-q', '.files | length'],
+                    { cwd: join(WORKSPACE, d.projeto), encoding: 'utf8' });
+                const naPr = Number(stdout.trim());
+                const tela = this.listaDeArquivos(d.projeto, null, d.branch || '', chamado).arquivos.length;
+                if (naPr !== tela) {
+                    divergentes.push(`${d.projeto}: PR #${d.pr} tem ${naPr}, tela mostra ${tela}`);
+                }
+            } catch {
+                divergentes.push(`${d.projeto}: não consegui conferir a PR #${d.pr}`);
+            }
+        }
+        return divergentes;
     }
 
     // Uma linha do stream-json em algo que caiba numa tela: ferramenta usada ou texto do assistente.
@@ -384,6 +433,26 @@ class Servidor {
             return { texto: String(e.result || '').trim().slice(0, 400) };
         }
         return null;
+    }
+
+    // Chamado 100% resolvido e parado há 3 dias vai sozinho para os ocultos, com rastro no log. Sem
+    // isto ele fica na barra até alguém clicar no ×, e a barra é para o que está acontecendo. O ↩
+    // traz de volta, e trazer de volta segura por mais 3 dias (o `mostrar` grava a data).
+    arquivarResolvidos(lista) {
+        const limite = Date.now() - 3 * 24 * 3600 * 1000;
+        for (const c of lista) {
+            if (this.ocultos.has(c.chamado) || !c.repos.length) {
+                continue;
+            }
+            const todosResolvidos = c.repos.every(r => r.situacao === 'resolvido');
+            const parado = (c.ultimaData ? Date.parse(c.ultimaData) : Date.now()) < limite;
+            const trazidoDeVolta = (this.mostradosEm[c.chamado] || 0) > limite;
+            if (todosResolvidos && parado && !trazidoDeVolta) {
+                this.ocultos.add(c.chamado);
+                this.registrar('ocultar', 'automatico', `${c.chamado} 100% resolvido, parado desde ${c.ultimaData.slice(0, 10)}`);
+                this.gravarOcultos();
+            }
+        }
     }
 
     // A branch de fato comparada pode não ser a que tem o nome do chamado: quando a decisão é por
@@ -483,6 +552,7 @@ class Servidor {
             // em dicionário. Dentro do cache, uma decisão nova só aparecia 30 s depois — e a faixa
             // de mesclagem ficava dizendo "não decidido" com o diff ao lado já mostrando a PR.
             this.enriquecerDecisoes(dados.lista);
+            this.arquivarResolvidos(dados.lista);
             return this.json(res, {
                 ...dados,
                 // Fora do `emCache`: o estado da corrida muda por segundo e não pode ficar em cache
@@ -512,6 +582,7 @@ class Servidor {
             const chamado = q.get('chamado');
             if (chamado) {
                 this.ocultos.delete(chamado);
+                this.mostradosEm[chamado] = Date.now();
             } else {
                 this.ocultos.clear();
             }

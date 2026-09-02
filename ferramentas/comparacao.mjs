@@ -49,9 +49,14 @@ if (acao === 'listar') {
     } else if (!lista.length) {
         console.log('nenhuma comparação definida — a tela vai usar o local e dizer isso');
     } else {
+        const orfas = new Set(c.orfas().map(d => `${d.chamado}|${d.projeto}`));
         for (const d of lista) {
             const como = d.via === 'pr' ? `PR #${d.pr} → ${d.destino}` : `${d.branch} × ${d.base}`;
-            console.log(`${(d.situacao || '?').padEnd(10)} ${d.chamado}  ${d.projeto.padEnd(30)} ${como}${d.nota ? `  — ${d.nota}` : ''}`);
+            const marca = orfas.has(`${d.chamado}|${d.projeto}`) ? ' [órfã: sem branch em lugar nenhum]' : '';
+            console.log(`${(d.situacao || '?').padEnd(10)} ${d.chamado}  ${d.projeto.padEnd(30)} ${como}${d.nota ? `  — ${d.nota}` : ''}${marca}`);
+        }
+        if (orfas.size) {
+            console.log(`\n${orfas.size} órfã(s) — \`remover --orfas\` limpa`);
         }
     }
 } else if (acao === 'definir') {
@@ -86,9 +91,17 @@ if (acao === 'listar') {
     const gravada = c.definir(chamado, projeto, decisao);
     console.log(json ? JSON.stringify(gravada, null, 2)
         : `gravado: ${chamado} ${projeto} → ${gravada.via === 'pr' ? `PR #${gravada.pr}` : `${gravada.branch} × ${gravada.base}`} · ${gravada.situacao}`);
+} else if (acao === 'remover' && args.includes('--orfas')) {
+    const orfas = c.orfas();
+    for (const d of orfas) {
+        c.remover(d.chamado, d.projeto);
+    }
+    console.log(json ? JSON.stringify({ removidas: orfas }) : (orfas.length
+        ? `${orfas.length} órfã(s) removida(s): ${orfas.map(d => `${d.chamado}/${d.projeto}`).join(', ')}`
+        : 'nenhuma órfã'));
 } else if (acao === 'remover') {
     if (!chamado || !projeto) {
-        morrer('uso: remover <CHAMADO> <projeto>');
+        morrer('uso: remover <CHAMADO> <projeto> | remover --orfas');
     }
     console.log(c.remover(chamado, projeto) ? 'removido' : 'não havia decisão para esse par');
 } else {
@@ -98,5 +111,6 @@ if (acao === 'listar') {
   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --stage [--branch=X] [--aberto]
   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --branch=X --base=origin/main
      --nota="por que esta é a comparação certa"
-  node ferramentas/comparacao.mjs remover <CHAMADO> <projeto>`);
+  node ferramentas/comparacao.mjs remover <CHAMADO> <projeto>
+  node ferramentas/comparacao.mjs remover --orfas        # decisões sem branch em lugar nenhum`);
 }

@@ -342,12 +342,12 @@ async function abrirChamado(chamado) {
       prAlvo.querySelector('.tr-carregando')?.remove();
       corpoPr.innerHTML = `
         ${comPr.map(x => `
-          <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')}"
+          <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')} ${classeDecisao(x)}"
              href="${x.url}" target="_blank" rel="noopener"
              title="${esc(x.titulo || '')}\n\n${esc(x.rotulo)}${x.doLinear ? ' · só o Linear conhece este PR'
                : (x.foraDaVarredura ? ' · fora da varredura local: repo não clonado aqui, ou branch com sufixo' : '')}">
             <span class="tr-pr-estado pr-${x.estado.toLowerCase()}" title="${esc(x.rotulo)}"></span>
-            <span class="tr-pr-num">#${x.numero}</span>
+            <span class="tr-pr-num">${classeDecisao(x) === 'decidida' ? '★ ' : ''}#${x.numero}</span>
             <span class="tr-pr-repo">${esc(x.projeto)}</span>
             <span class="tr-pr-seta">↗</span>
           </a>`).join('') || '<div class="tr-nota">nenhum PR</div>'}
@@ -356,6 +356,13 @@ async function abrirChamado(chamado) {
     pintarAbasDoAtual();
   });
 
+  // Volta para onde você estava neste chamado; sem memória, cai no repo com o pior pino.
+  const lembrado = localStorage.getItem(`repo-${chamado}`);
+  const chipLembrado = lembrado && document.querySelector(`.chip[data-p="${lembrado}"][data-c="${chamado}"]`);
+  if (chipLembrado) {
+    abrir(chipLembrado);
+    return;
+  }
   // Cai no repo com o pior pino: você chega onde está o problema, sem um segundo clique.
   const peso = { atencao: 0, aviso: 1, ok: 2, neutro: 3, vazio: 4 };
   const escolhido = [...c.repos].sort((a, b) => (peso[a.pino] ?? 5) - (peso[b.pino] ?? 5))[0];
@@ -396,6 +403,7 @@ async function abrir(chip) {
   document.querySelectorAll('.chip').forEach(b => b.classList.remove('ativo'));
   chip.classList.add('ativo');
   atual = { projeto: chip.dataset.p, chamado: chip.dataset.c, ref: chip.dataset.ref || '', botao: chip };
+  try { localStorage.setItem(`repo-${atual.chamado}`, atual.projeto); } catch { /* sem storage, sem memória */ }
   const token = ++geracao;
   itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
   const alvo = document.getElementById('conteudo');
@@ -626,6 +634,15 @@ function desenharFaixaMerge(d) {
     <div class="fm-trilha">${celulas}</div>
     <div class="fm-conta">${feitos} de ${repos.length} mesclados${
       semDecisao ? ` · <b>${semDecisao} sem decisão</b>` : ''}</div>`;
+}
+
+// Fecha o laço decisão ↔ lista: a PR que o agente escolheu leva ★, e as outras do MESMO repo ficam
+// esmaecidas — são as que já entraram antes, ou as que perderam. Sem isso eram 28 PRs iguais.
+function classeDecisao(pr) {
+  const c = chamados.find(x => x.chamado === atual?.chamado);
+  const repo = c?.repos.find(r => r.projeto === pr.projeto);
+  if (!repo?.pr) { return ''; }
+  return Number(repo.pr) === Number(pr.numero) ? 'decidida' : 'preterida';
 }
 
 function irParaRepo(projeto) {

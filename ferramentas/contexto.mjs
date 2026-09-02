@@ -31,6 +31,11 @@ class Contexto {
     }
 
     cmd(exec, args, cwd) {
+        // Sem rede a pedido: o smoke test roda isto contra 11 repos e era o único caso intermitente
+        // da suíte — falhava quando o gh demorava, não quando a ferramenta errava.
+        if (exec === 'gh' && process.env.QUALIDADE_SEM_GH) {
+            return null;
+        }
         try {
             return execFileSync(exec, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
         } catch {
