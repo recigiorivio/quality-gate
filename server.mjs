@@ -311,13 +311,22 @@ class Servidor {
         const repos = this._reposDoChamado(chamado);
         const blocos = await Promise.all(repos.map(async projeto => {
             const raiz = join(WORKSPACE, projeto);
-            const [prs, branches] = await Promise.all([
-                execFileAsync('gh', ['pr', 'list', '--search', `${chamado} in:title`, '--state', 'all', '--limit', '20',
-                    '--json', 'number,state,headRefName,baseRefName,updatedAt,title'], { cwd: raiz, encoding: 'utf8' })
-                    .then(r => JSON.parse(r.stdout || '[]')).catch(() => null),
-                execFileAsync('git', ['-C', raiz, 'branch', '-a', '--list', `*${chamado}*`, '--format=%(refname:short)'],
-                    { encoding: 'utf8' }).then(r => r.stdout.trim().split('\n').filter(Boolean)).catch(() => [])
+            const campos = 'number,state,headRefName,baseRefName,updatedAt,title';
+            const gh = args => execFileAsync('gh', ['pr', 'list', ...args, '--state', 'all', '--limit', '20', '--json', campos],
+                { cwd: raiz, encoding: 'utf8' }).then(r => JSON.parse(r.stdout || '[]'));
+            const branches = await execFileAsync('git', ['-C', raiz, 'branch', '-a', '--list', `*${chamado}*`, '--format=%(refname:short)'],
+                { encoding: 'utf8' }).then(r => r.stdout.trim().split('\n').filter(Boolean)).catch(() => []);
+            // Duas buscas, porque uma só mente: `in:title` NÃO devolveu a PR #134 do jungle-monorepo
+            // (título com o ID e tudo), e a corrida decidiu `--stage` num repo mesclado. Por head
+            // acha o que a busca de texto perde; a busca de texto acha PR de branch com outro nome.
+            const heads = [...new Set(branches.map(b => b.replace(/^origin\//, '')))];
+            const listas = await Promise.all([
+                gh(['--search', `${chamado} in:title`]).catch(() => null),
+                ...heads.map(h => gh(['--head', h]).catch(() => []))
             ]);
+            const prs = listas[0] === null && listas.slice(1).every(l => !l.length) ? null
+                : [...new Map(listas.flat().filter(Boolean).map(p => [p.number, p])).values()]
+                    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
             const linhasPr = prs === null ? '  (gh falhou neste repo — decida pelo que souber ou use --stage)'
                 : prs.length ? prs.map(p => `  PR #${p.number} ${p.state} ${p.headRefName} → ${p.baseRefName} (${p.updatedAt.slice(0, 10)}) ${p.title.slice(0, 70)}`).join('\n')
                     : '  (nenhuma PR com o ID no título)';
