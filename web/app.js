@@ -283,12 +283,8 @@ async function abrirChamado(chamado) {
     <div class="tr-pe">
       <div class="tr-estado" id="tr-estado">${estadoDaComparacao(c)}</div>
       <button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
-              title="roda o Claude para decidir a comparação certa de cada repo — leva minutos">
+              title="roda o Claude para decidir a comparação certa de cada repo e recarrega o chamado — leva minutos">
         <span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>
-      </button>
-      <button class="tr-recarregar" onclick="recarregarChamado(event,'${chamado}')"
-              title="só derruba o cache dos ${c.repos.length} repos deste chamado — instantâneo">
-        <span class="tr-cog" aria-hidden="true">⚙</span><span>recarregar</span>
       </button>
     </div>`;
   for (const [secao, id] of [['branches', 'tr-dobra-branches'], ['prs', 'tr-prs']]) {
@@ -680,23 +676,6 @@ async function tirarPonto(evento, id) {
   abrir(atual.botao);
 }
 
-// Recarrega o chamado inteiro: derruba o cache dos N repos dele, dos PRs e da lista, e refaz a
-// barra. Antes só dava para recarregar o repo aberto, e os outros ficavam com dado velho.
-async function recarregarChamado(evento, chamado) {
-  evento.stopPropagation();
-  const alvo = evento.target.closest('button') || evento.target;
-  alvo.classList.add('girando');
-  try {
-    // `silencioso`: quem pede e recarrega sozinho não deve receber o aviso de volta.
-    await api('/api/invalidar', { chamado, silencioso: 1 });
-    await carregarChamados();
-    // A barra e os chips foram refeitos: reabrir o chamado é o que reconecta `atual` ao DOM novo.
-    abrirChamado(chamado);
-    avisarNaTela(`${chamado} recarregado`);
-  } finally {
-    alvo.classList.remove('girando');
-  }
-}
 
 async function recarregar() {
   if (!atual) { return; }
@@ -825,6 +804,10 @@ async function pedirAoAgente(chamado) {
     pararBotaoAgente();
   }
 }
+
+// O recarregar saiu do botão: a corrida do agente já derruba o cache do chamado ao terminar, e
+// dois botões que terminam no mesmo lugar eram redundantes. Quem quiser só o cache tem o hook de
+// commit e a rota /api/invalidar.
 
 function marcarBotaoAgenteRodando() {
   const b = document.getElementById('btn-agente');
@@ -1074,7 +1057,7 @@ async function salvarConfig(chave) {
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
-  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo,
+  recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.
