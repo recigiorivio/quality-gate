@@ -179,6 +179,25 @@ As regras de texto valem em TS porque são sobre comentário e declaração no t
 parser. A análise de AST não: o acorn é um parser de JS e **recusa anotação de tipo**. Um cartão que
 não leu o arquivo diz que não leu.
 
+**A Cobertura soma as duas camadas.** Antes ela contava só as regras de texto, e num repo Python
+dizia "0 de 3 analisados — nada aqui foi conferido" **enquanto o ruff do próprio repo conferia os 3**.
+Agora cada arquivo cai num de três lugares:
+
+| Onde cai | Exemplo | Cartão |
+|---|---|---|
+| regras de texto | `.ts`, `.js` | conta como conferido |
+| linter do repo | `.py` com `.venv/bin/ruff` | conta como conferido, dizendo por qual linter |
+| **nada** | `.java`, `.py` sem venv | `atenção` — é só aqui que o alarme toca |
+
+`.md`, `.json` e `.yaml` ficam de fora do alarme (**sem regra aplicável**): nenhuma ferramenta aqui
+tem regra para eles, e alarmar faria o cartão disparar em toda branch que mexe num README.
+
+**Creditar o linter abriu um buraco que precisou de conserto no mesmo lugar:** linter que **não
+roda** devolvia lista vazia, e lista vazia lê como aprovação. Agora "não rodou" é distinto de "limpo"
+— o cartão do lint fica `indisponível` com o motivo, e a Cobertura **desfaz o crédito** que tinha dado.
+E config de eslint sem `node_modules` não conta como camada: sem `npm install` o `npx eslint` não roda,
+e creditar isso seria inventar cobertura.
+
 ### Nada aqui é regex
 
 `lib/ast.mjs` lê o código por **AST** (`vendor/acorn.mjs`, arquivo único, MIT). Duas regras deste

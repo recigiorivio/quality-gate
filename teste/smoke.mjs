@@ -10,7 +10,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Diff } from '../lib/diff.mjs';
 import { dirname, join } from 'node:path';
@@ -438,4 +438,31 @@ test('destino que andou por cima não transforma branch mesclada em pendente', (
     assert.equal(d.mesclado, true, 'mesclar a branch não acrescentaria nada — está mesclada');
     assert.deepEqual(arquivos, [], 'o que o destino ganhou depois não é pendência da branch');
     rmSync(raiz, { recursive: true, force: true });
+});
+
+// Linter que não roda devolvia lista vazia, e lista vazia lê como aprovação. Piorou quando a
+// Cobertura passou a CREDITAR o linter: duas mentiras empilhadas. Os dois caminhos são exigidos aqui.
+test('linter que não roda é declarado, não vira aprovação', async () => {
+    const { Lint } = await import('../lib/lint.mjs');
+    const l = new Lint();
+    const raiz = join(dirname(dirname(fileURLToPath(import.meta.url))), '..', 'integrations-core-rivio-one');
+    const bin = join(raiz, '.venv/bin/ruff');
+    if (!existsSync(bin)) {
+        return;
+    }
+    const bom = await l._ruff(raiz, bin, ['app/temporal/ingress.py']);
+    assert.ok(Array.isArray(bom), 'ruff que roda tem que devolver lista de achados');
+
+    const ruim = await l._ruff(raiz, `${bin}-inexistente`, ['app/temporal/ingress.py']);
+    assert.ok(!Array.isArray(ruim), 'ruff que não roda NÃO pode devolver lista vazia');
+    assert.match(ruim.falha, /ENOENT|não era JSON/, 'a falha tem que dizer o motivo');
+});
+
+// Config de eslint sem `npm install` não cobre nada — creditar essa camada seria inventar cobertura.
+test('eslint só conta como camada se der para rodar', async () => {
+    const { Lint } = await import('../lib/lint.mjs');
+    const nomes = new Lint().detectar('crohc-server').map(l => l.nome);
+    assert.ok(nomes.includes('eslint'), 'crohc-server tem config e node_modules: deveria contar');
+    const semInstall = new Lint().detectar('projeto-que-nao-existe').map(l => l.nome);
+    assert.deepEqual(semInstall, [], 'repo inexistente não pode declarar linter');
 });

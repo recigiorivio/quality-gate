@@ -71,6 +71,14 @@ function desenharCartoes(itens) {
 
 function cartaoDoLint(r) {
   const linters = (r.linters || []).join(', ');
+  const falhas = r.falhas || [];
+  if (falhas.length) {
+    return { id: 'lint', titulo: 'Lint do projeto', status: 'indisponivel',
+      detalhe: `${falhas.map(f => f.nome).join(', ')} não conseguiu rodar`,
+      evidencia: falhas.map(f => `${f.nome} em ${f.arquivos} arquivo(s): ${f.motivo}`)
+        .concat('estes arquivos NÃO foram conferidos por linter nenhum'),
+      grupo: 'trabalho' };
+  }
   if (!linters) {
     return { id: 'lint', titulo: 'Lint do projeto', status: 'ignorado',
       detalhe: r.nota || 'nenhum linter configurado neste projeto', evidencia: [], grupo: 'trabalho' };
@@ -368,6 +376,17 @@ function pintarAbasDoAtual(token) {
   const conhecidos = itensDoAtual.lint.concat(itensDoAtual.remotos, itensDoAtual.locais);
   // Cartão condicional (o de mesclagem, por exemplo) tem id fora do ESQUELETO: sem esta linha ele
   // era descartado em silêncio, porque o `map` só percorre o esqueleto.
+  // A Cobertura é calculada no passo rápido e só sabe que o linter EXISTE. Se ele não rodou, o
+  // crédito que ela deu vira mentira — e quem descobre isso é o cartão do lint, que chega depois.
+  const lintItem = itensDoAtual.lint[0];
+  const cob = conhecidos.find(i => i.id === 'cobertura');
+  if (cob?.creditoLint && lintItem?.status === 'indisponivel') {
+    const c = cob.creditoLint;
+    cob.status = 'atencao';
+    cob.detalhe = `${c.analisados} de ${c.total} arquivo(s) conferidos — o ${c.nomes.join('/')} não rodou`;
+    cob.evidencia = [`${c.n} arquivo(s) contavam com o ${c.nomes.join('/')}, que falhou`,
+      'ver o cartão do lint — ausência de achado NÃO é aprovação'];
+  }
   const fixos = new Set(ESQUELETO.map(e => e.id));
   const todos = ESQUELETO.map(e => conhecidos.find(i => i.id === e.id) || e)
     .concat(conhecidos.filter(i => !fixos.has(i.id)))

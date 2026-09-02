@@ -250,6 +250,7 @@ class Servidor {
         return {
             projeto,
             linters: r.linters,
+            falhas: r.falhas ?? [],
             nota: r.nota ?? null,
             total: r.total ?? 0,
             erros: erros.length,
