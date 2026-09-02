@@ -19,32 +19,40 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
   display:flex;flex-direction:column;min-height:0}
 /* Nome, não rótulo de seção: em caixa alta com letterspacing largo "Magias do Mago" quebrava em duas
    linhas e o ícone ficava órfão no meio. Uma linha, caixa normal, ícone na mesma base. */
-#titulo-barra{font:600 14px/1.2 -apple-system,system-ui,sans-serif;letter-spacing:-.01em;
-  color:var(--fg);margin:0;padding:14px 16px;background:var(--painel);
+/* Um wordmark, não um rótulo: o mago numa pastilha, o nome ao lado, e a margem esquerda igual à
+   das linhas de chamado abaixo (10px do painel + 10px da linha), para o olho descer reto. */
+#titulo-barra{margin:0;padding:12px 10px 12px 20px;background:var(--painel);
   border-bottom:1px solid var(--linha);flex:0 0 auto;
-  display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden}
-#titulo-barra .mago{font-size:16px;line-height:1;flex:0 0 auto}
-#titulo-barra>span:last-child{overflow:hidden;text-overflow:ellipsis}
+  display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden}
+#titulo-barra .mago{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;
+  font-size:17px;line-height:1;border-radius:9px;
+  background:linear-gradient(135deg,var(--acento) 0%,#5b4fd6 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.35) inset,0 2px 6px rgba(125,112,228,.28)}
+#titulo-barra>span:last-child{overflow:hidden;text-overflow:ellipsis;display:flex;
+  flex-direction:column;gap:1px;line-height:1.15}
+#titulo-barra .nome{font-weight:700;font-size:14.5px;letter-spacing:-.02em;color:var(--fg)}
+#titulo-barra .sub{font-weight:500;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--fraco)}
 #painel-chamados,#painel-config{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0}
 
 /* uma linha por chamado: a barra só navega */
 .linha-chamado{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:3px;
   background:none;border:0;color:var(--fg);cursor:pointer;padding:8px 10px;border-radius:8px;
   letter-spacing:-.01em;transition:background .12s;text-align:left}
-.lch-topo{display:flex;align-items:center;gap:9px;font:600 13px/1.2 inherit}
+.lch-topo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13px;line-height:1.2}
 /* O subtítulo é o que faz `UND-1638` significar algo: código sozinho não diz o que é o chamado. */
-.lch-sub{font:400 11px/1.35 inherit;color:var(--fraco);padding-left:16px;
+.lch-sub{font-weight:400;font-size:11px;line-height:1.35;color:var(--fraco);padding-left:16px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lch-sub.sem{opacity:.6;font-style:italic}
 .linha-chamado.ativo .lch-sub{color:rgba(255,255,255,.82)}
 .linha-chamado:hover{background:var(--bg)}
 .linha-chamado.ativo{background:var(--acento);color:#fff}
 .lch-id{flex:1 1 auto;text-align:left}
-.lch-repos{font:400 11px/1 inherit;color:var(--fraco);background:var(--linha);padding:3px 7px;
+.lch-repos{font-weight:400;font-size:11px;line-height:1;color:var(--fraco);background:var(--linha);padding:3px 7px;
   border-radius:20px;flex:0 0 auto}
 .linha-chamado.ativo .lch-repos{background:rgba(255,255,255,.22);color:#fff}
 .linha-chamado.ativo .pino-repo{box-shadow:0 0 0 1.5px rgba(255,255,255,.65)}
-.linha-chamado .ocultar{opacity:.4;color:var(--fraco);font:400 15px/1 inherit;padding:1px 5px;
+.linha-chamado .ocultar{opacity:.4;color:var(--fraco);font-weight:400;font-size:15px;line-height:1;padding:1px 5px;
   border-radius:5px;transition:opacity .12s,background .12s,color .12s;flex:0 0 auto}
 .linha-chamado:hover .ocultar{opacity:1}
 .linha-chamado.ativo .ocultar{opacity:.75}
@@ -59,14 +67,14 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 /* engrenagem no pé */
 #pe-barra{flex:0 0 auto;border-top:1px solid var(--linha);padding:8px 10px;background:var(--painel)}
 #btn-config{width:100%;display:flex;align-items:center;gap:9px;background:none;border:0;
-  color:var(--fraco);cursor:pointer;padding:8px 10px;border-radius:8px;font:600 12px/1.2 inherit;
+  color:var(--fraco);cursor:pointer;padding:8px 10px;border-radius:8px;font-weight:600;font-size:12px;line-height:1.2;
   transition:background .12s,color .12s}
 #btn-config:hover{background:var(--bg);color:var(--fg)}
 #btn-config.ativa{background:var(--bg);color:var(--fg)}
 #btn-config .engrenagem{font-size:14px;line-height:1}
 
 #ocultos{margin:4px 0 0;padding-top:8px;border-top:1px solid var(--linha)}
-.conta-ocultos{background:none;border:0;color:var(--fraco);cursor:pointer;font:11px inherit;
+.conta-ocultos{background:none;border:0;color:var(--fraco);cursor:pointer;font-size:11px;
   padding:5px 8px;border-radius:6px;display:flex;align-items:center;gap:7px;width:100%}
 .conta-ocultos:hover{background:var(--bg);color:var(--fg)}
 .conta-ocultos::before{content:'';width:0;height:0;border:4px solid transparent;border-left-color:currentColor;
@@ -77,8 +85,8 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 .lista-ocultos button{width:100%;display:flex;flex-direction:column;gap:1px;background:none;
   border:0;color:var(--fraco);cursor:pointer;text-align:left;padding:4px 7px;border-radius:6px;
   font:inherit}
-.oc-id{font:600 11.5px/1.2 inherit}
-.oc-sub{font:400 10px/1.3 inherit;opacity:.75;overflow:hidden;text-overflow:ellipsis;
+.oc-id{font-weight:600;font-size:11.5px;line-height:1.2}
+.oc-sub{font-weight:400;font-size:10px;line-height:1.3;opacity:.75;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;max-width:100%}
 .lista-ocultos button:hover{background:var(--bg);color:var(--acento)}
 .lista-ocultos button .oc-id::after{content:' ↩';opacity:.5}
@@ -90,15 +98,16 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
   color:var(--fg);transition:background .12s,border-color .12s}
 .item-config:hover{background:var(--bg)}
 .item-config.ativo{background:var(--bg);border-color:var(--acento)}
-.item-config .rot{font:600 13px/1.2 inherit}
-.item-config .res{font:400 11px/1.35 inherit;color:var(--fraco)}
+.item-config .rot{font-weight:600;font-size:13px;line-height:1.2}
+.item-config .res{font-weight:400;font-size:11px;line-height:1.35;color:var(--fraco)}
 .item-config .cam{font:10px/1.3 ui-monospace,monospace;color:var(--fraco);opacity:.7;overflow-wrap:anywhere}
 
 /* cabeçalho fino no topo do conteúdo: só identidade e a ação */
 #cabecalho{position:sticky;top:0;z-index:3;background:var(--bg);display:flex;align-items:center;
   gap:10px;padding:14px 0 10px;border-bottom:1px solid var(--linha)}
-.cab-id{font:700 15px/1.2 inherit;letter-spacing:-.015em;flex:0 0 auto}
-.cab-titulo{font:400 12px/1.4 inherit;color:var(--fraco);flex:1 1 auto;min-width:0;
+/* O cabeçalho é a única coisa que diz EM QUE você está mexendo: era menor que o texto do diff. */
+.cab-id{font-weight:700;font-size:19px;line-height:1.2;letter-spacing:-.02em;flex:0 0 auto}
+.cab-titulo{font-weight:500;font-size:14px;line-height:1.35;color:var(--fg);opacity:.86;flex:1 1 auto;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #cabecalho .recarregar{flex:0 0 auto}
 
@@ -114,7 +123,7 @@ body.trilha-recolhida #trilha-toggle{transform:rotate(180deg)}
 body.trilha-recolhida #trilha-corpo{display:none}
 
 .tr-secao{margin-bottom:20px}
-.tr-titulo{font:600 9px/1 inherit;text-transform:uppercase;letter-spacing:.12em;color:var(--fraco);
+.tr-titulo{font-weight:600;font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.12em;color:var(--fraco);
   margin-bottom:9px}
 .tr-chips{display:flex;flex-direction:column;gap:4px}
 .chip{display:flex;align-items:center;gap:7px;background:var(--bg);border:1px solid var(--linha);
@@ -158,19 +167,19 @@ body.trilha-recolhida #trilha-corpo{display:none}
 .tr-estagio.e-bloqueado{background:var(--erro)}
 .tr-estagio.e-cancelado{background:var(--fraco);opacity:.45}
 .tr-estagio.e-desconhecido{background:transparent;border:1px solid var(--linha)}
-.tr-quem{font:400 10px/1.3 inherit;color:var(--fraco);align-self:center}
-.tr-linear{display:block;font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.08em;
+.tr-quem{font-weight:400;font-size:10px;line-height:1.3;color:var(--fraco);align-self:center}
+.tr-linear{display:block;font-weight:700;font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.08em;
   color:#fff;background:var(--acento);padding:7px 9px;border-radius:7px;text-decoration:none;
   text-align:center;transition:opacity .12s}
 .tr-linear:hover{opacity:.85}
-.tr-nota{font:10px/1.4 inherit;color:var(--fraco);opacity:.8;margin-top:6px}
+.tr-nota{font-size:10px;line-height:1.4;color:var(--fraco);opacity:.8;margin-top:6px}
 .tr-carregando{padding:2px 0}
 
 /* recarregar como último item da trilha */
 .tr-pe{margin-top:22px;padding-top:12px;border-top:1px solid var(--linha)}
 .tr-recarregar{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;
   background:none;border:1px solid var(--linha);color:var(--fraco);cursor:pointer;padding:8px 10px;
-  border-radius:8px;font:600 11px inherit;transition:border-color .12s,color .12s}
+  border-radius:8px;font-weight:600;font-size:11px;transition:border-color .12s,color .12s}
 .tr-recarregar:hover{border-color:var(--acento);color:var(--fg)}
 .tr-cog{font-size:13px;line-height:1;display:inline-block}
 .tr-recarregar.girando .tr-cog{animation:gira .8s linear infinite}
@@ -187,7 +196,7 @@ body.trilha-recolhida #trilha-corpo{display:none}
 .tl-seta{margin-left:auto;opacity:.45;font-size:10px}
 
 /* PRs abertas na trilha */
-.tr-conta{font:400 9px/1 inherit;text-transform:none;letter-spacing:0;color:var(--fraco);opacity:.8}
+.tr-conta{font-weight:400;font-size:9px;line-height:1;text-transform:none;letter-spacing:0;color:var(--fraco);opacity:.8}
 .tr-pr{display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:7px;text-decoration:none;
   color:var(--fraco);font:11px/1.35 ui-monospace,monospace;transition:background .12s,color .12s}
 .tr-pr:hover{background:var(--bg);color:var(--fg)}
@@ -202,7 +211,7 @@ body.trilha-recolhida #trilha-corpo{display:none}
 .tr-pr-seta{opacity:.4;font-size:9px;flex:0 0 auto}
 .tr-pr.so-busca{border-left:2px solid var(--aviso);padding-left:6px}
 .tr-pr.so-linear{border-left:2px solid var(--acento);padding-left:6px}
-.tr-sem-pr{font:11px/1.4 inherit;color:var(--erro);padding:5px 8px;overflow-wrap:anywhere}
+.tr-sem-pr{font-size:11px;line-height:1.4;color:var(--erro);padding:5px 8px;overflow-wrap:anywhere}
 
 /* o veredito de uma linha, no topo do conteúdo */
 .veredito{font:12px/1.5 -apple-system,system-ui,sans-serif;color:var(--fraco);padding:14px 0 0}
@@ -213,9 +222,9 @@ body.trilha-recolhida #trilha-corpo{display:none}
 main{overflow-y:auto;padding:0 22px 60px;min-height:0}
 main>.aviso{padding:34px 22px}
 .recarregar{background:var(--painel);border:1px solid var(--linha);color:var(--fg);padding:6px 12px;
-  border-radius:8px;cursor:pointer;font:600 11px inherit;transition:border-color .12s}
+  border-radius:8px;cursor:pointer;font-weight:600;font-size:11px;transition:border-color .12s}
 .recarregar:hover{border-color:var(--acento)}
-.selo{font:600 11px/1 inherit;padding:6px 11px;border-radius:20px;border:1px solid var(--linha);
+.selo{font-weight:600;font-size:11px;line-height:1;padding:6px 11px;border-radius:20px;border:1px solid var(--linha);
   color:var(--fraco);white-space:nowrap;transition:opacity .15s}
 .selo:hover{opacity:.8}
 .selo.pr-sem-pr{background:var(--rem);color:var(--erro);border-color:transparent}
@@ -223,8 +232,8 @@ main>.aviso{padding:34px 22px}
 .selo.pr-mergeado{background:var(--add);color:var(--ok);border-color:transparent}
 .selo.pr-pr-fechada{background:var(--linha);color:var(--fraco);border-color:transparent}
 .selo.pr-carregando{opacity:.55}
-h3.secao{font:600 11px/1 inherit;text-transform:uppercase;letter-spacing:.11em;color:var(--fraco);
-  margin:26px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--linha)}
+h3.secao{font-weight:600;font-size:11px;line-height:1;text-transform:uppercase;letter-spacing:.11em;
+  color:var(--fraco);margin:22px 0 10px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 /* ── cartões: 4 por linha, compactos ──────────────────────────────────────
    Recolhido é etiqueta + título. O detalhe desce para o corpo porque em 4 colunas
    não cabe na mesma linha. Abre sozinho o que pede ação. */
@@ -263,7 +272,7 @@ details.check[open]>.linha1::before{transform:rotate(90deg)}
 .st-atencao .tag{background:var(--erro);color:#fff}
 .st-aviso .tag{background:var(--aviso);color:#fff}
 .st-ok .tag{background:var(--ok);color:#fff}
-.linha1 .titulo{font:600 11.5px/1.3 inherit;flex:1 1 auto;min-width:0;
+.linha1 .titulo{font-weight:600;font-size:11.5px;line-height:1.3;flex:1 1 auto;min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .corpo-check{border-top:1px solid var(--linha);padding:8px 12px 10px}
@@ -271,14 +280,14 @@ details.check[open]>.linha1::before{transform:rotate(90deg)}
 .corpo-check ul{margin:0;padding-left:18px;color:var(--fraco);font-size:12px}
 .corpo-check li{margin:3px 0;font-family:ui-monospace,monospace;word-break:break-word}
 /* opção que só aparece no hover é opção que ninguém acha: fica visível, apagada, sempre */
-.tirar{background:none;border:0;color:var(--fraco);cursor:pointer;font:400 14px/1 inherit;
+.tirar{background:none;border:0;color:var(--fraco);cursor:pointer;font-weight:400;font-size:14px;line-height:1;
   padding:0 3px;border-radius:4px;flex:0 0 auto;opacity:.45}
 .check:hover .tirar{opacity:1}
 .tirar:hover{background:var(--rem);color:var(--erro)}
 
 .acoes{display:flex;gap:6px;margin:12px 0 0;flex-wrap:wrap}
 .acoes button{background:var(--painel);border:1px solid var(--linha);color:var(--fg);padding:5px 11px;
-  border-radius:6px;cursor:pointer;font:12px inherit}
+  border-radius:6px;cursor:pointer;font-size:12px}
 .acoes button:hover{border-color:var(--acento)}
 pre.saida{background:var(--painel);border:1px solid var(--linha);border-radius:8px;padding:12px;
   overflow-x:auto;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;margin:12px 0 0}
@@ -309,7 +318,7 @@ details.arq>summary{padding:9px 12px;cursor:pointer;background:var(--painel);dis
 .alca::after{content:'';position:absolute;inset:0 -4px;}
 .alca:hover,.alca.arrastando{background:var(--acento)}
 body.arrastando{user-select:none;cursor:col-resize}
-.col h4{margin:0;padding:5px 10px;font:10px/1.4 inherit;text-transform:uppercase;letter-spacing:.08em;
+.col h4{margin:0;padding:5px 10px;font-size:10px;line-height:1.4;text-transform:uppercase;letter-spacing:.08em;
   color:var(--fraco);border-bottom:1px solid var(--linha);position:sticky;top:0;background:var(--painel)}
 .l{display:flex;font:12px/1.5 ui-monospace,monospace;white-space:pre}
 .l .n{flex:0 0 44px;text-align:right;padding-right:10px;color:var(--fraco);user-select:none}
@@ -326,7 +335,7 @@ body.arrastando{user-select:none;cursor:col-resize}
 .lacuna{background:var(--painel);color:var(--fraco);font-style:italic;border-top:1px solid var(--linha);
   border-bottom:1px solid var(--linha)}
 .lacuna code{opacity:.75}
-.inteiro{background:none;border:0;color:var(--acento);cursor:pointer;font:11px inherit;text-decoration:underline;padding:0}
+.inteiro{background:none;border:0;color:var(--acento);cursor:pointer;font-size:11px;text-decoration:underline;padding:0}
 /* ── esqueleto de carregamento ──────────────────────────────────────────────
    Bloco na FORMA do que está chegando, não a palavra "carregando": o texto não
    diz quanto vem nem onde, e a tela pula quando o conteúdo entra. */
@@ -361,7 +370,8 @@ body.arrastando{user-select:none;cursor:col-resize}
   border:1px solid var(--linha);border-radius:9px;padding:14px 16px;resize:vertical;
   font:12px/1.65 ui-monospace,SFMono-Regular,monospace;tab-size:2}
 #editor:focus{outline:none;border-color:var(--acento)}
-.carimbo{color:var(--fraco);font-size:11px;margin-left:auto}
+.carimbo{font-weight:400;font-size:10.5px;letter-spacing:0;text-transform:none;color:var(--fraco);
+  opacity:.9}
 #toast{position:fixed;bottom:18px;right:18px;background:var(--acento);color:#fff;padding:9px 15px;
   border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;transform:translateY(8px);
   transition:opacity .18s,transform .18s;pointer-events:none}
@@ -376,7 +386,7 @@ body.arrastando{user-select:none;cursor:col-resize}
    sem isso o único retorno é a tela mudar lá na frente, e a pessoa clica de novo no meio. */
 .tr-agente{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;
   background:var(--acento);border:1px solid var(--acento);color:#fff;border-radius:7px;
-  padding:7px 9px;font:600 11.5px/1 inherit;cursor:pointer;margin-bottom:5px}
+  padding:7px 9px;font-weight:600;font-size:11.5px;line-height:1;cursor:pointer;margin-bottom:5px}
 .tr-agente:hover{filter:brightness(1.07)}
 .tr-agente.rodando{background:var(--painel);border-color:var(--linha);color:var(--fg);cursor:default}
 .giro{width:11px;height:11px;border:2px solid var(--linha);border-top-color:var(--acento);
@@ -391,14 +401,14 @@ body.arrastando{user-select:none;cursor:col-resize}
 .pa-titulo{font:700 9px/1 -apple-system,system-ui,sans-serif;text-transform:uppercase;
   letter-spacing:.06em;color:var(--fraco)}
 .pa-passo{flex:1 1 auto;font:400 10px/1 ui-monospace,monospace;color:var(--fraco)}
-.pa-fechar{background:none;border:0;color:var(--fraco);cursor:pointer;font:400 15px/1 inherit;
+.pa-fechar{background:none;border:0;color:var(--fraco);cursor:pointer;font-weight:400;font-size:15px;line-height:1;
   padding:0 3px;border-radius:4px}
 .pa-fechar:hover{background:var(--rem);color:var(--erro)}
 .pa-linhas{max-height:242px;overflow-y:auto;padding:6px 10px 8px}
 .pa-linha{font:400 11px/1.45 ui-monospace,monospace;color:var(--fg);padding:2px 0;
   border-top:1px solid transparent;word-break:break-word}
 .pa-linha code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;
-  padding:0 4px;font:600 9.5px/1.5 inherit;color:var(--fraco)}
+  padding:0 4px;font-weight:600;font-size:9.5px;line-height:1.5;color:var(--fraco)}
 .pa-linha.inicio{color:var(--fraco)}
 .pa-linha.fim{color:var(--ok);font-weight:600}
 .pa-linha.erro{color:var(--erro);font-weight:600}
@@ -423,7 +433,7 @@ body.arrastando{user-select:none;cursor:col-resize}
 .fm-selo.s-indefinido{background:var(--erro);color:#fff}
 .fm-onde{font:500 10px/1.3 ui-monospace,monospace;color:var(--fg);min-width:0;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fm-conta{margin-top:5px;font:400 10px/1.3 inherit;color:var(--fraco)}
+.fm-conta{margin-top:5px;font-weight:400;font-size:10px;line-height:1.3;color:var(--fraco)}
 .fm-conta b{color:var(--erro);font-weight:600}
 .fm-trilha{display:flex;gap:3px;margin-top:6px}
 .fm-cel{flex:1 1 0;min-width:0;height:7px;border:0;border-radius:3px;padding:0;cursor:pointer;
@@ -442,3 +452,12 @@ body.arrastando{user-select:none;cursor:col-resize}
   border-left-color:var(--fraco);transition:transform .15s;transform-origin:1.5px 50%;flex:0 0 auto}
 .tr-dobra[open] > summary::before{transform:rotate(90deg)}
 .tr-dobra > summary:hover{color:var(--fg)}
+/* O que o gh sabe quando ninguém decidiu: pista, e rotulada como pista. */
+.fm-pista{margin-top:4px;font-weight:400;font-size:10px;line-height:1.3;color:var(--aviso)}
+
+/* Agente no topo: a trilha pode estar recolhida, e é no centro que o olho está. */
+.cab-agente{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:4px 9px;border-radius:20px;
+  font:600 10.5px/1 -apple-system,system-ui,sans-serif;background:var(--painel);
+  border:1px solid var(--linha);color:var(--acento);white-space:nowrap}
+.cab-agente.fim{color:var(--ok)}
+.cab-agente.erro{color:var(--erro)}

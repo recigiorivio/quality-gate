@@ -203,7 +203,9 @@ async function abrirChamado(chamado) {
   cab.hidden = false;
   cab.innerHTML = `
     <span class="cab-id">${chamado}</span>
-    <span class="cab-titulo" id="cab-titulo">${esq('esq-linha esq-l2')}</span>`;
+    <span class="cab-titulo" id="cab-titulo">${esq('esq-linha esq-l2')}</span>
+    <span id="cab-agente"></span>`;
+  redesenharAgenteNoTopo();
 
   const trilha = document.getElementById('trilha');
   trilha.hidden = false;
@@ -367,6 +369,7 @@ async function abrir(chip) {
   api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref, chamado: atual.chamado }).then(d => {
     if (token !== geracao) { return; }
     atual.base = d.base;
+    atual.dados = d;
     montarArquivos(d);
     marcarCarimbo(d);
   });
@@ -396,6 +399,12 @@ async function abrir(chip) {
   api('/api/qualidade-remoto', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
     if (token !== geracao) { return; }
     itensDoAtual.remotos = r.itens;
+    // O `gh` só responde depois, e é ele que sabe o estado da PR: sem redesenhar, a faixa ficava
+    // dizendo "não decidido" com o cartão de mesclagem ao lado já dizendo que a PR entrou.
+    atual.pr = r.prBase ? { numero: r.prBase.number, estado: r.prBase.state } : null;
+    if (atual.dados) {
+      desenharFaixaMerge(atual.dados);
+    }
     pintarAbasDoAtual(token);
   });
 }
@@ -551,6 +560,10 @@ function desenharFaixaMerge(d) {
   const repos = c?.repos || [];
   const estado = d.via === 'local' ? 'indefinido' : (d.mesclado ? 'mesclado' : 'aberto');
   const selo = { mesclado: 'mesclado', aberto: 'aberto', indefinido: 'não decidido' }[estado];
+  // Sem decisão, o que o `gh` sabe entra como pista — declarada como pista, não como decisão.
+  const pista = estado === 'indefinido' && atual?.pr
+    ? `gh: PR #${atual.pr.numero} ${atual.pr.estado === 'MERGED' ? 'mesclada' : atual.pr.estado.toLowerCase()}`
+    : '';
   const feitos = repos.filter(r => r.situacao === 'resolvido').length;
   const semDecisao = repos.filter(r => !r.situacao).length;
   const celulas = repos.map(r => {
@@ -566,6 +579,7 @@ function desenharFaixaMerge(d) {
       <span class="fm-selo s-${estado}">${selo}</span>
       <span class="fm-onde">${esc(d.baseNome || (d.base || '').slice(0, 8))}</span>
     </div>
+    ${pista ? `<div class="fm-pista">${esc(pista)} — ninguém decidiu ainda</div>` : ''}
     <div class="fm-trilha">${celulas}</div>
     <div class="fm-conta">${feitos} de ${repos.length} mesclados${
       semDecisao ? ` · <b>${semDecisao} sem decisão</b>` : ''}</div>`;
@@ -649,6 +663,7 @@ function escutarEventos() {
         ? { rodando: null, passos: 0 }
         : { rodando: dados.chamado, passos: dados.passo || 0 };
       redesenharEstado();
+      redesenharAgenteNoTopo(dados.fase === 'fim' ? dados : null);
       painelAgente(dados.texto || '', dados.fase === 'fim' ? (dados.ok ? 'fim' : 'erro') : '', dados.ferramenta || '');
       if (dados.fase === 'fim') {
         pararBotaoAgente();
@@ -703,6 +718,26 @@ function quando(iso) {
     : d.toLocaleDateString('pt-BR')}`;
 }
 
+// A trilha pode estar recolhida e o olho está no centro: o estado da corrida também vive no topo.
+function redesenharAgenteNoTopo(fim = null) {
+  const alvo = document.getElementById('cab-agente');
+  if (!alvo) { return; }
+  if (estadoAgente.rodando) {
+    alvo.className = 'cab-agente';
+    alvo.innerHTML = `<span class="giro" aria-hidden="true"></span>agente decidindo${
+      estadoAgente.passos ? ` · passo ${estadoAgente.passos}` : ''}`;
+    return;
+  }
+  if (fim) {
+    alvo.className = `cab-agente ${fim.ok ? 'fim' : 'erro'}`;
+    alvo.textContent = fim.ok ? `✓ agente terminou em ${fim.segundos}s` : '✗ agente falhou';
+    setTimeout(() => { if (!estadoAgente.rodando) { alvo.innerHTML = ''; alvo.className = ''; } }, 20000);
+    return;
+  }
+  alvo.innerHTML = '';
+  alvo.className = '';
+}
+
 function redesenharEstado() {
   const alvo = document.getElementById('tr-estado');
   const c = chamados.find(x => x.chamado === atual?.chamado);
@@ -720,6 +755,9 @@ async function pedirAoAgente(chamado) {
     b.classList.add('rodando');
     b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>agente decidindo…</span>';
   }
+  estadoAgente = { rodando: chamado, passos: 0 };
+  redesenharEstado();
+  redesenharAgenteNoTopo();
   painelAgente(`pedindo ao agente para decidir a comparação de ${chamado}…`, 'inicio');
   const r = await api('/api/agente', { chamado });
   if (!r.ok) {

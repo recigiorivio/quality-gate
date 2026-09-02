@@ -19,7 +19,8 @@ export function pagina(esqueleto, versao = '') {
 <link rel="stylesheet" href="/estilo.css?v=${versao}">
 </head><body>
 <aside>
-  <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span><span>Magias do Mago</span></h1>
+  <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span>
+    <span><span class="nome">Magias do Mago</span><span class="sub">conferência por chamado</span></span></h1>
   <div id="painel-chamados">
     <div id="lista" aria-busy="true">
       <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>

@@ -386,6 +386,23 @@ class Servidor {
         return null;
     }
 
+    // A branch de fato comparada pode não ser a que tem o nome do chamado: quando a decisão é por
+    // uma PR, é a branch DELA. E `decididos` é o que separa "calculado" de "no palpite".
+    enriquecerDecisoes(lista) {
+        const decisoes = comparacao.atuais();
+        for (const c of lista) {
+            for (const r of c.repos) {
+                const dec = decisoes[`${c.chamado}|${r.projeto}`];
+                r.branch = dec?.branch || c.chamado;
+                r.situacao = dec?.situacao || null;
+                r.pr = dec?.pr || null;
+                r.decididoEm = dec?.em || null;
+            }
+            c.decididos = c.repos.filter(r => r.situacao).length;
+            c.calculadoEm = c.repos.map(r => r.decididoEm).filter(Boolean).sort().pop() || null;
+        }
+    }
+
     // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
     versaoDosAssets() {
         let maior = 0;
@@ -456,24 +473,16 @@ class Servidor {
                 // É leitura de arquivo local, então cabe aqui.
                 for (const c of lista) {
                     c.titulo = linear.doChamado(c.chamado)?.titulo || null;
-                    // A branch de fato comparada pode não ser a que tem o nome do chamado: quando o
-                    // agente decidiu por uma PR, é a branch DELA. O chip precisa dizer qual é.
-                    for (const r of c.repos) {
-                        const dec = comparacao.atuais()[`${c.chamado}|${r.projeto}`];
-                        r.branch = dec?.branch || c.chamado;
-                        r.situacao = dec?.situacao || null;
-                        r.pr = dec?.pr || null;
-                        r.decididoEm = dec?.em || null;
-                    }
-                    // Quanto do chamado está decidido: é isso que separa "calculado" de "no palpite".
-                    c.decididos = c.repos.filter(r => r.situacao).length;
-                    c.calculadoEm = c.repos.map(r => r.decididoEm).filter(Boolean).sort().pop() || null;
                 }
                 return { lista };
             }, 30000);
             // Os ocultos saem aqui, e nao na varredura: o Workspace responde o que existe, e o
             // que se escolhe ver e decisao da tela. Trocar isso esconderia repo esquecido do
             // proprio calculo que existe para achar repo esquecido.
+            // FORA do cache: a varredura dos repos é caríssima e vale 30 s, mas a decisão é um lookup
+            // em dicionário. Dentro do cache, uma decisão nova só aparecia 30 s depois — e a faixa
+            // de mesclagem ficava dizendo "não decidido" com o diff ao lado já mostrando a PR.
+            this.enriquecerDecisoes(dados.lista);
             return this.json(res, {
                 ...dados,
                 // Fora do `emCache`: o estado da corrida muda por segundo e não pode ficar em cache
