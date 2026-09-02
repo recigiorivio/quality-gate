@@ -37,6 +37,7 @@ export function pagina(esqueleto, versao = '') {
     </button>
   </footer>
 </aside>
+<div id="carga" aria-hidden="true"><div class="carga-fio"></div></div>
 <main>
   <div id="cabecalho" hidden></div>
   <div id="conteudo" class="aviso">Escolha um chamado à esquerda.</div>

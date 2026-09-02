@@ -4,7 +4,48 @@ import { realcar, novoEstado, linguagemDe } from './realce.js';
 // qualquer backtick ou ${} em comentário quebrava a página inteira — aconteceu duas vezes.
 
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const api = (r,p) => fetch(r + '?' + new URLSearchParams(p)).then(x => x.json());
+// Um indicador PRINCIPAL de carga, em vez de só esqueletos espalhados: barra fina no topo enquanto
+// houver pedido em voo, e o nome do que ainda falta. Os esqueletos dizem ONDE vai entrar conteúdo;
+// a barra diz SE a tela ainda está trabalhando — sem ela, com 5 pedidos em paralelo, não dava para
+// saber se o "resolvido" que apareceu era final ou se ainda vinha coisa.
+// `null` = conta na barra, mas não no texto: arquivo aberto e pontos são rápidos e só poluem.
+const NOME_DA_ROTA = {
+  '/api/chamados': 'chamados', '/api/arquivos': 'diff', '/api/arquivo': null,
+  '/api/qualidade': 'checagens', '/api/qualidade-remoto': 'GitHub', '/api/lint': 'lint',
+  '/api/pontos': null, '/api/prs': 'PRs', '/api/invalidar': null
+};
+const emVoo = new Map();
+let barraTimer = null;
+
+function marcarCarga() {
+  const barra = document.getElementById('carga');
+  const texto = document.getElementById('carga-texto');
+  if (!barra) { return; }
+  const nomes = [...new Set([...emVoo.values()].filter(Boolean))];
+  if (emVoo.size) {
+    clearTimeout(barraTimer);
+    barra.classList.add('ativa');
+    barra.classList.remove('fim');
+    if (texto) {
+      const visiveis = nomes.slice(0, 3).join(' · ') + (nomes.length > 3 ? ` +${nomes.length - 3}` : '');
+      texto.textContent = nomes.length ? `carregando ${visiveis}` : 'carregando…';
+    }
+  } else {
+    // Fecha a barra até o fim antes de sumir: barra que desaparece a 70% parece que quebrou.
+    barra.classList.add('fim');
+    barraTimer = setTimeout(() => { barra.classList.remove('ativa', 'fim'); }, 420);
+    if (texto) { texto.textContent = ''; }
+  }
+}
+
+const api = (r, p) => {
+  const id = Symbol(r);
+  emVoo.set(id, r in NOME_DA_ROTA ? NOME_DA_ROTA[r] : r.replace('/api/', ''));
+  marcarCarga();
+  return fetch(r + '?' + new URLSearchParams(p))
+    .then(x => x.json())
+    .finally(() => { emVoo.delete(id); marcarCarga(); });
+};
 // `ignorado` = a checagem não se aplica aqui. `indisponível` = ela deveria ter rodado e não rodou.
 const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar',
   ignorado:'ignorado', indisponivel:'indisponível',
@@ -204,7 +245,9 @@ async function abrirChamado(chamado) {
   cab.innerHTML = `
     <span class="cab-id">${chamado}</span>
     <span class="cab-titulo" id="cab-titulo">${esq('esq-linha esq-l2')}</span>
+    <span class="carga-texto" id="carga-texto"></span>
     <span id="cab-agente"></span>`;
+  marcarCarga();
   redesenharAgenteNoTopo();
 
   const trilha = document.getElementById('trilha');
