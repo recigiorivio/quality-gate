@@ -40,6 +40,16 @@ NÃO confira número de arquivos: o servidor confere ao final e mostra o que nã
 Só o chamado ${chamado}: não olhe, não decida e não grave nada de nenhum outro. Não rode teste de projeto. Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100.
 Responda em no máximo 3 linhas: quantos repos, quantos decididos, e alguma dúvida que ficou.`;
 
+// O modelo vem do default do CLI (~/.claude/settings.json): quem troca é o `/model`, e a corrida
+// herda. Ler aqui é o que impede a troca de ser invisível na tela.
+const MODELO_DA_SESSAO = () => {
+    try {
+        return JSON.parse(readFileSync(join(process.env.HOME, '.claude/settings.json'), 'utf8')).model || 'default do CLI';
+    } catch {
+        return 'default do CLI';
+    }
+};
+
 const PORTA = Number(process.env.PORT || 4100);
 const execFileAsync = promisify(execFile);
 
@@ -303,7 +313,10 @@ class Servidor {
         this.json(res, { ok: true, chamado, aviso: 'acompanhe pelo SSE' });
         // Inventário pronto no prompt: a primeira corrida gastou ~50 passos e 7 min, e mais da metade
         // era o agente levantando PRs e branches repo a repo — trabalho de máquina, não de julgamento.
-        this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: 0, texto: 'levantando PRs e branches dos repos…' });
+        this.avisar({
+            tipo: 'agente', fase: 'andando', chamado, passo: 0,
+            texto: `modelo ${MODELO_DA_SESSAO()} · esforço high — levantando PRs e branches dos repos…`
+        });
         this._inventario(chamado).then(inventario => this._rodarAgente(chamado, inventario, inicio));
     }
 
@@ -338,6 +351,10 @@ class Servidor {
     _rodarAgente(chamado, inventario, inicio) {
         const filho = spawn('claude', [
             '-p', PROMPT_COMPARACAO(chamado, inventario),
+            // `high` fixo, não o default da sessão: a tarefa é julgamento (desempatar PRs do mesmo dia,
+            // ver se um commit local já entrou por squash) e `xhigh`/`max` não melhoraram isso — só
+            // esticam a corrida, que a pessoa está olhando esperar.
+            '--effort', 'high',
             '--output-format', 'stream-json', '--verbose', '--max-turns', '60',
             '--allowedTools', 'Bash(node:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(cd:*)', 'Read', 'Grep', 'Glob'
         ], {

@@ -129,7 +129,9 @@ class Gate {
     // pelo canal de eventos. Sem isso ela mostraria o estado de antes do commit.
     tratarPostToolUse() {
         const comando = this.payload?.tool_input?.command;
-        if (typeof comando !== 'string' || !/\bgit\b[^|;&]*\b(commit|merge|rebase|checkout|switch|reset)\b/.test(comando)) {
+        // `add` entrou porque o passo 1.0 da rotina de fim põe em stage, e stage muda o diff: arquivo
+        // `??` que passa a ser rastreado só aparece na tela depois disso.
+        if (typeof comando !== 'string' || !/\bgit\b[^|;&]*\b(commit|merge|rebase|checkout|switch|reset|add|stash|restore)\b/.test(comando)) {
             this.liberar();
         }
         const projeto = this.projetoDo(comando, this.payload?.cwd);
