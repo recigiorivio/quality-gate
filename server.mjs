@@ -4,8 +4,8 @@
 // uso: npm start   (ou node server.mjs)   →   http://localhost:4100
 
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
-import { execFileSync, execFile } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync } from 'node:fs';
+import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { Diff, WORKSPACE } from './lib/diff.mjs';
@@ -17,6 +17,35 @@ import comparacao from './lib/comparacao.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
+
+// O prompt do agente, fixo. É a tarefa que a máquina não faz: num repo com 7 PRs do mesmo chamado,
+// seis mescladas e a aberta sendo outra, nenhuma regra local diz qual importa.
+const PROMPT_COMPARACAO = chamado => `Decida a comparação de diff correta de cada repo do chamado ${chamado} e grave. Nada além disso.
+
+A partir de /Users/recigiorivio/node_workspace:
+
+1. Repos do chamado:
+   node qualidade/ferramentas/contexto.mjs ${chamado} --json
+
+2. Em cada repo, as PRs que existem:
+   cd <repo> && gh pr list --search "${chamado} in:title" --state all --json number,state,headRefName,baseRefName,updatedAt,title
+
+3. Decida por repo:
+   - PR aberta ganha de PR mesclada (é onde está o trabalho de agora)
+   - todas mescladas: a de updatedAt mais recente, e --nota dizendo que as outras já entraram
+   - nenhuma PR: --stage
+   - PR mesclada mas com commit depois dela: --pr=N --aberto
+
+4. Grave (de volta em node_workspace):
+   node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que>"
+   ou
+   node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
+
+5. Confirme com número, repo por repo — não bater é decisão errada, não tela errada:
+   cd <repo> && gh pr view <N> --json files -q '.files | length'
+   curl -s "http://localhost:4100/api/arquivos?projeto=<repo>&chamado=${chamado}" | node -e "let t='';process.stdin.on('data',d=>t+=d).on('end',()=>console.log(JSON.parse(t).arquivos.length))"
+
+Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100 — ele relê as decisões sozinho; se um número não bater, o problema é a decisão, não o servidor. Responda em no máximo 3 linhas: quantos repos, quantos decididos, e o que não bateu.`
 
 const PORTA = Number(process.env.PORT || 4100);
 const execFileAsync = promisify(execFile);
@@ -262,6 +291,96 @@ class Servidor {
         };
     }
 
+    // Roda o agente de verdade (`claude -p`) para a única coisa que não dá para automatizar: decidir
+    // qual PR/branch é a comparação certa de cada repo. O prompt é FIXO aqui — o cliente só manda o
+    // ID, validado contra o padrão de chamado. Página local montando prompt seria injeção.
+    agente(chamado, res) {
+        if (!/^[A-Z]{2,5}-\d+$/.test(chamado || '')) {
+            return this.json(res, { ok: false, erro: 'ID de chamado inválido' });
+        }
+        if (this.agenteRodando) {
+            return this.json(res, { ok: false, erro: `já rodando para ${this.agenteRodando}` });
+        }
+        this.agenteRodando = chamado;
+        this.agentePassos = 0;
+        this.agenteDesde = Date.now();
+        this.registrar('agente', 'inicio', chamado);
+        const inicio = Date.now();
+        const filho = spawn('claude', [
+            '-p', PROMPT_COMPARACAO(chamado),
+            '--output-format', 'stream-json', '--verbose', '--max-turns', '60',
+            '--allowedTools', 'Bash(node:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(cd:*)', 'Read', 'Grep', 'Glob'
+        ], { cwd: WORKSPACE, stdio: ['ignore', 'pipe', 'pipe'] });
+
+        let resto = '';
+        let ultimoTexto = '';
+        let passos = 0;
+        filho.stdout.on('data', pedaco => {
+            resto += pedaco.toString();
+            const linhas = resto.split('\n');
+            resto = linhas.pop() || '';
+            for (const linha of linhas) {
+                const evento = this._doStream(linha);
+                if (!evento) {
+                    continue;
+                }
+                passos++;
+                this.agentePassos = passos;
+                ultimoTexto = evento.texto || ultimoTexto;
+                this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: passos, ...evento });
+            }
+        });
+        let erro = '';
+        filho.stderr.on('data', p => { erro += p.toString().slice(0, 2000); });
+        filho.on('error', e => {
+            this.agenteRodando = null;
+            this.agenteFim = { chamado, em: Date.now(), ok: false, passos };
+            this.avisar({ tipo: 'agente', fase: 'fim', chamado, ok: false, texto: `não consegui rodar o claude: ${e.message}` });
+        });
+        filho.on('close', codigo => {
+            this.agenteRodando = null;
+            this.agenteFim = { chamado, em: Date.now(), ok: codigo === 0, passos };
+            const segundos = Math.round((Date.now() - inicio) / 1000);
+            this.registrar('agente', codigo === 0 ? 'fim' : 'erro', `${chamado} em ${segundos}s`);
+            // O cache cai depois do agente: as decisões novas mudam base, alvo e as checagens.
+            this.invalidar({ chamado, silencioso: true });
+            this.avisar({
+                tipo: 'agente', fase: 'fim', chamado, ok: codigo === 0, segundos,
+                texto: codigo === 0 ? (ultimoTexto || 'terminou') : (erro.trim().split('\n')[0] || `saiu com código ${codigo}`)
+            });
+        });
+        return this.json(res, { ok: true, chamado, aviso: 'acompanhe pelo SSE' });
+    }
+
+    // Uma linha do stream-json em algo que caiba numa tela: ferramenta usada ou texto do assistente.
+    _doStream(linha) {
+        let e;
+        try {
+            e = JSON.parse(linha);
+        } catch {
+            return null;
+        }
+        if (e.type === 'assistant') {
+            for (const parte of e.message?.content || []) {
+                if (parte.type === 'text' && parte.text.trim()) {
+                    return { texto: parte.text.trim().slice(0, 400) };
+                }
+                if (parte.type === 'tool_use') {
+                    const cmd = parte.input?.command || parte.input?.file_path || parte.name;
+                    return { ferramenta: parte.name, texto: String(cmd).slice(0, 160) };
+                }
+            }
+            return null;
+        }
+        if (e.type === 'system' && e.subtype === 'init') {
+            return { texto: 'sessão do agente iniciada' };
+        }
+        if (e.type === 'result') {
+            return { texto: String(e.result || '').trim().slice(0, 400) };
+        }
+        return null;
+    }
+
     // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
     versaoDosAssets() {
         let maior = 0;
@@ -277,12 +396,13 @@ class Servidor {
 
     // Sem laço por arquivo: o Diff.listarArquivos já traz +/- de todos numa chamada só.
     listaDeArquivos(projeto, base, ref = '', chamado = null) {
-        const { diff: d, base: baseReal, via, decisao } = comparacao.resolver(projeto, ref, base, chamado);
+        const { diff: d, base: baseReal, via, decisao, erroDaDecisao } = comparacao.resolver(projeto, ref, base, chamado);
         return {
             projeto, branch: d.branch(), base: baseReal,
             baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
             comoSoube: d.comoSoube || null,
-            via, decisao: decisao ? { pr: decisao.pr ?? null, branch: decisao.branch, estado: decisao.estado ?? null } : null,
+            via, erroDaDecisao: erroDaDecisao || null,
+            decisao: decisao ? { pr: decisao.pr ?? null, branch: decisao.branch, estado: decisao.estado ?? null } : null,
             arquivos: d.listarArquivos(baseReal)
         };
     }
@@ -311,6 +431,9 @@ class Servidor {
                 return res.end('não encontrado');
             }
         }
+        if (url.pathname === '/api/agente') {
+            return this.agente(q.get('chamado'), res);
+        }
         if (url.pathname === '/api/eventos') {
             return this.eventos(req, res);
         }
@@ -331,11 +454,15 @@ class Servidor {
                     // A branch de fato comparada pode não ser a que tem o nome do chamado: quando o
                     // agente decidiu por uma PR, é a branch DELA. O chip precisa dizer qual é.
                     for (const r of c.repos) {
-                        const dec = comparacao.decisoes[`${c.chamado}|${r.projeto}`];
+                        const dec = comparacao.atuais()[`${c.chamado}|${r.projeto}`];
                         r.branch = dec?.branch || c.chamado;
                         r.situacao = dec?.situacao || null;
                         r.pr = dec?.pr || null;
+                        r.decididoEm = dec?.em || null;
                     }
+                    // Quanto do chamado está decidido: é isso que separa "calculado" de "no palpite".
+                    c.decididos = c.repos.filter(r => r.situacao).length;
+                    c.calculadoEm = c.repos.map(r => r.decididoEm).filter(Boolean).sort().pop() || null;
                 }
                 return { lista };
             }, 30000);
@@ -344,6 +471,14 @@ class Servidor {
             // proprio calculo que existe para achar repo esquecido.
             return this.json(res, {
                 ...dados,
+                // Fora do `emCache`: o estado da corrida muda por segundo e não pode ficar em cache
+                // de 30 s — a pessoa recarrega justamente para saber se o agente ainda está de pé.
+                agente: {
+                    rodando: this.agenteRodando || null,
+                    passos: this.agenteRodando ? (this.agentePassos || 0) : 0,
+                    desde: this.agenteRodando ? this.agenteDesde : null,
+                    ultimo: this.agenteFim || null
+                },
                 lista: dados.lista.filter(c => !this.ocultos.has(c.chamado)),
                 ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado)).map(c => c.chamado)
             });
@@ -367,11 +502,11 @@ class Servidor {
             return this.json(res, { ocultos: [...this.ocultos] });
         }
         if (url.pathname === '/api/arquivos') {
-            return this.json(res, this.emCache(`arquivos|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('base') || ''}|${q.get('chamado') || ''}`,
+            return this.json(res, this.emCache(`arquivos|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('base') || ''}|${q.get('chamado') || ''}|${comparacao.versao}`,
                 () => this.listaDeArquivos(q.get('projeto'), q.get('base'), q.get('ref') || '', q.get('chamado'))));
         }
         if (url.pathname === '/api/arquivo') {
-            const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}|${q.get('chamado') || ''}`;
+            const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}|${q.get('chamado') || ''}|${comparacao.versao}`;
             return this.json(res, this.emCache(chave, () => {
                 const { diff: d, base } = comparacao.resolver(q.get('projeto'), q.get('ref') || '', q.get('base'), q.get('chamado'));
                 return d.montarColunas(base, q.get('caminho'), {
@@ -424,7 +559,7 @@ class Servidor {
             return this.json(res, r);
         }
         if (url.pathname === '/api/qualidade') {
-            return this.json(res, this.emCache(`local|${q.get('projeto')}|${q.get('ref') || ''}`,
+            return this.json(res, this.emCache(`local|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('chamado') || ''}|${comparacao.versao}`,
                 () => {
                     // A mesma comparação do diff: base diferente aqui era o que fazia o cartão de
                     // cobertura discordar do que a tela mostrava logo abaixo dele.
@@ -438,7 +573,7 @@ class Servidor {
                 .then(valor => this.json(res, valor));
         }
         if (url.pathname === '/api/lint') {
-            return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('chamado') || ''}`,
+            return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('chamado') || ''}|${comparacao.versao}`,
                 () => this.lint(q.get('projeto'), q.get('ref') || '', q.get('chamado')))
                 .then(r => this.json(res, r));
         }

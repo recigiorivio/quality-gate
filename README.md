@@ -131,6 +131,40 @@ O rótulo de cada cartão diz o que aconteceu, e dois deles são fáceis de conf
 o aviso. Agora só o problema leva esse rótulo, e ele vem com contorno tracejado.
 
 ### Quem decide qual é o diff certo é o agente
+#### O botão que roda o agente
+
+`🧙 pedir ao agente` na trilha roda um `claude -p` de verdade, com o prompt **fixo no servidor** — o
+cliente só manda o ID, validado contra o padrão de chamado, porque página local montando prompt é
+injeção de prompt. As ferramentas dele são restritas a `Bash(node|gh|curl|cd)`, `Read`, `Grep` e
+`Glob`: sem Write, sem Edit, sem commit.
+
+A corrida leva minutos, então o clique produz sinal **na hora**: o botão vira giro, um console
+recebe cada passo pelo SSE (`stream-json` do CLI), e acima do botão fica o estado:
+
+| Estado | Quer dizer |
+|---|---|
+| `✗ não calculado` | a tela está no palpite local |
+| `◐ calculado em N de M repos` | falta decidir o resto |
+| `✓ pronto — M de M repos · HH:MM` | tudo decidido, e quando |
+| `⟳ agente rodando · passo N` | ainda de pé |
+
+O estado vem do servidor, não do navegador: recarregar a página no meio de uma corrida não perde o
+acompanhamento.
+
+Na primeira corrida real o agente **acertou o que eu tinha errado à mão**: `contas-service` era a PR
+#44 (eu gravei #42), `mimic` era a #77 (gravei #74) e `ai-browser-agents` era a #196, que eu não
+tinha decidido. Ele também explicou cada escolha na `--nota`, incluindo que a busca `in:title` do
+`gh` não devolve a PR do `jungle-monorepo`.
+
+E ele achou um bug meu do jeito mais direto possível: **matou e reiniciou o servidor**. O
+`Comparacao` lia o JSON uma vez, no import, então a decisão que ele acabava de gravar era invisível
+para o servidor vivo, a verificação não batia, e reiniciar era a saída. Agora ele relê pelo mtime, e
+essa `versao` entra nas chaves de cache — senão a resposta velha continuaria sendo servida. O prompt
+também proíbe reiniciar, mas a correção é a releitura; a proibição é só o cinto.
+
+Decisão que **não se aplica** (branch apagada, base que não existe naquele repo) não cai no local em
+silêncio: o carimbo diz `⚠ decisão ignorada: sem merge-base entre 'origin/stage' e 'UND-1971'`.
+
 
 A tela **não adivinha** qual comparação vale num repo. A rotina de fim de trabalho decide e grava em
 `comparacoes.json`; aqui só se obedece. Sem decisão, a tela usa o local e escreve

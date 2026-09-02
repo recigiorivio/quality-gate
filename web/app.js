@@ -47,6 +47,7 @@ let atual = null;
 let geracao = 0;
 let visao = 'chamados';
 let chamados = [];
+let estadoAgente = { rodando: null, passos: 0 };
 let prsDoChamado = [];
 let itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
 
@@ -126,6 +127,11 @@ async function carregarChamados() {
   const r = await api('/api/chamados', {});
   const ocultos = r.ocultos || [];
   chamados = r.lista || [];
+  // Recarregar a página no meio de uma corrida não pode perder o estado dela: ele vem do servidor.
+  estadoAgente = r.agente || { rodando: null, passos: 0 };
+  if (estadoAgente.rodando) {
+    marcarBotaoAgenteRodando();
+  }
   document.getElementById('lista').innerHTML = chamados.map(c => `
     <button class="linha-chamado ${c.chamado === (atual?.chamado) ? 'ativo' : ''}"
             data-c="${c.chamado}" onclick="abrirChamado('${c.chamado}')"
@@ -226,8 +232,13 @@ async function abrirChamado(chamado) {
       <div class="tr-carregando">${esqLinhas('l2', 'l1')}</div>
     </div>
     <div class="tr-pe">
+      <div class="tr-estado" id="tr-estado">${estadoDaComparacao(c)}</div>
+      <button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
+              title="roda o Claude para decidir a comparação certa de cada repo — leva minutos">
+        <span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>
+      </button>
       <button class="tr-recarregar" onclick="recarregarChamado(event,'${chamado}')"
-              title="derruba o cache dos ${c.repos.length} repos deste chamado, dos PRs e da lista">
+              title="só derruba o cache dos ${c.repos.length} repos deste chamado — instantâneo">
         <span class="tr-cog" aria-hidden="true">⚙</span><span>recarregar</span>
       </button>
     </div>`;
@@ -435,9 +446,10 @@ function marcarCarimbo(d) {
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
   // Comparação não definida é palpite, e palpite não anunciado foi o que fez a tela mostrar 0
   // arquivo em 8 repos onde as PRs mostravam de 1 a 65. Aqui ele é anunciado.
-  const fonte = d.via === 'local'
-    ? `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ comparação não definida`
-    : `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`;
+  const fonte = d.via !== 'local'
+    ? `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`
+    : `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ ${d.erroDaDecisao
+      ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`;
   c.textContent = `${d.arquivos.length} arquivo(s) · ${fonte}`
     + (d.via !== 'local' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
     + (d.via === 'local' && d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
@@ -577,12 +589,119 @@ function escutarEventos() {
       avisarNaTela('versão nova da tela — recarregando');
       return setTimeout(() => location.reload(), 400);
     }
+    if (dados.tipo === 'agente') {
+      const p = document.getElementById('pa-passo');
+      if (p && dados.passo) { p.textContent = `passo ${dados.passo}`; }
+      estadoAgente = dados.fase === 'fim'
+        ? { rodando: null, passos: 0 }
+        : { rodando: dados.chamado, passos: dados.passo || 0 };
+      redesenharEstado();
+      painelAgente(dados.texto || '', dados.fase === 'fim' ? (dados.ok ? 'fim' : 'erro') : '', dados.ferramenta || '');
+      if (dados.fase === 'fim') {
+        pararBotaoAgente();
+        painelAgente(dados.ok ? `terminou em ${dados.segundos}s — recarregando a tela` : 'terminou com erro',
+          dados.ok ? 'fim' : 'erro');
+        if (dados.ok) {
+          const c = atual?.chamado || dados.chamado;
+          carregarChamados().then(() => abrirChamado(c));
+        }
+      }
+      return;
+    }
     if (dados.tipo !== 'invalidado' || !atual) { return; }
     if (dados.projeto && dados.projeto !== atual.projeto) { return; }
     avisarNaTela(dados.projeto ? `${dados.projeto} mudou — recarregando` : 'cache limpo — recarregando');
     const chamado = atual.chamado;
     carregarChamados().then(() => abrirChamado(chamado));
   };
+}
+
+// Três estados, e a diferença entre eles é o que a pessoa precisa saber antes de clicar: o agente
+// ainda está de pé? já calculou? calculou TUDO? Antes só se descobria vendo a tela mudar (ou não).
+function estadoDaComparacao(c) {
+  if (estadoAgente.rodando === c.chamado) {
+    return `<span class="est rodando"><span class="giro"></span>agente rodando${
+      estadoAgente.passos ? ` · passo ${estadoAgente.passos}` : ''}</span>`;
+  }
+  const total = c.repos.length;
+  if (!c.decididos) {
+    return `<span class="est nada">✗ não calculado — a tela está no palpite local</span>`;
+  }
+  if (c.decididos < total) {
+    return `<span class="est parcial">◐ calculado em ${c.decididos} de ${total} repos${quando(c.calculadoEm)}</span>`;
+  }
+  return `<span class="est pronto">✓ pronto — ${total} de ${total} repos${quando(c.calculadoEm)}</span>`;
+}
+
+function quando(iso) {
+  if (!iso) { return ''; }
+  const d = new Date(iso);
+  const hoje = new Date().toDateString() === d.toDateString();
+  return ` · ${hoje ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleDateString('pt-BR')}`;
+}
+
+function redesenharEstado() {
+  const alvo = document.getElementById('tr-estado');
+  const c = chamados.find(x => x.chamado === atual?.chamado);
+  if (alvo && c) {
+    alvo.innerHTML = estadoDaComparacao(c);
+  }
+}
+
+// O clique tem que produzir sinal IMEDIATO: a corrida do agente leva minutos, e botão que não
+// responde na hora faz a pessoa clicar de novo (e o servidor recusa a segunda, o que parece quebrado).
+async function pedirAoAgente(chamado) {
+  const b = document.getElementById('btn-agente');
+  if (b?.classList.contains('rodando')) { return; }
+  if (b) {
+    b.classList.add('rodando');
+    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>agente decidindo…</span>';
+  }
+  painelAgente(`pedindo ao agente para decidir a comparação de ${chamado}…`, 'inicio');
+  const r = await api('/api/agente', { chamado });
+  if (!r.ok) {
+    painelAgente(r.erro || 'não consegui iniciar', 'erro');
+    pararBotaoAgente();
+  }
+}
+
+function marcarBotaoAgenteRodando() {
+  const b = document.getElementById('btn-agente');
+  if (b && !b.classList.contains('rodando')) {
+    b.classList.add('rodando');
+    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>agente decidindo…</span>';
+  }
+}
+
+function pararBotaoAgente() {
+  const b = document.getElementById('btn-agente');
+  if (b) {
+    b.classList.remove('rodando');
+    b.innerHTML = '<span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>';
+  }
+}
+
+// Console de progresso. Sem ele o único retorno seria a tela mudando lá na frente, sem explicação.
+function painelAgente(texto, classe = '', extra = '') {
+  let p = document.getElementById('painel-agente');
+  if (!p) {
+    p = document.createElement('div');
+    p.id = 'painel-agente';
+    p.innerHTML = `<header><span class="pa-titulo">agente</span>
+      <span class="pa-passo" id="pa-passo"></span>
+      <button class="pa-fechar" onclick="this.closest('#painel-agente').remove()">×</button></header>
+      <div class="pa-linhas" id="pa-linhas"></div>`;
+    document.body.appendChild(p);
+  }
+  const linhas = p.querySelector('#pa-linhas');
+  const linha = document.createElement('div');
+  linha.className = `pa-linha ${classe}`;
+  linha.innerHTML = extra ? `<code>${esc(extra)}</code> ${esc(texto)}` : esc(texto);
+  linhas.appendChild(linha);
+  while (linhas.children.length > 120) { linhas.firstChild.remove(); }
+  linhas.scrollTop = linhas.scrollHeight;
+  return p;
 }
 
 function avisarNaTela(texto) {
@@ -795,7 +914,7 @@ async function salvarConfig(chave) {
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
-  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto,
+  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto, pedirAoAgente,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.

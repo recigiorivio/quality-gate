@@ -366,3 +366,43 @@ body.arrastando{user-select:none;cursor:col-resize}
 /* Sem decisão do agente, a branch da 2ª linha é palpite: fica tracejada para não parecer fato. */
 .chip:not(:has(.chip-sit)) .chip-branch{border-bottom:1px dashed var(--linha);
   align-self:flex-start;opacity:.7}
+
+/* ── agente: botão com giro e console de progresso ────────────────────────
+   A corrida leva minutos. O clique acende o giro na hora e o console recebe cada passo pelo SSE —
+   sem isso o único retorno é a tela mudar lá na frente, e a pessoa clica de novo no meio. */
+.tr-agente{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;
+  background:var(--acento);border:1px solid var(--acento);color:#fff;border-radius:7px;
+  padding:7px 9px;font:600 11.5px/1 inherit;cursor:pointer;margin-bottom:5px}
+.tr-agente:hover{filter:brightness(1.07)}
+.tr-agente.rodando{background:var(--painel);border-color:var(--linha);color:var(--fg);cursor:default}
+.giro{width:11px;height:11px;border:2px solid var(--linha);border-top-color:var(--acento);
+  border-radius:50%;animation:girar .7s linear infinite;flex:0 0 auto}
+@keyframes girar{to{transform:rotate(360deg)}}
+
+#painel-agente{position:fixed;right:14px;bottom:14px;width:430px;max-width:calc(100vw - 28px);
+  background:var(--cartao);border:1px solid var(--linha);border-radius:9px;z-index:50;
+  box-shadow:0 8px 26px rgba(0,0,0,.16);overflow:hidden}
+#painel-agente header{display:flex;align-items:center;gap:8px;padding:7px 10px;
+  border-bottom:1px solid var(--linha);background:var(--painel)}
+.pa-titulo{font:700 9px/1 -apple-system,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--fraco)}
+.pa-passo{flex:1 1 auto;font:400 10px/1 ui-monospace,monospace;color:var(--fraco)}
+.pa-fechar{background:none;border:0;color:var(--fraco);cursor:pointer;font:400 15px/1 inherit;
+  padding:0 3px;border-radius:4px}
+.pa-fechar:hover{background:var(--rem);color:var(--erro)}
+.pa-linhas{max-height:242px;overflow-y:auto;padding:6px 10px 8px}
+.pa-linha{font:400 11px/1.45 ui-monospace,monospace;color:var(--fg);padding:2px 0;
+  border-top:1px solid transparent;word-break:break-word}
+.pa-linha code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;
+  padding:0 4px;font:600 9.5px/1.5 inherit;color:var(--fraco)}
+.pa-linha.inicio{color:var(--fraco)}
+.pa-linha.fim{color:var(--ok);font-weight:600}
+.pa-linha.erro{color:var(--erro);font-weight:600}
+
+/* Estado da comparação, antes do botão: dá para saber se o agente está de pé sem clicar em nada. */
+.tr-estado{margin:0 0 6px;min-height:14px}
+.est{display:flex;align-items:center;gap:5px;font:500 9.5px/1.35 -apple-system,system-ui,sans-serif}
+.est.pronto{color:var(--ok)}
+.est.parcial{color:var(--aviso)}
+.est.nada{color:var(--erro)}
+.est.rodando{color:var(--acento)}

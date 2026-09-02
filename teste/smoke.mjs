@@ -510,3 +510,17 @@ test('a tela obedece a decisão do agente, e declara quando não há decisão', 
     assert.equal(contraStage.diff.mesclado, true);
     rmSync(raiz, { recursive: true, force: true });
 });
+
+// `appendFileSync` ficou meses usado e não importado: `registrar` lançava, o catch engolia, e as
+// linhas DEPOIS dela no mesmo bloco nunca rodavam — foi assim que o fim da corrida do agente não
+// invalidava o cache nem avisava a tela. O log é a prova de que a função inteira rodou.
+test('registrar de fato escreve no gate.log', async () => {
+    const log = join(dirname(dirname(fileURLToPath(import.meta.url))), 'gate.log');
+    const antes = existsSync(log) ? readFileSync(log, 'utf8').length : 0;
+    // `ponto-remover` de um id inexistente loga e não muda nada — as outras rotas que logam têm
+    // efeito colateral (ocultar/mostrar chamado), e teste não pode mexer no que o usuário vê.
+    await pegar('/api/ponto-remover', { id: 'id-que-nao-existe-de-proposito' });
+    const depois = readFileSync(log, 'utf8');
+    assert.ok(depois.length > antes, 'a rota logou nada — registrar está engolindo erro');
+    assert.match(depois.trimEnd().split('\n').pop(), /\tponto-remover\tnao-encontrado\t/);
+});
