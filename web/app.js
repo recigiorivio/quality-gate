@@ -581,19 +581,28 @@ function linhaDeArquivo(a, aberto) {
   </details>`;
 }
 
+// Pasta de teste vai para o FIM e nasce recolhida: o teste é o que menos se lê na conferência, e
+// ocupando o topo empurrava o código para baixo da dobra. `spec`/`test`/`tests`/`__tests__`.
+const EH_TESTE = nome => /^(spec|specs|test|tests|__tests__|testes)$/i.test(nome);
+
 function renderNo(no, aberto, nivel) {
-  const pastas = [...no.pastas.entries()].map(([nome, filho]) => {
-    const [rotulo, alvo] = comprimir(nome, filho);
-    const qtd = totalDeArquivos(alvo);
-    return `<details class="pasta" ${aberto ? 'open' : ''} style="--nivel:${nivel}">
+  const pastas = [...no.pastas.entries()]
+    .sort(([a], [b]) => (EH_TESTE(a) - EH_TESTE(b)) || a.localeCompare(b))
+    .map(([nome, filho]) => {
+      const [rotulo, alvo] = comprimir(nome, filho);
+      const qtd = totalDeArquivos(alvo);
+      const teste = EH_TESTE(nome);
+      return `<details class="pasta ${teste ? 'de-teste' : ''}" ${aberto && !teste ? 'open' : ''} style="--nivel:${nivel}">
       <summary><span class="cam">${esc(rotulo)}</span>
         <span class="qtd-arq">${qtd}</span>
+        ${teste ? '<span class="selo-teste">teste</span>' : ''}
         <span class="mais">+${alvo.adicionadas}</span><span class="menos">-${alvo.removidas}</span></summary>
-      <div class="dentro">${renderNo(alvo, aberto, nivel + 1)}</div>
+      <div class="dentro">${renderNo(alvo, aberto && !teste, nivel + 1)}</div>
     </details>`;
-  }).join('');
+    }).join('');
+  const ehArquivoDeTeste = n => /(\.|-)(spec|test)\.[a-z]+$|^test_|_test\.[a-z]+$/i.test(n);
   const arquivos = no.arquivos
-    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .sort((a, b) => (ehArquivoDeTeste(a.nome) - ehArquivoDeTeste(b.nome)) || a.nome.localeCompare(b.nome))
     .map(a => linhaDeArquivo(a, aberto && totalDeArquivosGlobal <= 4))
     .join('');
   return pastas + arquivos;

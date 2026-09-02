@@ -525,3 +525,8 @@ body.arrastando{user-select:none;cursor:col-resize}
 .me-confere{background:var(--painel);color:var(--ok);font-weight:600}
 .me-pe{padding:10px 18px 14px;font-size:10.5px;color:var(--fraco);border-top:1px solid var(--linha)}
 .me-pe code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;padding:0 4px;font-size:10px}
+/* Pasta de teste: vai para o fim, nasce recolhida e se anuncia — quase nunca é o que se confere. */
+.pasta.de-teste > summary{opacity:.72}
+.pasta.de-teste > summary:hover{opacity:1}
+.selo-teste{font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.06em;
+  background:var(--linha);color:var(--fraco);border-radius:4px;padding:2px 4px}
