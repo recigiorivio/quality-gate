@@ -73,8 +73,11 @@ test('a casca HTML sobe e referencia o app', async () => {
     const { status, corpo } = await pegar('/');
     assert.equal(status, 200);
     assert.match(corpo, /<title>/);
-    assert.match(corpo, /src="\/app\.js"/);
+    assert.match(corpo, /src="\/app\.js\?v=\d+"/);
     assert.match(corpo, /window\.ESQUELETO = \[/);
+    // A versão não é enfeite: é ela que faz a aba aberta descobrir, pelo SSE, que o JS dela é velho.
+    // Uma aba antiga rodando código velho custou uma hora de "a tela está errada".
+    assert.match(corpo, /window\.VERSAO = '\d+'/);
 });
 
 test('os estáticos são servidos e o caminho não escapa da pasta web', async () => {
@@ -469,32 +472,41 @@ test('eslint só conta como camada se der para rodar', async () => {
     assert.deepEqual(semInstall, [], 'repo inexistente não pode declarar linter');
 });
 
-// A regra que fechou a discordância entre a tela e o GitHub: com PR, vale a comparação DELA; sem
-// PR, vale o local. Depois do merge a topologia colapsa (merge-base = ponta da branch) e o diff sai
-// vazio — era isso que fazia a tela mostrar 0 arquivo onde a PR mostrava 2, 4, 27 e 65.
-test('com PR a comparação é a da PR; sem PR, é a local', () => {
-    const { raiz, g } = repoDeTeste('comparacao');
+// A regra que fechou a discordância entre a tela e o GitHub. Automatizar não deu: num repo real
+// havia 7 PRs do mesmo chamado em 7 branches, seis mescladas e a aberta sendo outra. Então quem
+// decide é o agente, e o que se testa aqui é a obediência — e o AVISO quando ninguém decidiu.
+test('a tela obedece a decisão do agente, e declara quando não há decisão', () => {
+    const { raiz, g } = repoDeTeste('decisao');
     g('checkout', '-q', '-b', 'UND-1', 'stage');
     writeFileSync(join(raiz, 'a.txt'), 'base\nda branch\n');
     g('commit', '-qam', 'trabalho');
     const forkPoint = g('rev-parse', 'stage').trim();
     const head = g('rev-parse', 'UND-1').trim();
-    // a branch é mesclada: a partir daqui merge-base(UND-1, origin/stage) é a PRÓPRIA ponta
+    // mesclada: daqui em diante a topologia diz "nada a revisar", que é o palpite antigo
     g('checkout', '-q', 'stage');
     g('merge', '-q', '--no-ff', '-m', 'merge de UND-1', 'UND-1');
     g('update-ref', 'refs/remotes/origin/stage', 'stage');
 
-    const c = new Comparacao();
-    const local = c.resolver(raiz, 'UND-1');
-    assert.equal(local.via, 'local');
-    assert.equal(local.diff.listarArquivos(local.base).length, 0,
-        'sem PR, a topologia diz mesclado e não sobra arquivo — é o comportamento antigo');
+    const tmp = join(mkdtempSync(join(tmpdir(), 'qualidade-dec-')), 'comparacoes.json');
+    const c = new Comparacao(tmp);
+    const semDecisao = c.resolver(raiz, 'UND-1', null, 'UND-1');
+    assert.equal(semDecisao.via, 'local', 'sem decisão, a via tem que se declarar local');
+    assert.equal(semDecisao.diff.listarArquivos(semDecisao.base).length, 0);
 
-    c.cache[`${raiz}|UND-1`] = { base: forkPoint, head, numero: 7, estado: 'MERGED', destino: 'stage' };
-    const daPr = c.resolver(raiz, 'UND-1');
+    c.definir('UND-1', raiz, {
+        via: 'pr', pr: 7, base: forkPoint, head, destino: 'stage', situacao: 'aberto'
+    });
+    const daPr = c.resolver(raiz, 'UND-1', null, 'UND-1');
     assert.equal(daPr.via, 'pr');
-    assert.equal(daPr.baseNome ?? daPr.diff.baseNome, 'PR #7 → stage');
+    assert.equal(daPr.diff.baseNome, 'PR #7 → stage');
+    assert.equal(daPr.diff.mesclado, false, 'situacao=aberto não pode virar mesclado');
     assert.deepEqual(daPr.diff.listarArquivos(daPr.base).map(a => a.caminho), ['a.txt'],
-        'com PR, aparece o que a PR mostra');
+        'com decisão, aparece o que a PR mostra');
+
+    // e a situação é veredito do agente, não recálculo da ferramenta
+    c.definir('UND-1', raiz, { via: 'stage', branch: 'UND-1', base: 'origin/stage', situacao: 'resolvido' });
+    const contraStage = c.resolver(raiz, 'UND-1', null, 'UND-1');
+    assert.equal(contraStage.via, 'stage');
+    assert.equal(contraStage.diff.mesclado, true);
     rmSync(raiz, { recursive: true, force: true });
 });

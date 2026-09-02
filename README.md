@@ -130,29 +130,42 @@ O rótulo de cada cartão diz o que aconteceu, e dois deles são fáceis de conf
 `indisponível` dizia as duas coisas, e "não se aplica" com cara de problema treina a pessoa a ignorar
 o aviso. Agora só o problema leva esse rótulo, e ele vem com contorno tracejado.
 
-### Com PR, a comparação é a da PR
+### Quem decide qual é o diff certo é o agente
 
-**Quando existe PR, ela é a autoridade sobre a base.** A tela usa `baseRefOid…headRefOid` — a mesma
-comparação que o GitHub mostra. Sem PR, vale o local: branch local contra a base por topologia.
+A tela **não adivinha** qual comparação vale num repo. A rotina de fim de trabalho decide e grava em
+`comparacoes.json`; aqui só se obedece. Sem decisão, a tela usa o local e escreve
+`⚠ comparação não definida` no carimbo — porque **palpite não anunciado** foi o que criou o problema.
 
-Isso não é preferência, é conserto. Depois que a branch é mesclada,
-`merge-base(branch, origin/stage)` **é a própria ponta da branch**, então o diff sai vazio por
-construção. Medido no UND-1638, um chamado inteiro em stage:
+Automatizar foi tentado e falhou por um motivo concreto. Num chamado real havia **22 branches em 12
+repos** e, num único repo, **7 PRs em 7 branches**: seis mescladas e a aberta sendo outra. Nenhuma
+regra local distingue "a PR que importa" das outras. Pior, a topologia degrada exatamente quando
+mais se precisa dela: depois do merge, `merge-base(branch, origin/stage)` é a **própria ponta da
+branch**, então o diff sai vazio por construção.
 
-| Repo | A PR mostra | A tela mostrava | Agora |
+| Repo | A PR mostra | Topologia mostrava | Com a decisão |
 |---|---|---|---|
 | `crohc-view` | 1 | **0** | 1 |
-| `crohc-server` | 2 | **0** | 2 |
 | `migrate-mongo` | 4 | **0** | 4 |
-| `integrations-core` | 27 | **1** | 27 |
+| `integrations-core` | 3 (PR #856, aberta) | **1** (comparava com a #824, mesclada) | 3 |
 | `integrations-mimic` | 65 | **0** | 65 |
 
-9 de 9 batendo. A topologia adivinhava; a PR **tem a base gravada** e nunca precisou adivinhar.
+9 de 9 batendo depois de decidir. E a decisão carrega **o veredito**, não só a base:
 
-O `gh` é a única fonte desses dois oids e leva segundos, enquanto o diff é desenhado no passo
-instantâneo. Então o passo remoto **grava** a comparação em `bases-pr.json`: na primeira abertura de
-um repo a tela usa a topologia e se corrige sozinha quando a rede responde; da segunda em diante já
-abre certo. O cache é conveniência — sem ele a tela continua correta, só mais lenta.
+```bash
+node qualidade/ferramentas/comparacao.mjs definir UND-1638 integrations-core-rivio-one --pr=856 \
+  --nota="6 PRs mescladas antes; a aberta e a 856"
+node qualidade/ferramentas/comparacao.mjs listar UND-1638
+```
+
+| Fonte | Quando | Base usada |
+|---|---|---|
+| `--pr=N` | existe PR | `baseRefOid…headRefOid` — a mesma comparação do GitHub |
+| `--stage` | ainda não há PR | branch × `origin/stage` |
+| `--branch=X --base=Y` | base que não é a de sempre | o que você disser |
+
+`situacao` é `resolvido` ou `aberto`, e vem do estado da PR **a menos que** você diga o contrário com
+`--resolvido`/`--aberto`: PR mesclada com trabalho pendente depois dela é `aberto`, e só quem leu
+sabe disso.
 
 Uma comparação, um lugar: `lib/comparacao.mjs`. O diff, as checagens, a análise de AST e o lint pedem
 a base para ele. Cada um resolvendo a sua era o que fazia o cartão de cobertura discordar do diff

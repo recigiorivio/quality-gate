@@ -212,9 +212,13 @@ async function abrirChamado(chamado) {
                   ? `checkout em ${r.branchAtual}`
                   : `tem a branch ${chamado}, mas o checkout local está em ${r.branchAtual} — o diff usa a branch do chamado`}">
           <span class="pino-repo p-${r.pino || 'vazio'}"></span>
-          <span class="chip-nome">${r.projeto}</span>
+          <span class="chip-texto">
+            <span class="chip-nome">${r.projeto}</span>
+            <span class="chip-branch" title="branch comparada${r.pr ? ` — PR #${r.pr}` : ''}">${esc(r.branch || chamado)}${r.pr ? ` · #${r.pr}` : ''}</span>
+          </span>
+          ${r.situacao ? `<span class="chip-sit s-${r.situacao}" title="decidido pelo agente">${r.situacao === 'resolvido' ? '✓' : '●'}</span>` : ''}
           ${r.sujo ? `<span class="chip-sujo" title="${r.sujo} não commitado(s)">${r.sujo}✎</span>` : ''}
-          ${r.naBranch ? '' : `<span class="chip-fora" title="checkout local em ${r.branchAtual}">${r.branchAtual}</span>`}
+          ${r.naBranch || (r.branch && r.branch === r.branchAtual) ? '' : `<span class="chip-fora" title="o checkout local está em ${esc(r.branchAtual)}, não nesta branch">≠</span>`}
         </button>`).join('')}</div>
     </div>
     <div class="tr-secao" id="tr-prs">
@@ -332,7 +336,7 @@ async function abrir(chip) {
     <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>`;
   pintarAbasDoAtual(token);
 
-  api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref }).then(d => {
+  api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref, chamado: atual.chamado }).then(d => {
     if (token !== geracao) { return; }
     atual.base = d.base;
     montarArquivos(d);
@@ -343,7 +347,7 @@ async function abrir(chip) {
     itensDoAtual.locais = q.itens;
     pintarAbasDoAtual(token);
   });
-  api('/api/lint', { projeto: atual.projeto, ref: atual.ref }).then(r => {
+  api('/api/lint', { projeto: atual.projeto, ref: atual.ref, chamado: atual.chamado }).then(r => {
     if (token !== geracao) { return; }
     itensDoAtual.lint = [cartaoDoLint(r)];
     pintarAbasDoAtual(token);
@@ -365,27 +369,7 @@ async function abrir(chip) {
     if (token !== geracao) { return; }
     itensDoAtual.remotos = r.itens;
     pintarAbasDoAtual(token);
-    // A base da PR só é conhecida depois da rede. Quando ela chega e muda a comparação, o diff e as
-    // checagens desenhados com a topologia estão errados — redesenha os dois com a base certa.
-    if (r.baseNova) {
-      recarregarComparacao(token);
-    }
   });
-}
-
-async function recarregarComparacao(token) {
-  const [d, q, l] = await Promise.all([
-    api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref }),
-    api('/api/qualidade', { chamado: atual.chamado, projeto: atual.projeto, ref: atual.ref }),
-    api('/api/lint', { projeto: atual.projeto, ref: atual.ref })
-  ]);
-  if (token !== geracao) { return; }
-  atual.base = d.base;
-  montarArquivos(d);
-  marcarCarimbo(d);
-  itensDoAtual.locais = q.itens;
-  itensDoAtual.lint = [cartaoDoLint(l)];
-  pintarAbasDoAtual(token);
 }
 
 function pintarAbasDoAtual(token) {
@@ -449,8 +433,14 @@ function marcarCarimbo(d) {
   const c = document.getElementById('carimbo');
   if (!c) { return; }
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
-  c.textContent = `${d.arquivos.length} arquivo(s) · ${d.via === 'pr' ? '' : 'base '}${d.baseNome || (d.base || '').slice(0, 8)}`
-    + (d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
+  // Comparação não definida é palpite, e palpite não anunciado foi o que fez a tela mostrar 0
+  // arquivo em 8 repos onde as PRs mostravam de 1 a 65. Aqui ele é anunciado.
+  const fonte = d.via === 'local'
+    ? `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ comparação não definida`
+    : `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`;
+  c.textContent = `${d.arquivos.length} arquivo(s) · ${fonte}`
+    + (d.via !== 'local' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
+    + (d.via === 'local' && d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
     + (d.ref ? '' : '')
     + (d.doCache ? ` · do cache de ${quando}` : ' · lido agora');
 }
@@ -581,6 +571,12 @@ function escutarEventos() {
   fonte.onmessage = e => {
     let dados = {};
     try { dados = JSON.parse(e.data); } catch { return; }
+    // Reinício do servidor com app.js novo: a aba antiga estava mostrando comportamento velho sem
+    // nenhum sinal — o cliente sem o parâmetro `chamado` caía no diff local e ninguém sabia por quê.
+    if (dados.versao && window.VERSAO && dados.versao !== window.VERSAO) {
+      avisarNaTela('versão nova da tela — recarregando');
+      return setTimeout(() => location.reload(), 400);
+    }
     if (dados.tipo !== 'invalidado' || !atual) { return; }
     if (dados.projeto && dados.projeto !== atual.projeto) { return; }
     avisarNaTela(dados.projeto ? `${dados.projeto} mudou — recarregando` : 'cache limpo — recarregando');
@@ -607,6 +603,7 @@ async function pintar(det, completo) {
   if (!corpo || (corpo.dataset.pronto && !completo)) { return; }
   corpo.innerHTML = esqCodigo(6);
   const r = await api('/api/arquivo', {
+    chamado: atual.chamado,
     projeto: atual.projeto, base: atual.base, ref: atual.ref,
     caminho: det.dataset.caminho, completo: completo ? 1 : 0
   });

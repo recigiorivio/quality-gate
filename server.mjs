@@ -4,7 +4,7 @@
 // uso: npm start   (ou node server.mjs)   →   http://localhost:4100
 
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -213,7 +213,10 @@ class Servidor {
             'cache-control': 'no-cache',
             connection: 'keep-alive'
         });
-        res.write('data: {"tipo":"ligado"}\n\n');
+        // A versão vai no "ligado", e o SSE reconecta sozinho depois de um reinício: é assim que a
+        // aba aberta descobre que o app.js dela é velho. Sem isso ela segue rodando o JS antigo em
+        // memória — `no-store` não ajuda, porque o problema não é cache, é a página não recarregar.
+        res.write(`data: ${JSON.stringify({ tipo: 'ligado', versao: this.versaoDosAssets() })}\n\n`);
         this.ouvintes.add(res);
         const ping = setInterval(() => {
             try {
@@ -243,8 +246,8 @@ class Servidor {
     // O lint é o passo lento em repo grande — só sob demanda.
     // O linter do projeto, sobre os arquivos do diff. Antes era `npm run check` no repo inteiro:
     // segundos de espera e 83 problemas de código que ninguém tocou.
-    async lint(projeto, ref = '') {
-        const { diff: d, base } = comparacao.resolver(projeto, ref);
+    async lint(projeto, ref = '', chamado = null) {
+        const { diff: d, base } = comparacao.resolver(projeto, ref, null, chamado);
         const arquivos = d.listarArquivos(base).map(a => a.caminho);
         const r = await lint.rodar(projeto, arquivos);
         const erros = r.achados.filter(a => a.severidade === 'erro');
@@ -259,14 +262,27 @@ class Servidor {
         };
     }
 
+    // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
+    versaoDosAssets() {
+        let maior = 0;
+        for (const nome of ['app.js', 'estilo.css', 'realce.js', 'pagina.mjs']) {
+            try {
+                maior = Math.max(maior, statSync(join(import.meta.dirname, 'web', nome)).mtimeMs);
+            } catch {
+                // asset ausente não impede a página de subir
+            }
+        }
+        return String(Math.round(maior));
+    }
+
     // Sem laço por arquivo: o Diff.listarArquivos já traz +/- de todos numa chamada só.
-    listaDeArquivos(projeto, base, ref = '') {
-        const { diff: d, base: baseReal, via, pr } = comparacao.resolver(projeto, ref, base);
+    listaDeArquivos(projeto, base, ref = '', chamado = null) {
+        const { diff: d, base: baseReal, via, decisao } = comparacao.resolver(projeto, ref, base, chamado);
         return {
             projeto, branch: d.branch(), base: baseReal,
             baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
             comoSoube: d.comoSoube || null,
-            via, pr: pr ? { numero: pr.numero, estado: pr.estado, destino: pr.destino } : null,
+            via, decisao: decisao ? { pr: decisao.pr ?? null, branch: decisao.branch, estado: decisao.estado ?? null } : null,
             arquivos: d.listarArquivos(baseReal)
         };
     }
@@ -276,7 +292,7 @@ class Servidor {
         const q = url.searchParams;
 
         if (url.pathname === '/') {
-            const corpo = pagina(this.qualidade.esqueleto());
+            const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets());
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -312,6 +328,14 @@ class Servidor {
                 // É leitura de arquivo local, então cabe aqui.
                 for (const c of lista) {
                     c.titulo = linear.doChamado(c.chamado)?.titulo || null;
+                    // A branch de fato comparada pode não ser a que tem o nome do chamado: quando o
+                    // agente decidiu por uma PR, é a branch DELA. O chip precisa dizer qual é.
+                    for (const r of c.repos) {
+                        const dec = comparacao.decisoes[`${c.chamado}|${r.projeto}`];
+                        r.branch = dec?.branch || c.chamado;
+                        r.situacao = dec?.situacao || null;
+                        r.pr = dec?.pr || null;
+                    }
                 }
                 return { lista };
             }, 30000);
@@ -343,13 +367,13 @@ class Servidor {
             return this.json(res, { ocultos: [...this.ocultos] });
         }
         if (url.pathname === '/api/arquivos') {
-            return this.json(res, this.emCache(`arquivos|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('base') || ''}`,
-                () => this.listaDeArquivos(q.get('projeto'), q.get('base'), q.get('ref') || '')));
+            return this.json(res, this.emCache(`arquivos|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('base') || ''}|${q.get('chamado') || ''}`,
+                () => this.listaDeArquivos(q.get('projeto'), q.get('base'), q.get('ref') || '', q.get('chamado'))));
         }
         if (url.pathname === '/api/arquivo') {
-            const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}`;
+            const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}|${q.get('chamado') || ''}`;
             return this.json(res, this.emCache(chave, () => {
-                const { diff: d, base } = comparacao.resolver(q.get('projeto'), q.get('ref') || '', q.get('base'));
+                const { diff: d, base } = comparacao.resolver(q.get('projeto'), q.get('ref') || '', q.get('base'), q.get('chamado'));
                 return d.montarColunas(base, q.get('caminho'), {
                     completo: q.get('completo') === '1',
                     margem: Number(q.get('margem')) || 6
@@ -404,32 +428,18 @@ class Servidor {
                 () => {
                     // A mesma comparação do diff: base diferente aqui era o que fazia o cartão de
                     // cobertura discordar do que a tela mostrava logo abaixo dele.
-                    const c = comparacao.resolver(q.get('projeto'), q.get('ref') || '');
+                    const c = comparacao.resolver(q.get('projeto'), q.get('ref') || '', null, q.get('chamado'));
                     return this.qualidade.local(q.get('chamado'), q.get('projeto'), c.alvo, c.base);
                 }));
         }
         if (url.pathname === '/api/qualidade-remoto') {
             return this.emCacheAsync(`remoto|${q.get('chamado')}|${q.get('projeto')}`,
                 () => this.qualidade.remoto(q.get('chamado'), q.get('projeto')))
-                .then(valor => {
-                    // O `gh` é a única fonte da base da PR: guardar aqui é o que deixa o passo
-                    // instantâneo usar a comparação certa na próxima abertura.
-                    if (valor?.prBase && comparacao.guardar(q.get('projeto'), valor.ref ?? '', valor.prBase)) {
-                        // Só as chaves que dependem da base: derrubar `remoto|` faria o próximo
-                        // pedido recomputar o `gh` e cair aqui de novo.
-                        for (const chave of [...this.cache.keys()]) {
-                            if (/^(arquivos|arquivo|local|lint)\|/.test(chave) && chave.includes(q.get('projeto'))) {
-                                this.cache.delete(chave);
-                            }
-                        }
-                        valor.baseNova = true;
-                    }
-                    return this.json(res, valor);
-                });
+                .then(valor => this.json(res, valor));
         }
         if (url.pathname === '/api/lint') {
-            return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}`,
-                () => this.lint(q.get('projeto'), q.get('ref') || ''))
+            return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('chamado') || ''}`,
+                () => this.lint(q.get('projeto'), q.get('ref') || '', q.get('chamado')))
                 .then(r => this.json(res, r));
         }
         if (url.pathname === '/api/checagens') {

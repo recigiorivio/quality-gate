@@ -8,12 +8,15 @@
 //
 // Antes a barra fazia os três trabalhos ao mesmo tempo e chegava a 89 linhas em 340px.
 
-export function pagina(esqueleto) {
+// A versão dos assets é o mtime deles. Sem isso o navegador segura o app.js entre reinícios do
+// servidor: a tela ficou mostrando 1 arquivo e `base origin/stage` porque o cliente velho não
+// mandava o `chamado`, e o servidor já respondia a comparação da PR. Uma hora de confusão.
+export function pagina(esqueleto, versao = '') {
     return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Qualidade — conferência por chamado</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/estilo.css">
+<link rel="stylesheet" href="/estilo.css?v=${versao}">
 </head><body>
 <aside>
   <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span><span>Magias do Mago</span></h1>
@@ -42,6 +45,7 @@ export function pagina(esqueleto) {
   <div id="trilha-corpo"></div>
 </div>
 <script>window.ESQUELETO = ${JSON.stringify(esqueleto)};</script>
-<script type="module" src="/app.js"></script>
+<script>window.VERSAO = '${versao}';</script>
+<script type="module" src="/app.js?v=${versao}"></script>
 </body></html>`;
 }

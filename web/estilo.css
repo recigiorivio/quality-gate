@@ -119,13 +119,24 @@ body.trilha-recolhida #trilha-corpo{display:none}
 .chip:hover{border-color:var(--acento)}
 .chip.ativo{background:var(--acento);border-color:var(--acento);color:#fff}
 .chip.ativo .pino-repo{box-shadow:0 0 0 1.5px rgba(255,255,255,.65)}
-.chip-nome{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Duas linhas: repo e a branch DE FATO comparada. Antes o chip só dizia o repo, embaixo de um
+   título "BRANCHES" — e a branch comparada podia ser outra, sem nada na tela dizendo isso. */
+.chip-texto{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px;text-align:left}
+.chip-nome{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip-branch{font:400 9.5px/1.25 ui-monospace,monospace;color:var(--fraco);opacity:.9;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.ativo .chip-branch{color:rgba(255,255,255,.82)}
+.chip-sit{font:700 9px/1 -apple-system,system-ui,sans-serif;flex:0 0 auto}
+.chip-sit.s-resolvido{color:var(--ok)}
+.chip-sit.s-aberto{color:var(--aviso)}
+.chip.ativo .chip-sit{color:#fff}
 .chip.fora .chip-nome{opacity:.75}
 .chip-sujo{font:600 9px/1 -apple-system,system-ui,sans-serif;background:var(--rem);color:var(--erro);
   padding:2px 5px;border-radius:20px;flex:0 0 auto}
 .chip.ativo .chip-sujo{background:rgba(255,255,255,.25);color:#fff}
-.chip-fora{font:500 8px/1 ui-monospace,monospace;background:var(--aviso);color:#fff;padding:2px 4px;
-  border-radius:20px;max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 0 auto}
+/* Era o nome da branch em caixa âmbar; virou um glifo, porque o nome agora está na 2ª linha. */
+.chip-fora{font:600 10px/1 -apple-system,system-ui,sans-serif;color:var(--aviso);flex:0 0 auto;
+  padding:0 1px}
 
 .tr-nome{font:500 12px/1.45 -apple-system,system-ui,sans-serif;color:var(--fg);margin-bottom:10px;
   display:flex;gap:7px;align-items:baseline}
@@ -351,3 +362,7 @@ body.arrastando{user-select:none;cursor:col-resize}
   border-radius:8px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);opacity:0;transform:translateY(8px);
   transition:opacity .18s,transform .18s;pointer-events:none}
 #toast.vendo{opacity:1;transform:none}
+
+/* Sem decisão do agente, a branch da 2ª linha é palpite: fica tracejada para não parecer fato. */
+.chip:not(:has(.chip-sit)) .chip-branch{border-bottom:1px dashed var(--linha);
+  align-self:flex-start;opacity:.7}
