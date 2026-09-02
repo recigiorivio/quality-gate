@@ -14,3 +14,6 @@ LOCAL.md
 linear.json
 linear-cache.json
 comparacoes.json
+
+# log das corridas do agente: estado local
+corridas/

@@ -707,6 +707,10 @@ function escutarEventos() {
         : { rodando: dados.chamado, passos: dados.passo || 0 };
       redesenharEstado();
       redesenharAgenteNoTopo(dados.fase === 'fim' ? dados : null);
+      if (corridaAberta && dados.fase === 'andando') {
+        corridaAberta.eventos = (corridaAberta.eventos || [])
+          .concat({ passo: dados.passo, em: new Date().toISOString(), ferramenta: dados.ferramenta, texto: dados.texto });
+      }
       atualizarModalEstado();
       painelAgente(dados.texto || '', dados.fase === 'fim' ? (dados.ok ? 'fim' : 'erro') : '', dados.ferramenta || '');
       if (dados.fase === 'fim') {
@@ -757,10 +761,13 @@ function estadoDaComparacao(c) {
   return `<button class="est pronto" ${abre}>✓ pronto — ${total} de ${total} repos${quando(c.calculadoEm)} <span class="est-seta">›</span></button>`;
 }
 
-function abrirModalEstado(chamado) {
+let corridaAberta = null;
+
+async function abrirModalEstado(chamado) {
   document.getElementById('modal-estado')?.remove();
   const c = chamados.find(x => x.chamado === chamado);
   if (!c) { return; }
+  corridaAberta = null;
   const m = document.createElement('dialog');
   m.id = 'modal-estado';
   m.innerHTML = renderModalEstado(c);
@@ -768,6 +775,9 @@ function abrirModalEstado(chamado) {
   m.addEventListener('close', () => m.remove());
   document.body.appendChild(m);
   m.showModal();
+  // A execução vem do servidor, não do painel desta aba: sobrevive ao reload e ao reinício.
+  corridaAberta = await api('/api/agente-log', { chamado });
+  atualizarModalEstado();
 }
 
 function renderModalEstado(c) {
@@ -789,7 +799,22 @@ function renderModalEstado(c) {
     </tr>`;
   }).join('');
   const rodando = estadoAgente.rodando === c.chamado;
-  const log = document.getElementById('pa-linhas')?.innerHTML || '';
+  const cor = corridaAberta;
+  const eventos = cor?.eventos || [];
+  const log = eventos.length ? eventos.map(e => `<div class="me-ev">
+      <span class="me-ev-passo">${e.passo}</span>
+      ${e.ferramenta ? `<code class="me-ev-ferr">${esc(e.ferramenta)}</code>` : ''}
+      <span class="me-ev-hora">${e.em ? new Date(e.em).toLocaleTimeString('pt-BR') : ''}</span>
+      <pre class="me-ev-texto">${esc(e.texto || '')}</pre>
+    </div>`).join('') : '';
+  const cabecaLog = cor ? `${rodando ? 'o agente agora' : 'última corrida'} · ${eventos.length} passo(s)${
+    cor.segundos ? ` em ${cor.segundos}s` : ''}${cor.modelo ? ` · ${esc(cor.modelo)} esforço ${esc(cor.esforco || '?')}` : ''}${
+    cor.inicio ? ` · ${new Date(cor.inicio).toLocaleString('pt-BR')}` : ''}` : '';
+  const conferencia = cor?.divergentes
+    ? (cor.divergentes.length
+      ? `<div class="me-diverg">⚠ ${cor.divergentes.length} não bateu: ${esc(cor.divergentes.join(' · '))}</div>`
+      : '<div class="me-confere">✓ todos os números batem com as PRs</div>')
+    : '';
   return `<div class="me-cabeca">
       <div><div class="me-titulo">${c.chamado} — comparação por repo</div>
         <div class="me-sub">${c.decididos} de ${c.repos.length} decididos${quando(c.calculadoEm)}${
@@ -797,13 +822,23 @@ function renderModalEstado(c) {
       <button class="pa-fechar" onclick="document.getElementById('modal-estado').close()" title="fechar (Esc)">×</button>
     </div>
     <table class="me-tabela"><tbody>${linhas}</tbody></table>
-    ${log ? `<div class="me-log-titulo">${rodando ? 'o agente agora' : 'última corrida do agente'}</div>
-             <div class="me-log">${log}</div>` : ''}
+    ${conferencia}
+    ${log ? `<div class="me-log-titulo">${cabecaLog}
+               <button class="me-copiar" onclick="copiarCorrida()">copiar</button></div>
+             <div class="me-log">${log}</div>`
+    : '<div class="me-log-titulo">nenhuma corrida registrada para este chamado</div>'}
     <div class="me-pe">Clicar numa linha abre o repo. Decisões em <code>qualidade/comparacoes.json</code>;
       <code>comparacao.mjs definir/remover</code> muda à mão.</div>`;
 }
 
 // A modal acompanha a corrida ao vivo: se estiver aberta, cada evento do agente a redesenha.
+async function copiarCorrida() {
+  const texto = (corridaAberta?.eventos || [])
+    .map(e => `${e.passo}\t${e.ferramenta || 'texto'}\t${e.texto}`).join('\n');
+  await navigator.clipboard.writeText(texto);
+  avisarNaTela('execução copiada');
+}
+
 function atualizarModalEstado() {
   const m = document.getElementById('modal-estado');
   if (!m?.open) { return; }
@@ -1119,7 +1154,7 @@ async function salvarConfig(chave) {
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
-  recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado,
+  recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.

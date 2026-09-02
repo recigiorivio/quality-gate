@@ -4,7 +4,7 @@
 // uso: npm start   (ou node server.mjs)   →   http://localhost:4100
 
 import { createServer } from 'node:http';
-import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, mkdirSync } from 'node:fs';
 import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -367,6 +367,13 @@ class Servidor {
         let resto = '';
         let ultimoTexto = '';
         let passos = 0;
+        // A execução inteira, gravada: o painel da aba guardava 120 linhas truncadas e sumia no
+        // reload — e "o que o agente fez" é justamente o que se quer reler depois, não o resumo.
+        const corrida = {
+            chamado, modelo: MODELO_DA_SESSAO(), esforco: 'high',
+            inicio: new Date().toISOString(), eventos: []
+        };
+        this.corridaViva = corrida;
         filho.stdout.on('data', pedaco => {
             resto += pedaco.toString();
             const linhas = resto.split('\n');
@@ -379,6 +386,7 @@ class Servidor {
                 passos++;
                 this.agentePassos = passos;
                 ultimoTexto = evento.texto || ultimoTexto;
+                corrida.eventos.push({ passo: passos, em: new Date().toISOString(), ...evento });
                 this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: passos, ...evento });
             }
         });
@@ -391,13 +399,21 @@ class Servidor {
         });
         filho.on('close', codigo => {
             this.agenteRodando = null;
+            this.corridaViva = null;
             this.agenteFim = { chamado, em: Date.now(), ok: codigo === 0, passos };
             const segundos = Math.round((Date.now() - inicio) / 1000);
             this.registrar('agente', codigo === 0 ? 'fim' : 'erro', `${chamado} em ${segundos}s`);
             // O cache cai depois do agente: as decisões novas mudam base, alvo e as checagens.
             this.invalidar({ chamado, silencioso: true });
             this.avisar({ tipo: 'agente', fase: 'andando', chamado, passo: passos + 1, texto: 'conferindo os números contra as PRs…' });
+            corrida.fim = new Date().toISOString();
+            corrida.segundos = segundos;
+            corrida.ok = codigo === 0;
+            corrida.resumo = ultimoTexto || null;
+            corrida.erro = codigo === 0 ? null : (erro.trim().split('\n')[0] || `código ${codigo}`);
             this._conferirDecisoes(chamado).then(divergentes => {
+                corrida.divergentes = divergentes;
+                this.gravarCorrida(corrida);
                 const resumo = divergentes.length
                     ? `${divergentes.length} não bateu: ${divergentes.join(' · ')}`
                     : 'todos os números batem com as PRs';
@@ -407,6 +423,33 @@ class Servidor {
                 });
             });
         });
+    }
+
+    // Uma corrida por chamado, a última: histórico completo seria útil e ninguém pediu, e o arquivo
+    // por chamado é o que deixa o reload da página (e o reinício do servidor) não perder nada.
+    gravarCorrida(corrida) {
+        try {
+            mkdirSync(join(import.meta.dirname, 'corridas'), { recursive: true });
+            writeFileSync(this._caminhoCorrida(corrida.chamado), `${JSON.stringify(corrida, null, 1)}\n`);
+        } catch (e) {
+            this.registrar('agente', 'log-falhou', e.message);
+        }
+    }
+
+    _caminhoCorrida(chamado) {
+        return join(import.meta.dirname, 'corridas', `${String(chamado).replace(/[^A-Za-z0-9-]/g, '')}.json`);
+    }
+
+    corridaDe(chamado) {
+        // Em memória primeiro: durante a corrida o arquivo ainda não existe.
+        if (this.corridaViva?.chamado === chamado) {
+            return { ...this.corridaViva, rodando: true };
+        }
+        try {
+            return JSON.parse(readFileSync(this._caminhoCorrida(chamado), 'utf8'));
+        } catch {
+            return null;
+        }
     }
 
     // Depois da corrida, o servidor confere o que o agente decidiu: nº de arquivos da PR (gh) contra o
@@ -443,11 +486,11 @@ class Servidor {
         if (e.type === 'assistant') {
             for (const parte of e.message?.content || []) {
                 if (parte.type === 'text' && parte.text.trim()) {
-                    return { texto: parte.text.trim().slice(0, 400) };
+                    return { texto: parte.text.trim().slice(0, 4000) };
                 }
                 if (parte.type === 'tool_use') {
                     const cmd = parte.input?.command || parte.input?.file_path || parte.name;
-                    return { ferramenta: parte.name, texto: String(cmd).slice(0, 160) };
+                    return { ferramenta: parte.name, texto: String(cmd).slice(0, 1200) };
                 }
             }
             return null;
@@ -456,7 +499,7 @@ class Servidor {
             return { texto: 'sessão do agente iniciada' };
         }
         if (e.type === 'result') {
-            return { texto: String(e.result || '').trim().slice(0, 400) };
+            return { texto: String(e.result || '').trim().slice(0, 4000) };
         }
         return null;
     }
@@ -553,6 +596,9 @@ class Servidor {
                 res.writeHead(404, { 'content-type': 'text/plain' });
                 return res.end('não encontrado');
             }
+        }
+        if (url.pathname === '/api/agente-log') {
+            return this.json(res, this.corridaDe(q.get('chamado')) || { chamado: q.get('chamado'), eventos: [] });
         }
         if (url.pathname === '/api/agente') {
             return this.agente(q.get('chamado'), res);
