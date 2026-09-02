@@ -287,6 +287,38 @@ Sem estas o projeto abre vazio, e nenhuma é configurável hoje:
 E duas cegueiras: a varredura só vê **clones locais**, e **não faz `git fetch`** — então `origin/*`
 pode estar semanas atrasado. Toda afirmação de ausência aqui é sobre o disco, não sobre o remoto.
 
+## O chamado na barra
+
+Acima dos PRs vem o **link do chamado** com título e status, e o nome do chamado ganha tooltip com
+título, responsável e a data em que o dado foi lido.
+
+O servidor **não fala com o Linear** e não vai falar — colocar token de terceiro num projeto sem
+dependência é dívida. Quem fala é o agente, pela sessão dele, e grava em `linear-cache.json`:
+
+```bash
+node ferramentas/linear.mjs gravar <ID> '<json>'
+node ferramentas/linear.mjs ver <ID>
+```
+
+O cache tem data e a tela mostra a data: título velho serve, desde que esteja dito que é velho. Sem
+cache, o **link ainda funciona** — a URL sai do ID mais o slug do workspace em `linear.json`.
+
+O Linear é a fonte **autoritativa** de quais PRs são do chamado: num caso real conhecia **25**,
+contra 10 da varredura local somada à busca na organização, incluindo PRs em repos que não existem
+naquele workspace. Por isso ele entra como terceira fonte, e a rotina manda buscá-lo **num subagente
+em paralelo** — é I/O de rede, não tem por que bloquear a conferência.
+
+## As duas linhas que a rotina escreve
+
+```
+─────────── rodando agente de qualidade · início · ABC-123 ───────────
+─────────── agente de qualidade · fim · ABC-123 ───────────
+```
+
+A de fim carrega o **veredito**, não um "pronto": contagem de atenção, aviso, o denominador de
+**não coberto**, o estado dos PRs e os repos sem PR. Banner que só diz "terminou" é o
+silêncio-lido-como-aprovação em outra forma — e a linha `não coberto` nunca é omitida, mesmo em zero.
+
 ## Testes
 
 ```bash

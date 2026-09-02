@@ -159,7 +159,23 @@ async function listarPrs(chamados) {
     const lista = r.prs || [];
     const comPr = lista.filter(x => x.temPr);
     const semPr = lista.filter(x => x.temPr === false);
+    const l = r.linear;
+    // O tooltip do nome do chamado: título e status vêm do Linear, com a data do cache — título
+    // velho serve, desde que esteja dito que é velho.
+    const cabecalho = document.querySelector(`.chamado[data-c="${c.chamado}"] > button`);
+    if (cabecalho && l?.titulo) {
+      const quando = l.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
+      cabecalho.title = `${l.titulo}${l.status ? `\n${l.status}` : ''}`
+        + `${l.atribuido ? ` · ${l.atribuido}` : ''}${quando ? `\n\n(do Linear, lido em ${quando})` : ''}`;
+    }
     caixa.innerHTML = `
+      ${l?.url ? `
+        <a class="link-chamado" href="${l.url}" target="_blank" rel="noopener"
+           title="${esc(l.titulo || 'abrir no Linear')}">
+          <span class="lc-marca">Linear</span>
+          <span class="lc-titulo">${esc(l.titulo || c.chamado)}</span>
+          ${l.status ? `<span class="lc-status">${esc(l.status)}</span>` : ''}
+        </a>` : ''}
       <div class="prs-titulo">Pull requests</div>
       ${comPr.map(x => `
         <a class="pr-link pr-${x.estado.toLowerCase()} ${x.foraDaVarredura ? 'achado-na-org' : ''}"
@@ -169,7 +185,8 @@ async function listarPrs(chamados) {
              : ''}">
           <span class="pr-num">#${x.numero}</span>
           <span class="pr-repo">${esc(x.projeto)}</span>
-          ${x.foraDaVarredura ? '<span class="pr-fora" title="fora da varredura local">◇</span>' : ''}
+          ${x.doLinear ? '<span class="pr-fora" title="só o Linear conhece este PR">◈</span>'
+            : (x.foraDaVarredura ? '<span class="pr-fora" title="fora da varredura local">◇</span>' : '')}
           <span class="pr-estado">${esc(x.rotulo)}</span>
         </a>`).join('')}
       ${semPr.length ? `<div class="pr-falta">sem PR: ${semPr.map(x => esc(x.projeto)).join(', ')}</div>` : ''}`;

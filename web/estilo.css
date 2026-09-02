@@ -90,6 +90,17 @@ aside{background:var(--painel);border-right:1px solid var(--linha);overflow-y:au
   padding:5px 9px;border-radius:20px;cursor:help}
 .fora-aviso::before{content:'⌥ ';opacity:.6}
 .prs{margin:8px 0 4px;padding-top:8px;border-top:1px dashed var(--linha)}
+.link-chamado{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;text-decoration:none;
+  padding:6px 8px;margin-bottom:8px;border-radius:7px;background:var(--bg);border:1px solid var(--linha);
+  transition:border-color .12s}
+.link-chamado:hover{border-color:var(--acento)}
+.lc-marca{font:700 8px/1 -apple-system,system-ui,sans-serif;text-transform:uppercase;letter-spacing:.1em;
+  color:#fff;background:var(--acento);padding:3px 5px;border-radius:4px;flex:0 0 auto}
+.lc-titulo{font:500 11px/1.35 -apple-system,system-ui,sans-serif;color:var(--fg);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto}
+.lc-status{font:600 9px/1 -apple-system,system-ui,sans-serif;color:var(--fraco);background:var(--linha);
+  padding:3px 6px;border-radius:20px;flex:0 0 auto;white-space:nowrap}
+.link-chamado::after{content:'↗';opacity:.4;font-size:9px;flex:0 0 auto}
 .prs-titulo{font:600 9px/1 inherit;text-transform:uppercase;letter-spacing:.1em;color:var(--fraco);
   padding:0 8px 6px}
 .prs-carregando{padding:2px 8px}

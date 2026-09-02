@@ -14,6 +14,7 @@ import { Qualidade } from './lib/qualidade.mjs';
 import { Pontos } from './ferramentas/pontos.mjs';
 import lint from './lib/lint.mjs';
 import prs from './lib/prs.mjs';
+import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
 
 const PORTA = Number(process.env.PORT || 4100);
@@ -370,7 +371,10 @@ class Servidor {
             const chamado = q.get('chamado');
             const projetos = (q.get('projetos') || '').split(',').filter(Boolean);
             return this.emCacheAsync(`prs|${chamado}|${projetos.join(',')}`,
-                async () => ({ prs: await prs.doChamado(chamado, projetos) }))
+                async () => ({
+                    prs: await prs.doChamado(chamado, projetos),
+                    linear: linear.doChamado(chamado)
+                }))
                 .then(r => this.json(res, r));
         }
         if (url.pathname === '/api/pontos') {
