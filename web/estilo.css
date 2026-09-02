@@ -530,3 +530,5 @@ body.arrastando{user-select:none;cursor:col-resize}
 .pasta.de-teste > summary:hover{opacity:1}
 .selo-teste{font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.06em;
   background:var(--linha);color:var(--fraco);border-radius:4px;padding:2px 4px}
+.aviso-teto{margin:0 0 10px;padding:7px 11px;background:var(--painel);border:1px solid var(--linha);
+  border-radius:7px;font-size:11.5px;color:var(--fraco);line-height:1.45}

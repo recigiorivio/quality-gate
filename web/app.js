@@ -395,7 +395,17 @@ async function mostrar(chamado) {
 // conforme chegam. Nada espera por nada.
 // Abre um repo. O cabeçalho de identidade não vive mais aqui — está na área de menu do chamado.
 // Aqui fica o veredito numa linha, as abas, e o diff.
-async function abrir(chip) {
+async function abrir(chip, forcar = false) {
+  // Reabrir o repo que já está aberto refazia tudo: 2 pedidos de /api/arquivos e cada arquivo aberto
+  // pintado em dobro. `recarregar` e `tirarPonto` passam `forcar` porque aí é para refazer mesmo.
+  // Por projeto+ref, não por nó: a trilha recria os chips quando os PRs chegam, e comparar
+  // identidade de elemento falhava — o mesmo repo era reaberto e pintado de novo.
+  if (!forcar && atual?.dados && atual.projeto === chip.dataset.p
+      && (atual.ref || '') === (chip.dataset.ref || '')) {
+    atual.botao = chip;
+    chip.classList.add('ativo');
+    return;
+  }
   document.querySelectorAll('.chip').forEach(b => b.classList.remove('ativo'));
   chip.classList.add('ativo');
   atual = { projeto: chip.dataset.p, chamado: chip.dataset.c, ref: chip.dataset.ref || '', botao: chip };
@@ -584,6 +594,7 @@ function linhaDeArquivo(a, aberto) {
 // Pasta de teste vai para o FIM e nasce recolhida: o teste é o que menos se lê na conferência, e
 // ocupando o topo empurrava o código para baixo da dobra. `spec`/`test`/`tests`/`__tests__`.
 const EH_TESTE = nome => /^(spec|specs|test|tests|__tests__|testes)$/i.test(nome);
+const ehArquivoDeTeste = n => /(\.|-)(spec|test)\.[a-z]+$|^test_|_test\.[a-z]+$/i.test(n);
 
 function renderNo(no, aberto, nivel) {
   const pastas = [...no.pastas.entries()]
@@ -600,15 +611,18 @@ function renderNo(no, aberto, nivel) {
       <div class="dentro">${renderNo(alvo, aberto && !teste, nivel + 1)}</div>
     </details>`;
     }).join('');
-  const ehArquivoDeTeste = n => /(\.|-)(spec|test)\.[a-z]+$|^test_|_test\.[a-z]+$/i.test(n);
   const arquivos = no.arquivos
     .sort((a, b) => (ehArquivoDeTeste(a.nome) - ehArquivoDeTeste(b.nome)) || a.nome.localeCompare(b.nome))
-    .map(a => linhaDeArquivo(a, aberto && totalDeArquivosGlobal <= 4))
+    .map(a => linhaDeArquivo(a, aberto && !ehArquivoDeTeste(a.nome) && abrirTudoGlobal))
     .join('');
   return pastas + arquivos;
 }
 
 let totalDeArquivosGlobal = 0;
+// Todo arquivo que não é teste nasce aberto — era `<= 4`, e num diff de 11 nada abria. O teto existe
+// porque abrir é uma requisição por arquivo: num diff de 65 seriam 65 de uma vez.
+const TETO_ABRIR_TUDO = 30;
+let abrirTudoGlobal = true;
 
 // A mesclagem vinha só como uma palavra no meio do carimbo, e o resto do chamado não aparecia em
 // lugar nenhum. Aqui o estado deste repo é um selo, e os outros repos são uma trilha de células —
@@ -665,6 +679,8 @@ function montarArquivos(d) {
   caixa.className = '';
   desenharFaixaMerge(d);
   totalDeArquivosGlobal = d.arquivos.length;
+  const naoTeste = d.arquivos.filter(a => !ehArquivoDeTeste(a.caminho.split('/').pop())).length;
+  abrirTudoGlobal = naoTeste <= TETO_ABRIR_TUDO;
   if (!d.arquivos.length) {
     caixa.innerHTML = d.mesclado
       ? `<p class="aviso"><b>Mesclado.</b> ${d.comoSoube === 'conteudo'
@@ -675,7 +691,10 @@ function montarArquivos(d) {
       : '<p class="aviso">Nenhuma alteração contra a base.</p>';
     return;
   }
-  caixa.innerHTML = renderNo(arvoreDe(d.arquivos), true, 0);
+  const aviso = abrirTudoGlobal ? ''
+    : `<p class="aviso-teto">${naoTeste} arquivos de código: acima de ${TETO_ABRIR_TUDO} eles nascem
+       fechados, porque abrir é uma requisição por arquivo. Clique no que interessa.</p>`;
+  caixa.innerHTML = aviso + renderNo(arvoreDe(d.arquivos), true, 0);
   for (const det of caixa.querySelectorAll('details.arq')) {
     det.addEventListener('toggle', () => { if (det.open) { pintar(det); } });
     if (det.open) { pintar(det); }
@@ -686,14 +705,14 @@ async function tirarPonto(evento, id) {
   evento.preventDefault();
   evento.stopPropagation();
   await api('/api/ponto-remover', { id });
-  abrir(atual.botao);
+  abrir(atual.botao, true);
 }
 
 
 async function recarregar() {
   if (!atual) { return; }
   await api('/api/invalidar', { projeto: atual.projeto, silencioso: 1 });
-  abrir(atual.botao);
+  abrir(atual.botao, true);
 }
 
 // O servidor avisa quando o cache de um projeto cai (o hook de commit dispara isso).
@@ -969,6 +988,9 @@ function avisarNaTela(texto) {
 async function pintar(det, completo) {
   const corpo = det.querySelector('.corpo') || det.querySelector('.par');
   if (!corpo || (corpo.dataset.pronto && !completo)) { return; }
+  // Marca ANTES do await: a marca só existia depois, então duas chamadas concorrentes passavam as
+  // duas e o mesmo arquivo era buscado em dobro. Com 7 arquivos abrindo juntos, isso multiplica.
+  corpo.dataset.pronto = completo ? 'completo' : 'carregando';
   corpo.innerHTML = esqCodigo(6);
   const r = await api('/api/arquivo', {
     chamado: atual.chamado,
