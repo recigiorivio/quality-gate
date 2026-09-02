@@ -703,6 +703,7 @@ function escutarEventos() {
         : { rodando: dados.chamado, passos: dados.passo || 0 };
       redesenharEstado();
       redesenharAgenteNoTopo(dados.fase === 'fim' ? dados : null);
+      atualizarModalEstado();
       painelAgente(dados.texto || '', dados.fase === 'fim' ? (dados.ok ? 'fim' : 'erro') : '', dados.ferramenta || '');
       if (dados.fase === 'fim') {
         pararBotaoAgente();
@@ -734,19 +735,76 @@ function lembrarDobra(secao, el) {
   });
 }
 
+// A linha de estado é um botão: abre a modal com o que está acontecendo, repo a repo — qual PR,
+// que situação, por que, quando — e o log do agente se ele estiver (ou tiver acabado de) rodar.
 function estadoDaComparacao(c) {
+  const abre = `onclick="abrirModalEstado('${c.chamado}')" title="ver o que está acontecendo, repo a repo"`;
   if (estadoAgente.rodando === c.chamado) {
-    return `<span class="est rodando"><span class="giro"></span>agente rodando${
-      estadoAgente.passos ? ` · passo ${estadoAgente.passos}` : ''}</span>`;
+    return `<button class="est rodando" ${abre}><span class="giro"></span>agente rodando${
+      estadoAgente.passos ? ` · passo ${estadoAgente.passos}` : ''} <span class="est-seta">›</span></button>`;
   }
   const total = c.repos.length;
   if (!c.decididos) {
-    return `<span class="est nada">✗ não calculado — a tela está no palpite local</span>`;
+    return `<button class="est nada" ${abre}>✗ não calculado — a tela está no palpite local <span class="est-seta">›</span></button>`;
   }
   if (c.decididos < total) {
-    return `<span class="est parcial">◐ calculado em ${c.decididos} de ${total} repos${quando(c.calculadoEm)}</span>`;
+    return `<button class="est parcial" ${abre}>◐ calculado em ${c.decididos} de ${total} repos${quando(c.calculadoEm)} <span class="est-seta">›</span></button>`;
   }
-  return `<span class="est pronto">✓ pronto — ${total} de ${total} repos${quando(c.calculadoEm)}</span>`;
+  return `<button class="est pronto" ${abre}>✓ pronto — ${total} de ${total} repos${quando(c.calculadoEm)} <span class="est-seta">›</span></button>`;
+}
+
+function abrirModalEstado(chamado) {
+  document.getElementById('modal-estado')?.remove();
+  const c = chamados.find(x => x.chamado === chamado);
+  if (!c) { return; }
+  const m = document.createElement('dialog');
+  m.id = 'modal-estado';
+  m.innerHTML = renderModalEstado(c);
+  m.addEventListener('click', e => { if (e.target === m) { m.close(); } });
+  m.addEventListener('close', () => m.remove());
+  document.body.appendChild(m);
+  m.showModal();
+}
+
+function renderModalEstado(c) {
+  const linhas = [...c.repos].sort((a, b) => {
+    const peso = { aberto: 0, undefined: 1, null: 1, resolvido: 2 };
+    return (peso[a.situacao] ?? 1) - (peso[b.situacao] ?? 1) || a.projeto.localeCompare(b.projeto);
+  }).map(r => {
+    const d = r.decisao;
+    const st = r.situacao === 'resolvido' ? 'ok' : r.situacao === 'aberto' ? 'aberto' : 'nada';
+    const marca = { ok: '✓', aberto: '●', nada: '✗' }[st];
+    const onde = !d ? '<i>sem decisão — a tela usa o palpite local</i>'
+      : d.via === 'pr' ? `PR <b>#${d.pr}</b> → ${esc(d.destino || 'base')}`
+        : `${esc(d.branch || '')} × ${esc(d.base || 'origin/stage')}`;
+    return `<tr class="me-${st}" onclick="irParaRepo('${r.projeto}');document.getElementById('modal-estado').close()">
+      <td class="me-marca">${marca}</td>
+      <td class="me-repo">${esc(r.projeto)}<div class="me-branch">${esc(r.branch || c.chamado)}</div></td>
+      <td class="me-onde">${onde}${d?.nota ? `<div class="me-nota">${esc(d.nota)}</div>` : ''}</td>
+      <td class="me-quando">${d?.em ? quando(d.em).replace(/^ · /, '') : ''}</td>
+    </tr>`;
+  }).join('');
+  const rodando = estadoAgente.rodando === c.chamado;
+  const log = document.getElementById('pa-linhas')?.innerHTML || '';
+  return `<div class="me-cabeca">
+      <div><div class="me-titulo">${c.chamado} — comparação por repo</div>
+        <div class="me-sub">${c.decididos} de ${c.repos.length} decididos${quando(c.calculadoEm)}${
+          rodando ? ` · <span class="est rodando"><span class="giro"></span>agente rodando · passo ${estadoAgente.passos}</span>` : ''}</div></div>
+      <button class="pa-fechar" onclick="document.getElementById('modal-estado').close()" title="fechar (Esc)">×</button>
+    </div>
+    <table class="me-tabela"><tbody>${linhas}</tbody></table>
+    ${log ? `<div class="me-log-titulo">${rodando ? 'o agente agora' : 'última corrida do agente'}</div>
+             <div class="me-log">${log}</div>` : ''}
+    <div class="me-pe">Clicar numa linha abre o repo. Decisões em <code>qualidade/comparacoes.json</code>;
+      <code>comparacao.mjs definir/remover</code> muda à mão.</div>`;
+}
+
+// A modal acompanha a corrida ao vivo: se estiver aberta, cada evento do agente a redesenha.
+function atualizarModalEstado() {
+  const m = document.getElementById('modal-estado');
+  if (!m?.open) { return; }
+  const c = chamados.find(x => x.chamado === atual?.chamado);
+  if (c) { m.innerHTML = renderModalEstado(c); }
 }
 
 function quando(iso) {
@@ -1057,7 +1115,7 @@ async function salvarConfig(chave) {
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
-  recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo,
+  recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.

@@ -475,6 +475,11 @@ class Servidor {
                 r.situacao = dec?.situacao || null;
                 r.pr = dec?.pr || null;
                 r.decididoEm = dec?.em || null;
+                // A decisão inteira: a modal do estado mostra via, destino, nota e quando, repo a repo.
+                r.decisao = dec ? {
+                    via: dec.via, pr: dec.pr ?? null, destino: dec.destino ?? null, base: dec.base ?? null,
+                    branch: dec.branch ?? null, nota: dec.nota ?? null, em: dec.em ?? null, situacao: dec.situacao
+                } : null;
             }
             c.decididos = c.repos.filter(r => r.situacao).length;
             c.calculadoEm = c.repos.map(r => r.decididoEm).filter(Boolean).sort().pop() || null;
