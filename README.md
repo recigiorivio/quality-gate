@@ -30,9 +30,19 @@ Item mecânico não merece um cartão na tela nem uma pergunta — merece um com
 mostra menos do que ela sabe: comentário fora do padrão, declaração solta, arquivo na pasta errada e
 literal onde cabe enum saem da tela e vão para `checar-diff.mjs --corrigir`.
 
-## As duas seções da barra
+## As três zonas da tela
 
-**Chamados** — os chamados abertos, ordenados pelo commit mais recente.
+**Barra da esquerda — só navegação.** Uma linha por chamado: o ID, o título do chamado como
+subtítulo (sem ele, `UND-1638` não diz nada), o pino com o pior estado, quantos repos, e um `×` para
+tirar da lista. Antes ela fazia três trabalhos em 340 px — navegar, resumir e detalhar — e nenhum
+refinamento resolvia isso. **Configurações** é o último item, no pé, com engrenagem.
+
+**Centro — o veredito e o diff.** Uma linha de contagens, os cartões recolhidos, e o diff abaixo.
+
+**Trilha da direita, recolhível — o detalhe do chamado.** Na ordem: chamado (com o link do Linear),
+branches, **todas** as PRs, e `recarregar` no fim.
+
+Os chamados são ordenados pelo commit mais recente.
 
 A descoberta é pelas branches que **existem** (locais e do origin), não pela que está em checkout:
 repo com a branch do chamado mas parado em outro trabalho é justamente o repo esquecido. Num chamado
@@ -91,26 +101,79 @@ anotação da PR no chamado.
 **Fora da tela** por outro motivo: o **build**, que só roda depois da PR aceita — conferir build
 antes do merge não responde nada.
 
-**Na tela**, em 5 abas, só o que exige alguém decidindo:
+**Na tela**, numa lista só, o que exige alguém decidindo:
 
-| Aba | O que julgar |
+| Cartão | O que julgar |
 |---|---|
-| Chamado | branch no padrão do ID, arquivos não commitados |
-| Testes e lint | spec novo é permitido neste repo? o teste quebra se você reverter a correção? · **e o linter do próprio projeto** |
-| Dados e performance | as queries que entraram no diff, com o padrão de risco de cada uma |
-| Refatoração | métodos longos novos, blocos repetidos, nomes que já existem no repo |
+| Cobertura da análise | quantos arquivos do diff foram de fato conferidos — o denominador |
+| Branch certa e chamado | branch no padrão do ID, arquivos não commitados |
+| Mesclagem | aparece só quando a PR está mesclada: entrou tudo, ou sobrou trabalho depois |
+| Política de testes | spec novo é permitido neste repo? o teste quebra se você reverter a correção? |
+| Lint do projeto | o linter **do próprio projeto**, nos arquivos do diff |
+| Índices e performance | as queries que entraram no diff, com o padrão de risco de cada uma |
+| Vale extrair ou eliminar? | métodos longos novos, blocos repetidos, nomes que já existem no repo |
 | Pontos de atenção da IA | o que o agente achou e vale registrar — teto de 10 |
 
-Cada aba tem um pino com o **pior estado do grupo**, para dizer se vale abrir antes de você abrir.
-Ao lado do título fica o selo da PR: **sem PR / PR aberta / mesclada** (clicável).
+Eram 4 abas. Com 6 a 11 cartões, paginar resolvia um problema que o **cartão alto** criava: virou
+linha, e a paginação deixou de fazer sentido. São 4 por fileira, todos nascem **recolhidos** — quem
+resume o conjunto é a linha de veredito acima — e o expandido ocupa a fileira inteira.
+
+O rótulo de cada cartão diz o que aconteceu, e dois deles são fáceis de confundir:
+
+| Rótulo | Quer dizer |
+|---|---|
+| `ok` / `aviso` / `atenção` | a checagem rodou e este é o resultado |
+| `julgar` | rodou até onde dá sozinha; o resto é decisão sua |
+| `ignorado` | **não se aplica** aqui — sem linter no projeto, nenhum arquivo analisável |
+| `indisponível` | **deveria ter rodado e não rodou** — diff ilegível, base não resolvida, análise com erro |
+
+`indisponível` dizia as duas coisas, e "não se aplica" com cara de problema treina a pessoa a ignorar
+o aviso. Agora só o problema leva esse rótulo, e ele vem com contorno tracejado.
+
+### Branch já mesclada: topologia primeiro, merge-tree depois
+
+A base não vem de ordem fixa de nomes, vem de **topologia**: entre `origin/desenv`, `origin/stage`,
+`origin/main` e `origin/master`, ganha a que já **contém** a branch; empatando, o merge-base mais
+recente. Com base errada, uma branch mesclada em `main` mostrava 17 arquivos de diff falso.
+
+Só que topologia não vê **merge por squash**: o commit da branch não fica ancestral de ninguém, e o
+diff inteiro reaparece como se fosse trabalho aberto. Quando a topologia diz "não contém", a segunda
+pergunta é:
+
+> **mesclar esta branch mudaria o destino?**
+
+Quem responde é `git merge-tree --write-tree`, comparando a árvore do merge com a do destino. Nada
+muda → mesclado (a tela diz `mesclado (squash)`). Muda em N arquivos → são esses N, e só esses, que
+o diff mostra.
+
+`git diff` responde outra coisa e por isso não serve: ele mistura o que o **destino** ganhou de
+terceiros com o que a branch tem a mais. No UND-1638 isso marcou **2 arquivos já mesclados** como
+pendentes, porque stage tinha andado por cima deles depois do squash. Sobrou 1 arquivo — e esse é
+real: mesclar acrescentaria 6 linhas de teste, com conflito.
+
+Conflito conta como divergência a mostrar (exit 1 do merge-tree não é erro, a árvore vem igual). E
+como merge-tree só vê commit, alteração **não commitada** é unida à lista à parte — senão sumiria.
+
+Medido no UND-1638, 9 repos, **três causas diferentes** para o mesmo sintoma:
+
+| Repos | O que era | O que a tela faz |
+|---|---|---|
+| 6 | mesclado com o commit ancestral | topologia já resolvia — 0 arquivos |
+| 1 | mesclado por **squash** | 11 arquivos de diff falso → 0, pelo merge-tree |
+| 1 | `origin/stage` local **atrasado** | cartão `atenção` com o `git fetch` a rodar |
+| 1 | destino andou por cima + 6 linhas fora do merge | cartão `aviso` e o **1** arquivo que falta |
+
+A cópia atrasada é a única que a máquina não resolve sozinha: se o merge nem existe no seu `.git`,
+nenhuma pergunta local descobre isso. O que a tela faz é **comparar a data do merge da PR com a da
+sua cópia** e dizer qual comando resolve, em vez de mostrar arquivo antigo como pendente.
 
 ### O que cada camada cobre, e o que não cobre
 
 | Camada | Cobre | Não cobre |
 |---|---|---|
 | regras de texto (`checar-diff`) | `.js .mjs .cjs .jsx` **`.ts .tsx`** | qualquer outra extensão — declarada arquivo a arquivo |
-| análise por AST (`lib/ast.mjs`) | `.js .mjs .cjs .jsx` | **TypeScript**, Python, Java — o acorn recusa e o cartão diz `indisponível` |
-| lint | o que o linter do repo cobrir | repo sem linter — o cartão diz "nenhum linter configurado" |
+| análise por AST (`lib/ast.mjs`) | `.js .mjs .cjs .jsx` | **TypeScript**, Python, Java — o acorn recusa e o cartão diz `ignorado` |
+| lint | o que o linter do repo cobrir | repo sem linter — o cartão diz `ignorado`, "nenhum linter configurado" |
 
 As regras de texto valem em TS porque são sobre comentário e declaração no topo, que não precisam de
 parser. A análise de AST não: o acorn é um parser de JS e **recusa anotação de tipo**. Um cartão que
@@ -341,7 +404,7 @@ Banner que só diz "terminou" é o silêncio-lido-como-aprovação em outra form
 ## Testes
 
 ```bash
-npm test        # 20 casos: rotas, forma das respostas, cache, CLIs e o de-para da doutrina
+npm test        # 25 casos: rotas, forma das respostas, cache, mesclagem, CLIs e a doutrina
 ```
 
 Existe porque, num único dia de desenvolvimento, **cinco quebras passaram em silêncio**: uma função
@@ -351,7 +414,13 @@ fez uma otimização virar regressão de 16×. Todas eram detectáveis batendo n
 forma da resposta.
 
 O teste **descobre o alvo** em vez de fixar nome de repo — vale em qualquer workspace — e faz `skip`
-com motivo declarado quando não há trabalho aberto, em vez de passar em falso.
+com motivo declarado quando não há trabalho aberto, em vez de passar em falso. Ele procura um repo com
+diff **de verdade**: pegar o primeiro fazia as rotas de diff virarem `skip` quando ele estava mesclado,
+e a suíte ficava verde sem exercitar nada.
+
+Dois casos montam um **repo git temporário** com merge por squash, porque essa é a situação que a
+topologia não vê. Um exige o jeito certo (mesclado → diff vazio) e o outro exige o errado (commit
+depois do merge → continua aparecendo): sem o segundo, a correção viraria cegueira.
 
 ### `doutrina.json` — o de-para que impede "metade implementado"
 

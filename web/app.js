@@ -366,7 +366,11 @@ function pintarAbasDoAtual(token) {
   // Fonte mais específica primeiro: o `find` devolve a primeira, e o resultado real do linter tem
   // que ganhar do placeholder que o `local()` põe enquanto ele não chega.
   const conhecidos = itensDoAtual.lint.concat(itensDoAtual.remotos, itensDoAtual.locais);
+  // Cartão condicional (o de mesclagem, por exemplo) tem id fora do ESQUELETO: sem esta linha ele
+  // era descartado em silêncio, porque o `map` só percorre o esqueleto.
+  const fixos = new Set(ESQUELETO.map(e => e.id));
   const todos = ESQUELETO.map(e => conhecidos.find(i => i.id === e.id) || e)
+    .concat(conhecidos.filter(i => !fixos.has(i.id)))
     .concat(itensDoAtual.pontos);
   desenharCartoes(todos);
   escreverVeredito(todos);
@@ -407,7 +411,7 @@ function marcarCarimbo(d) {
   if (!c) { return; }
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
   c.textContent = `${d.arquivos.length} arquivo(s) · base ${d.baseNome || (d.base || '').slice(0, 8)}`
-    + (d.mesclado ? ' · mesclado' : '')
+    + (d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
     + (d.ref ? '' : '')
     + (d.doCache ? ` · do cache de ${quando}` : ' · lido agora');
 }
@@ -486,8 +490,11 @@ function montarArquivos(d) {
   totalDeArquivosGlobal = d.arquivos.length;
   if (!d.arquivos.length) {
     caixa.innerHTML = d.mesclado
-      ? `<p class="aviso"><b>Mesclado.</b> A branch está inteiramente contida em
-         <code>${esc(d.baseNome || 'base')}</code> — não há nada a revisar.</p>`
+      ? `<p class="aviso"><b>Mesclado.</b> ${d.comoSoube === 'conteudo'
+          ? `O commit da branch não está em <code>${esc(d.baseNome || 'base')}</code> (merge por squash),
+             mas todo arquivo que ela tocou já está igual lá`
+          : `A branch está inteiramente contida em <code>${esc(d.baseNome || 'base')}</code>`}
+         — não há nada a revisar.</p>`
       : '<p class="aviso">Nenhuma alteração contra a base.</p>';
     return;
   }

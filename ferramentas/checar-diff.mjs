@@ -117,9 +117,15 @@ export class ChecarDiff {
     // fixa de nomes foi o que fez uma branch mesclada mostrar 17 arquivos de diff falso.
     resolverBase(projeto, base) {
         if (base) {
+            this.pendentes = null;
             return base;
         }
-        return new Diff(projeto, this.ref || '').resolverBase();
+        // Guarda a instância: o `pendentes` dela é o que separa "mesclado por squash" de trabalho
+        // aberto. Sem isso o diff dizia 0 arquivos e a cobertura dizia 11 não conferidos.
+        const d = new Diff(projeto, this.ref || '');
+        const real = d.resolverBase();
+        this.pendentes = d.pendentes;
+        return real;
     }
 
     _argsDiff(base, extras) {
@@ -168,6 +174,9 @@ export class ChecarDiff {
             const estado = partes[0];
             const caminho = partes[partes.length - 1];
             if (estado === 'D') {
+                continue;
+            }
+            if (this.pendentes && !this.pendentes.has(caminho)) {
                 continue;
             }
             // As regras aqui são de TEXTO (comentário, declaração no topo, literal), então valem em

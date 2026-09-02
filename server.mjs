@@ -264,6 +264,7 @@ class Servidor {
         return {
             projeto, branch: d.branch(), base: baseReal,
             baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
+            comoSoube: d.comoSoube || null,
             arquivos: d.listarArquivos(baseReal)
         };
     }

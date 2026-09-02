@@ -10,7 +10,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { Diff } from '../lib/diff.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,11 +49,20 @@ before(async () => {
         }
     }
     // Descobre um alvo real em vez de fixar um nome de repo: o teste tem que valer em qualquer workspace.
+    // Precisa de um repo com diff DE VERDADE: pegar o primeiro fazia as rotas de diff virarem skip
+    // quando ele estava mesclado — a suíte ficava verde sem exercitar nada.
     const { corpo } = await pegar('/api/chamados');
-    const c = (corpo.lista || [])[0];
-    if (c) {
-        const r = c.repos[0];
-        contexto = { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' };
+    for (const c of corpo.lista || []) {
+        for (const r of c.repos) {
+            const d = (await pegar('/api/arquivos', { projeto: r.projeto, ref: r.ref || '' })).corpo;
+            if ((d.arquivos || []).length) {
+                contexto = { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' };
+                break;
+            }
+        }
+        if (contexto.projeto) {
+            break;
+        }
     }
 });
 
@@ -335,4 +346,96 @@ test('cada ferramenta responde --json parseável', () => {
         assert.equal(r.codigo, 0, `${script}: ${r.saida.slice(0, 200)}`);
         assert.doesNotThrow(() => JSON.parse(r.saida), `${script} não devolveu JSON: ${r.saida.slice(0, 200)}`);
     }
+});
+
+// Repo sintético: merge por squash é o caso que topologia não vê, e era 11 arquivos de diff falso
+// no UND-1638. Os dois testes abaixo exigem o jeito certo (mesclado → vazio) E o errado
+// (trabalho depois do merge → continua aparecendo), senão a correção viraria cegueira.
+function repoDeTeste(nome) {
+    const raiz = mkdtempSync(join(tmpdir(), `qualidade-${nome}-`));
+    const g = (...a) => execFileSync('git', ['-C', raiz, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    g('init', '-q', '-b', 'stage');
+    g('config', 'user.email', 'teste@local');
+    g('config', 'user.name', 'Teste');
+    writeFileSync(join(raiz, 'a.txt'), 'base\n');
+    g('add', '-A');
+    g('commit', '-qm', 'base');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+    return { raiz, g };
+}
+
+test('merge por squash conta como mesclado, mesmo sem ser ancestral', () => {
+    const { raiz, g } = repoDeTeste('squash');
+    g('checkout', '-q', '-b', 'UND-1', 'stage');
+    writeFileSync(join(raiz, 'a.txt'), 'base\nda branch\n');
+    g('commit', '-qam', 'trabalho');
+    // squash: o mesmo conteúdo entra em stage como UM commit novo, sem o commit da branch como pai
+    g('checkout', '-q', 'stage');
+    g('merge', '-q', '--squash', 'UND-1');
+    g('commit', '-qm', 'squash de UND-1');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+
+    const d = new Diff(raiz, 'UND-1');
+    const base = d.resolverBase();
+    // sanidade: se isto passasse a ser ancestral, o teste deixaria de testar squash
+    assert.throws(() => d.git('merge-base', '--is-ancestor', 'UND-1', 'origin/stage'));
+    assert.equal(d.mesclado, true, 'squash tem que contar como mesclado');
+    assert.equal(d.comoSoube, 'conteudo', 'a topologia não pode ser a fonte aqui');
+    assert.equal(d.listarArquivos(base).length, 0, 'nada a revisar num squash já mesclado');
+    rmSync(raiz, { recursive: true, force: true });
+});
+
+test('o filtro de pendência não esconde trabalho depois do merge', () => {
+    const { raiz, g } = repoDeTeste('depois');
+    g('checkout', '-q', '-b', 'UND-1', 'stage');
+    writeFileSync(join(raiz, 'a.txt'), 'base\nda branch\n');
+    g('commit', '-qam', 'trabalho');
+    g('checkout', '-q', 'stage');
+    g('merge', '-q', '--squash', 'UND-1');
+    g('commit', '-qm', 'squash de UND-1');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+    // e agora um commit NOVO na branch, depois do merge: é trabalho aberto e tem que aparecer
+    g('checkout', '-q', 'UND-1');
+    writeFileSync(join(raiz, 'b.txt'), 'depois do merge\n');
+    g('add', '-A');
+    g('commit', '-qm', 'depois do merge');
+
+    const d = new Diff(raiz, 'UND-1');
+    const arquivos = d.listarArquivos(d.resolverBase()).map(a => a.caminho);
+    assert.equal(d.mesclado, false, 'com trabalho pendente não é mesclado');
+    assert.deepEqual(arquivos, ['b.txt'], 'só o que ainda não está no destino');
+    rmSync(raiz, { recursive: true, force: true });
+});
+
+// O caso que a comparação por `git diff` errava: o destino andou por cima do MESMO arquivo depois do
+// squash. O conteúdo passa a diferir nos dois sentidos, e a branch aparecia como pendente sem ter
+// nada pendente. Medido no UND-1638: 2 arquivos já mesclados marcados como abertos.
+//
+// As duas edições ficam em regiões distintas do arquivo, que é a forma real do caso. Edição
+// ADJACENTE conflita mesmo — é limite do merge de três vias, não defeito da checagem.
+test('destino que andou por cima não transforma branch mesclada em pendente', () => {
+    const { raiz, g } = repoDeTeste('adiante');
+    const linhas = n => Array.from({ length: 20 }, (_, i) => i === n ? `linha ${i} mexida` : `linha ${i}`);
+    writeFileSync(join(raiz, 'a.txt'), Array.from({ length: 20 }, (_, i) => `linha ${i}`).join('\n') + '\n');
+    g('commit', '-qam', 'arquivo com 20 linhas');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+
+    g('checkout', '-q', '-b', 'UND-1', 'stage');
+    writeFileSync(join(raiz, 'a.txt'), linhas(4).join('\n') + '\n');
+    g('commit', '-qam', 'trabalho na linha 4');
+    g('checkout', '-q', 'stage');
+    g('merge', '-q', '--squash', 'UND-1');
+    g('commit', '-qm', 'squash de UND-1');
+    // e agora um terceiro mexe no mesmo arquivo, em outra região, só em stage
+    const comAmbas = linhas(4);
+    comAmbas[17] = 'linha 17 de outra pessoa';
+    writeFileSync(join(raiz, 'a.txt'), comAmbas.join('\n') + '\n');
+    g('commit', '-qam', 'trabalho de terceiro');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+
+    const d = new Diff(raiz, 'UND-1');
+    const arquivos = d.listarArquivos(d.resolverBase());
+    assert.equal(d.mesclado, true, 'mesclar a branch não acrescentaria nada — está mesclada');
+    assert.deepEqual(arquivos, [], 'o que o destino ganhou depois não é pendência da branch');
+    rmSync(raiz, { recursive: true, force: true });
 });
