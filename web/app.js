@@ -5,7 +5,9 @@ import { realcar, novoEstado, linguagemDe } from './realce.js';
 
 const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const api = (r,p) => fetch(r + '?' + new URLSearchParams(p)).then(x => x.json());
-const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar', indisponivel:'indisponível',
+// `ignorado` = a checagem não se aplica aqui. `indisponível` = ela deveria ter rodado e não rodou.
+const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar',
+  ignorado:'ignorado', indisponivel:'indisponível',
   carregando:'consultando…'};
 
 // Esqueleto na forma do que vem, em vez da palavra "carregando": mostra quanto vem e onde, e a tela
@@ -16,18 +18,37 @@ const esqRepos = n => Array.from({ length: n }, () =>
   `<div class="esq-repo">${esq('esq-nome esq-linha')}${esq('esq-tag')}</div>`).join('');
 const esqCodigo = n => `<div class="esq-codigo">${Array.from({ length: n },
   (_, i) => esq(`esq-linha esq-l${(i % 4) + 1}`)).join('')}</div>`;
-const GRUPOS = [
-  { id:'trabalho', rotulo:'Chamado, testes e lint' },
-  { id:'dados', rotulo:'Dados e performance' },
-  { id:'refatoracao', rotulo:'Refatoração' },
-  { id:'atencao', rotulo:'Pontos de atenção da IA' }
+// Sem abas: 6 a 11 cartões não justificam 4 abas. A lista é única e os grupos só definem a ORDEM.
+const ORDEM = [
+  'trabalho', 'dados', 'refatoracao', 'atencao'
 ];
 const SEVERIDADE_STATUS = { atencao: 'atencao', aviso: 'aviso', nota: 'manual' };
+// O nome da coluna no Linear é livre por time, então o estágio é deduzido por palavra-chave e cai em
+// neutro quando não reconhece — cor errada é pior que cor cinza.
+const ESTAGIOS = [
+  [/cancel|duplicat|descartad/i, 'cancelado'],
+  [/block|impedid|bloquead|paus/i, 'bloqueado'],
+  [/done|conclu|complet|finaliz|deploy|entregue/i, 'pronto'],
+  [/test|review|revis|valida|homolog|qa/i, 'validando'],
+  [/progress|andamento|doing|develop|fazendo/i, 'andando'],
+  [/refin|grooming|discov/i, 'refinando'],
+  [/todo|to do|backlog|triage|aberto|novo/i, 'parado']
+];
+
+function estagioDe(status) {
+  if (!status) { return 'desconhecido'; }
+  for (const [re, nome] of ESTAGIOS) {
+    if (re.test(status)) { return nome; }
+  }
+  return 'desconhecido';
+}
 const ESQUELETO = window.ESQUELETO || [];
 let atual = null;
-let abaAtiva = null;
 let geracao = 0;
 let visao = 'chamados';
+let chamados = [];
+let prsDoChamado = [];
+let itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
 
 // O pino resume o grupo pelo pior estado dele: a aba precisa dizer se vale abrir antes de abrir.
 function pinoDo(itens) {
@@ -35,40 +56,24 @@ function pinoDo(itens) {
   if (itens.some(i => i.status === 'carregando')) { return 'neutro'; }
   if (itens.some(i => i.status === 'atencao')) { return 'atencao'; }
   if (itens.some(i => i.status === 'aviso')) { return 'aviso'; }
-  if (itens.every(i => i.status === 'manual' || i.status === 'indisponivel')) { return 'neutro'; }
+  const neutros = new Set(['manual', 'ignorado', 'indisponivel']);
+  if (itens.every(i => neutros.has(i.status))) { return 'neutro'; }
   return 'ok';
 }
 
-function desenharAbas(itens) {
-  const porGrupo = g => itens.filter(i => i.grupo === g);
-  if (!abaAtiva) {
-    const comAtencao = GRUPOS.find(g => porGrupo(g.id).some(i => i.status === 'atencao'));
-    abaAtiva = (comAtencao || GRUPOS[0]).id;
-  }
-  document.getElementById('abas').innerHTML = GRUPOS.map(g => {
-    const seus = porGrupo(g.id);
-    const conta = seus.filter(i => i.status === 'atencao' || i.status === 'aviso').length;
-    return `<button class="${g.id === abaAtiva ? 'ativa' : ''}" onclick="trocarAba('${g.id}')">
-      <span class="pino p-${pinoDo(seus)}"></span>${g.rotulo}${conta ? `<span class="conta">${conta}</span>` : ''}</button>`;
-  }).join('');
-  document.getElementById('paineis').innerHTML = GRUPOS.map(g =>
-    `<div class="painel ${g.id === abaAtiva ? 'ativo' : ''}" data-g="${g.id}">
-      ${porGrupo(g.id).map(cartao).join('') || '<p class="aviso">nada neste grupo</p>'}</div>`).join('');
+// Uma lista só, ordenada por grupo. Todo cartão nasce recolhido — quem resume o conjunto é o
+// veredito de uma linha acima, então abrir sozinho só empurraria os outros para baixo.
+function desenharCartoes(itens) {
+  const ordenados = [...itens].sort((a, b) =>
+    (ORDEM.indexOf(a.grupo) + 1 || 99) - (ORDEM.indexOf(b.grupo) + 1 || 99));
+  document.getElementById('cartoes').innerHTML = ordenados.map(cartao).join('');
 }
 
-function trocarAba(id) {
-  abaAtiva = id;
-  for (const b of document.querySelectorAll('.abas button')) { b.classList.remove('ativa'); }
-  document.querySelectorAll('.abas button')[GRUPOS.findIndex(g => g.id === id)].classList.add('ativa');
-  for (const p of document.querySelectorAll('.painel')) { p.classList.toggle('ativo', p.dataset.g === id); }
-}
-
-// O cartão do lint diz QUAL linter rodou: é o do projeto, não um meu, e isso importa para confiar.
 function cartaoDoLint(r) {
   const linters = (r.linters || []).join(', ');
   if (!linters) {
-    return { id: 'lint', titulo: 'Lint do projeto', status: 'indisponivel',
-      detalhe: r.nota || 'nenhum linter configurado', evidencia: [], grupo: 'trabalho' };
+    return { id: 'lint', titulo: 'Lint do projeto', status: 'ignorado',
+      detalhe: r.nota || 'nenhum linter configurado neste projeto', evidencia: [], grupo: 'trabalho' };
   }
   if (!r.total) {
     return { id: 'lint', titulo: 'Lint do projeto', status: 'ok',
@@ -88,139 +93,205 @@ function cartaoDoLint(r) {
 function cartao(i) {
   if (i.status === 'carregando') {
     return `<div class="check st-carregando" aria-busy="true">
-      <div class="topo"><span class="titulo">${esc(i.titulo)}</span></div>
-      ${esqLinhas('l1', 'l2')}
-    </div>`;
+      <div class="linha1"><span class="tag">${ROTULO[i.status]}</span>
+      <span class="titulo">${esc(i.titulo)}</span></div></div>`;
   }
-  return `<div class="check st-${i.status}">
-    <div class="topo"><span class="titulo">${esc(i.titulo)}</span>
-      ${i.pontoId ? `<button class="tirar" title="tirar este ponto da lista"
-        onclick="tirarPonto('${i.pontoId}')">×</button>` : ''}
-      <span class="tag">${ROTULO[i.status]}</span></div>
-    ${i.detalhe ? `<div class="detalhe">${esc(i.detalhe)}</div>` : ''}
-    ${i.evidencia.length ? `<ul>${i.evidencia.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-  </div>`;
+  // Em 4 por linha não cabe título + detalhe na mesma linha, então recolhido mostra só o título e o
+  // detalhe desce para o corpo, junto da evidência.
+  const corpo = [i.detalhe ? `<p class="det">${esc(i.detalhe)}</p>` : '']
+    .concat(i.evidencia.length ? `<ul>${i.evidencia.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '')
+    .join('');
+  const resumo = `<span class="tag">${ROTULO[i.status]}</span>
+    <span class="titulo">${esc(i.titulo)}</span>
+    ${i.pontoId ? `<button class="tirar" title="tirar este ponto da lista"
+      onclick="tirarPonto(event,'${i.pontoId}')">×</button>` : ''}`;
+  if (!corpo) {
+    return `<div class="check st-${i.status} sem-corpo"><div class="linha1">${resumo}</div></div>`;
+  }
+  return `<details class="check st-${i.status}">
+    <summary class="linha1">${resumo}</summary>
+    <div class="corpo-check">${corpo}</div>
+  </details>`;
 }
 
 async function carregarChamados() {
   const r = await api('/api/chamados', {});
   const ocultos = r.ocultos || [];
-  document.getElementById('lista').innerHTML = (r.lista || []).map(c => `
-    <div class="chamado" data-c="${c.chamado}">
-      <button onclick="this.parentNode.classList.toggle('aberto')">
-        <span>${c.chamado}</span><span class="qtd">${c.repos.length} repo${c.repos.length>1?'s':''}</span>
-        <span class="recarregar-chamado" title="recarregar todos os ${c.repos.length} repos deste chamado"
-          onclick="recarregarChamado(event,'${c.chamado}')">↻</span>
+  chamados = r.lista || [];
+  document.getElementById('lista').innerHTML = chamados.map(c => `
+    <button class="linha-chamado ${c.chamado === (atual?.chamado) ? 'ativo' : ''}"
+            data-c="${c.chamado}" onclick="abrirChamado('${c.chamado}')"
+            title="${esc(c.titulo || c.chamado)}">
+      <span class="lch-topo">
+        <span class="pino-repo p-vazio" title="conferindo…"></span>
+        <span class="lch-id">${c.chamado}</span>
+        <span class="lch-repos" title="${c.repos.length} repo(s) neste chamado">${c.repos.length}</span>
         <span class="ocultar" title="Tirar do menu" onclick="ocultar(event,'${c.chamado}')">×</span>
-      </button>
-      <div class="repos">${c.repos.map(r => `
-        <button data-p="${r.projeto}" data-c="${c.chamado}" data-ref="${r.ref || ''}"
-          class="${r.naBranch ? '' : 'fora'}" onclick="abrir(this)">
-          <span class="pino-repo p-vazio" title="conferindo…"></span>
-          <span class="nome-repo" title="${r.projeto}">${r.projeto}</span>
-          ${r.sujo ? `<span class="sujo" title="${r.sujo} arquivo(s) alterado(s) e não commitado(s)">${r.sujo} ✎</span>` : ''}
-          <span class="branch-tag ${r.naBranch ? '' : 'difere'}" title="${r.naBranch
-            ? `Checkout local em ${r.branchAtual} — a mesma branch do chamado.`
-            : `Checkout local em ${r.branchAtual}, mas o repo tem a branch ${c.chamado} e participa dele. O diff e a análise usam a branch do chamado, não o checkout. Nada a ver com o estado da PR.`}">${r.branchAtual}</span>
-        </button>`).join('')}
-        <div class="prs" data-c="${c.chamado}"></div>
-      </div>
-    </div>`).join('') || 'nenhum chamado com branch aberta';
+      </span>
+      ${c.titulo
+        ? `<span class="lch-sub">${esc(c.titulo)}</span>`
+        : '<span class="lch-sub sem">título não cacheado — rodar /inicio-trabalho</span>'}
+    </button>`).join('') || '<p class="vazio">nenhum chamado com branch aberta</p>';
   document.getElementById('ocultos').innerHTML = ocultos.length
     ? `<button class="conta-ocultos" onclick="this.parentNode.classList.toggle('aberto')">
          ${ocultos.length} oculto${ocultos.length > 1 ? 's' : ''}</button>
        <div class="lista-ocultos">${ocultos
          .map(c => `<button onclick="mostrar('${c}')" title="Trazer de volta">${c}</button>`).join('')}</div>`
     : '';
-  const primeiro = document.querySelector('.chamado');
-  if (primeiro) { primeiro.classList.add('aberto'); }
-  marcarPinosDoMenu(r.lista || []);
-  listarPrs(r.lista || []);
+  marcarPinosDaBarra(chamados);
+  if (!atual && chamados.length) {
+    abrirChamado(chamados[0].chamado);
+  }
 }
 
-// Os PRs do chamado, em paralelo (0,7 s para 7 repos). Abrem em aba nova: sair da tela para ver a PR
-// e perder o estado da conferência era o caminho mais provável.
-async function listarPrs(chamados) {
-  for (const c of chamados) {
-    const caixa = document.querySelector(`.prs[data-c="${c.chamado}"]`);
-    if (!caixa) {
-      continue;
+// O pino da linha do chamado é o PIOR dos repos dele: a barra tem que dizer onde olhar antes de
+// você abrir. Roda em segundo plano, um repo por vez — o servidor é síncrono no que é local.
+async function marcarPinosDaBarra(lista) {
+  for (const c of lista) {
+    let pior = 'ok';
+    let achados = 0;
+    for (const r of c.repos) {
+      let q;
+      try {
+        q = await api('/api/qualidade', { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' });
+      } catch {
+        continue;
+      }
+      const itens = q.itens || [];
+      achados += itens.filter(i => i.status === 'atencao' || i.status === 'aviso').length;
+      const p = pinoDo(itens);
+      if (p === 'atencao' || (p === 'aviso' && pior !== 'atencao')) {
+        pior = p;
+      }
+      // Guarda para a área de menu não recalcular ao abrir.
+      r.pino = p;
     }
-    caixa.innerHTML = `<div class="prs-titulo">Pull requests</div>
-      <div class="prs-carregando" aria-busy="true" aria-label="consultando pull requests">
-        ${esqRepos(Math.min(c.repos.length, 5))}</div>`;
-    let r;
-    try {
-      r = await api('/api/prs', { chamado: c.chamado, projetos: c.repos.map(x => x.projeto).join(',') });
-    } catch {
-      caixa.innerHTML = '';
-      continue;
+    const pino = document.querySelector(`.linha-chamado[data-c="${c.chamado}"] .pino-repo`);
+    if (pino) {
+      pino.className = `pino-repo p-${pior}`;
+      pino.title = achados ? `${achados} achado(s) neste chamado` : 'nada a corrigir na conferência local';
     }
-    const lista = r.prs || [];
-    const comPr = lista.filter(x => x.temPr);
-    const semPr = lista.filter(x => x.temPr === false);
+  }
+}
+
+// O chamado abre em duas partes: um cabeçalho fino no topo do conteúdo, e a TRILHA à direita com as
+// branches e o Linear. A trilha é recolhível porque o diff é a coisa mais larga do app.
+async function abrirChamado(chamado) {
+  const c = chamados.find(x => x.chamado === chamado);
+  if (!c) { return; }
+  for (const b of document.querySelectorAll('.linha-chamado')) {
+    b.classList.toggle('ativo', b.dataset.c === chamado);
+  }
+  const cab = document.getElementById('cabecalho');
+  cab.hidden = false;
+  cab.innerHTML = `
+    <span class="cab-id">${chamado}</span>
+    <span class="cab-titulo" id="cab-titulo">${esq('esq-linha esq-l2')}</span>`;
+
+  const trilha = document.getElementById('trilha');
+  trilha.hidden = false;
+  document.getElementById('trilha-corpo').innerHTML = `
+    <div class="tr-secao" id="tr-chamado">
+      <div class="tr-titulo">Chamado</div>
+      <div class="tr-carregando">${esqLinhas('l1', 'l3', 'l4')}</div>
+    </div>
+    <div class="tr-secao">
+      <div class="tr-titulo">Branches</div>
+      <div class="tr-chips" id="tr-chips">${c.repos.map(r => `
+        <button class="chip ${r.naBranch ? '' : 'fora'}" data-p="${r.projeto}" data-c="${chamado}"
+                data-ref="${r.ref || ''}" onclick="abrir(this)"
+                title="${r.naBranch
+                  ? `checkout em ${r.branchAtual}`
+                  : `tem a branch ${chamado}, mas o checkout local está em ${r.branchAtual} — o diff usa a branch do chamado`}">
+          <span class="pino-repo p-${r.pino || 'vazio'}"></span>
+          <span class="chip-nome">${r.projeto}</span>
+          ${r.sujo ? `<span class="chip-sujo" title="${r.sujo} não commitado(s)">${r.sujo}✎</span>` : ''}
+          ${r.naBranch ? '' : `<span class="chip-fora" title="checkout local em ${r.branchAtual}">${r.branchAtual}</span>`}
+        </button>`).join('')}</div>
+    </div>
+    <div class="tr-secao" id="tr-prs">
+      <div class="tr-titulo">Pull requests</div>
+      <div class="tr-carregando">${esqLinhas('l2', 'l1')}</div>
+    </div>
+    <div class="tr-pe">
+      <button class="tr-recarregar" onclick="recarregarChamado(event,'${chamado}')"
+              title="derruba o cache dos ${c.repos.length} repos deste chamado, dos PRs e da lista">
+        <span class="tr-cog" aria-hidden="true">⚙</span><span>recarregar</span>
+      </button>
+    </div>`;
+  aplicarRecolhido();
+
+  // Identidade e PRs chegam depois: é rede.
+  api('/api/prs', { chamado, projetos: c.repos.map(x => x.projeto).join(',') }).then(r => {
+    prsDoChamado = r.prs || [];
     const l = r.linear;
-    // O tooltip do nome do chamado: título e status vêm do Linear, com a data do cache — título
-    // velho serve, desde que esteja dito que é velho.
-    const cabecalho = document.querySelector(`.chamado[data-c="${c.chamado}"] > button`);
-    if (cabecalho && l?.titulo) {
-      const quando = l.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
-      cabecalho.title = `${l.titulo}${l.status ? `\n${l.status}` : ''}`
-        + `${l.atribuido ? ` · ${l.atribuido}` : ''}${quando ? `\n\n(do Linear, lido em ${quando})` : ''}`;
+    const titulo = document.getElementById('cab-titulo');
+    if (titulo) {
+      titulo.innerHTML = l?.titulo ? esc(l.titulo) : '';
     }
-    caixa.innerHTML = `
-      ${l?.url ? `
-        <a class="link-chamado" href="${l.url}" target="_blank" rel="noopener"
-           title="${esc(l.titulo || 'abrir no Linear')}">
-          <span class="lc-marca">Linear</span>
-          <span class="lc-titulo">${esc(l.titulo || c.chamado)}</span>
-          ${l.status ? `<span class="lc-status">${esc(l.status)}</span>` : ''}
-        </a>` : ''}
-      <div class="prs-titulo">Pull requests</div>
-      ${comPr.map(x => `
-        <a class="pr-link pr-${x.estado.toLowerCase()} ${x.foraDaVarredura ? 'achado-na-org' : ''}"
-           href="${x.url}" target="_blank" rel="noopener"
-           title="${esc(x.titulo || '')}${x.foraDaVarredura
-             ? '\n\nAchado pela busca na organização, não pela varredura local: o repo não está clonado aqui, ou a branch tem sufixo (ex: UND-1638-hml).'
-             : ''}">
-          <span class="pr-num">#${x.numero}</span>
-          <span class="pr-repo">${esc(x.projeto)}</span>
-          ${x.doLinear ? '<span class="pr-fora" title="só o Linear conhece este PR">◈</span>'
-            : (x.foraDaVarredura ? '<span class="pr-fora" title="fora da varredura local">◇</span>' : '')}
-          <span class="pr-estado">${esc(x.rotulo)}</span>
-        </a>`).join('')}
-      ${semPr.length ? `<div class="pr-falta">sem PR: ${semPr.map(x => esc(x.projeto)).join(', ')}</div>` : ''}`;
+    const alvo = document.getElementById('tr-chamado');
+    if (alvo) {
+      const quando = l?.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
+      alvo.innerHTML = `
+        <div class="tr-titulo">Chamado</div>
+        <div class="tr-nome">
+          <span class="tr-estagio e-${estagioDe(l?.status)}"
+                title="${l?.status ? esc(l.status) : 'estágio não sabido — o cache do Linear não tem status'}"></span>
+          <span>${esc(l?.titulo || chamado)}</span>
+        </div>
+        ${l?.url ? `<a class="tr-linear" href="${l.url}" target="_blank" rel="noopener"
+            title="abrir ${chamado} no Linear${quando ? ` · dado lido em ${quando}` : ''}">
+            <span class="tl-marca">L</span><span>${chamado} no Linear</span><span class="tl-seta">↗</span></a>` : ''}
+        ${quando ? `<div class="tr-nota">lido em ${quando}</div>` : ''}`;
+    }
+    // Todas as abertas, listadas — é o que estava na barra antes da trilha, e é o que se persegue.
+    // Mesclada e fechada ficam na aba, que tem largura para o título.
+    const prAlvo = document.getElementById('tr-prs');
+    if (prAlvo) {
+      // Todas, sempre abertas: a trilha é o único lugar onde os PRs aparecem, então esconder
+      // atrás de um botão significaria esconder de vez.
+      const comPr = prsDoChamado.filter(x => x.temPr);
+      const abertas = comPr.filter(x => x.estado === 'OPEN').length;
+      const semPr = prsDoChamado.filter(x => x.temPr === false).map(x => x.projeto);
+      prAlvo.innerHTML = `
+        <div class="tr-titulo">Pull requests
+          <span class="tr-conta">${comPr.length}${abertas ? ` · ${abertas} aberta(s)` : ''}</span></div>
+        ${comPr.map(x => `
+          <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')}"
+             href="${x.url}" target="_blank" rel="noopener"
+             title="${esc(x.titulo || '')}\n\n${esc(x.rotulo)}${x.doLinear ? ' · só o Linear conhece este PR'
+               : (x.foraDaVarredura ? ' · fora da varredura local: repo não clonado aqui, ou branch com sufixo' : '')}">
+            <span class="tr-pr-estado pr-${x.estado.toLowerCase()}" title="${esc(x.rotulo)}"></span>
+            <span class="tr-pr-num">#${x.numero}</span>
+            <span class="tr-pr-repo">${esc(x.projeto)}</span>
+            <span class="tr-pr-seta">↗</span>
+          </a>`).join('') || '<div class="tr-nota">nenhum PR</div>'}
+        ${semPr.length ? `<div class="tr-sem-pr">sem PR: ${esc(semPr.join(', '))}</div>` : ''}`;
+    }
+    pintarAbasDoAtual();
+  });
+
+  // Cai no repo com o pior pino: você chega onde está o problema, sem um segundo clique.
+  const peso = { atencao: 0, aviso: 1, ok: 2, neutro: 3, vazio: 4 };
+  const escolhido = [...c.repos].sort((a, b) => (peso[a.pino] ?? 5) - (peso[b.pino] ?? 5))[0];
+  const chip = document.querySelector(`.chip[data-p="${escolhido.projeto}"][data-c="${chamado}"]`);
+  if (chip) {
+    abrir(chip);
   }
 }
 
-// O pino do menu diz onde há achado, que é a pergunta que a barra deve responder. Roda em segundo
-// plano e um repo por vez: o servidor é síncrono, disparar tudo junto só faz fila.
-async function marcarPinosDoMenu(chamados) {
-  const alvos = chamados.flatMap(c => c.repos.map(r => ({ chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' })));
-  for (const { chamado, projeto, ref } of alvos) {
-    let q;
-    try {
-      q = await api('/api/qualidade', { chamado, projeto, ref });
-    } catch {
-      continue;
-    }
-    const botao = document.querySelector(`.repos button[data-p="${projeto}"][data-c="${chamado}"]`);
-    const pino = botao?.querySelector('.pino-repo');
-    if (!pino) {
-      continue;
-    }
-    const itens = q.itens || [];
-    const estado = pinoDo(itens);
-    const contagem = itens.filter(i => i.status === 'atencao' || i.status === 'aviso').length;
-    pino.className = `pino-repo p-${estado}`;
-    pino.title = contagem
-      ? `${contagem} achado(s) na conferência deste repo`
-      : 'nada a corrigir na conferência local deste repo';
-  }
+function alternarMenu() {
+  const recolhido = !document.body.classList.contains('trilha-recolhida');
+  document.body.classList.toggle('trilha-recolhida', recolhido);
+  try { localStorage.setItem('qualidade:trilha-recolhida', recolhido ? '1' : '0'); } catch { /* aba privada */ }
 }
 
-// Some do menu, nao do disco: a branch continua la e o chamado volta com um clique. Por isso o
-// nome fica visivel no rodape em vez de virar uma lista que so o arquivo conhece.
+function aplicarRecolhido() {
+  let v = '0';
+  try { v = localStorage.getItem('qualidade:trilha-recolhida') || '0'; } catch { /* aba privada */ }
+  document.body.classList.toggle('trilha-recolhida', v === '1');
+}
+
 async function ocultar(evento, chamado) {
   evento.stopPropagation();
   await api('/api/ocultar', { chamado });
@@ -234,39 +305,24 @@ async function mostrar(chamado) {
 
 // A prioridade é o diff: o esqueleto e a lista de arquivos entram primeiro, e os cartões preenchem
 // conforme chegam. Nada espera por nada.
-async function abrir(botao, manterAba) {
-  document.querySelectorAll('.repos button').forEach(b => b.classList.remove('ativo'));
-  botao.classList.add('ativo');
-  atual = { projeto: botao.dataset.p, chamado: botao.dataset.c, ref: botao.dataset.ref || '', botao };
-  if (!manterAba) { abaAtiva = null; }
+// Abre um repo. O cabeçalho de identidade não vive mais aqui — está na área de menu do chamado.
+// Aqui fica o veredito numa linha, as abas, e o diff.
+async function abrir(chip) {
+  document.querySelectorAll('.chip').forEach(b => b.classList.remove('ativo'));
+  chip.classList.add('ativo');
+  atual = { projeto: chip.dataset.p, chamado: chip.dataset.c, ref: chip.dataset.ref || '', botao: chip };
   const token = ++geracao;
+  itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
+  // Clicar numa branch começa do topo: antes a página ficava onde estava, ou saltava para o meio.
+  document.querySelector('main').scrollTop = 0;
   alvo.innerHTML = `
-    <header>
-      <h2>${esc(atual.chamado)} · ${esc(atual.projeto)}</h2>
-      ${atual.ref ? `<span class="fora-aviso" title="o diff é da branch do chamado, não do checkout atual">diff de ${esc(atual.ref)}</span>` : ''}
-      <span class="carimbo" id="carimbo"></span>
-      <button class="recarregar" onclick="recarregar()">recarregar</button>
-      <span class="selo pr-carregando" id="selo-pr" aria-busy="true">${esq('esq-pilula')}</span>
-    </header>
-    <div class="abas" id="abas"></div>
-    <div id="paineis"></div>
-    <h3 class="secao">Diff — antes | depois</h3>
+    <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
+    <div id="cartoes"></div>
+    <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
     <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>`;
-
-  let locais = [];
-  let remotos = [];
-  let pontos = [];
-  let lintado = [];
-  const pintarAbas = () => {
-    if (token !== geracao) { return; }
-    // Fonte mais específica primeiro: o `find` devolve a primeira, e o resultado real do linter tem
-    // que ganhar do placeholder que o `local()` põe enquanto ele não chega.
-    const conhecidos = lintado.concat(remotos, locais);
-    desenharAbas(ESQUELETO.map(e => conhecidos.find(i => i.id === e.id) || e).concat(pontos));
-  };
-  pintarAbas();
+  pintarAbasDoAtual(token);
 
   api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref }).then(d => {
     if (token !== geracao) { return; }
@@ -276,17 +332,17 @@ async function abrir(botao, manterAba) {
   });
   api('/api/qualidade', { chamado: atual.chamado, projeto: atual.projeto, ref: atual.ref }).then(q => {
     if (token !== geracao) { return; }
-    locais = q.itens;
-    pintarAbas();
+    itensDoAtual.locais = q.itens;
+    pintarAbasDoAtual(token);
   });
   api('/api/lint', { projeto: atual.projeto, ref: atual.ref }).then(r => {
     if (token !== geracao) { return; }
-    lintado = [cartaoDoLint(r)];
-    pintarAbas();
+    itensDoAtual.lint = [cartaoDoLint(r)];
+    pintarAbasDoAtual(token);
   });
   api('/api/pontos', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
     if (token !== geracao) { return; }
-    pontos = (r.pontos || []).map(p => ({
+    itensDoAtual.pontos = (r.pontos || []).map(p => ({
       id: `ponto-${p.id}`,
       pontoId: p.id,
       titulo: p.titulo,
@@ -295,24 +351,55 @@ async function abrir(botao, manterAba) {
       evidencia: [[p.chamado, p.projeto].filter(Boolean).join(' · ') || 'vale para o workspace'],
       grupo: 'atencao'
     }));
-    pintarAbas();
+    pintarAbasDoAtual(token);
   });
   api('/api/qualidade-remoto', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
     if (token !== geracao) { return; }
-    remotos = r.itens;
-    marcarPr(r);
-    pintarAbas();
+    itensDoAtual.remotos = r.itens;
+    pintarAbasDoAtual(token);
   });
 }
 
-function marcarPr(r) {
-  const selo = document.getElementById('selo-pr');
-  if (!selo) { return; }
-  selo.className = `selo pr-${r.prEstado || 'sem-pr'}`;
-  selo.textContent = r.prRotulo || 'sem PR';
-  selo.onclick = r.prUrl ? () => window.open(r.prUrl, '_blank') : null;
-  selo.style.cursor = r.prUrl ? 'pointer' : 'default';
-  selo.title = r.prUrl || '';
+function pintarAbasDoAtual(token) {
+  if (token !== undefined && token !== geracao) { return; }
+  if (!document.getElementById('cartoes')) { return; }
+  // Fonte mais específica primeiro: o `find` devolve a primeira, e o resultado real do linter tem
+  // que ganhar do placeholder que o `local()` põe enquanto ele não chega.
+  const conhecidos = itensDoAtual.lint.concat(itensDoAtual.remotos, itensDoAtual.locais);
+  const todos = ESQUELETO.map(e => conhecidos.find(i => i.id === e.id) || e)
+    .concat(itensDoAtual.pontos);
+  desenharCartoes(todos);
+  escreverVeredito(todos);
+}
+
+// O mesmo resumo de uma linha que a rotina escreve no fim: contagens e, depois do travessão, o pior
+// achado com o lugar. Número sozinho manda a pessoa procurar.
+function escreverVeredito(itens) {
+  const alvo = document.getElementById('veredito');
+  if (!alvo) { return; }
+  const conta = st => itens.filter(i => i.status === st).length;
+  const atencao = conta('atencao');
+  const aviso = conta('aviso');
+  const cobertura = itens.find(i => i.id === 'cobertura');
+  const fora = (cobertura?.detalhe || '').match(/^(\d+) de (\d+)/);
+  const foraN = fora ? Number(fora[2]) - Number(fora[1]) : 0;
+  const exts = (cobertura?.evidencia || []).map(e => (e.match(/extensões[^:]*: (.+)$/) || [])[1])
+    .filter(Boolean)[0];
+  // O cartão de cobertura já está resumido na contagem — usar a evidência dele como "pior achado"
+  // repetia a lista de extensões na mesma linha.
+  const candidatos = itens.filter(i => i.id !== 'cobertura');
+  const pior = candidatos.find(i => i.status === 'atencao') || candidatos.find(i => i.status === 'aviso');
+  const partes = [];
+  if (atencao || aviso) {
+    if (atencao) { partes.push(`<b class="v-atencao">${atencao}</b> atenção`); }
+    if (aviso) { partes.push(`<b class="v-aviso">${aviso}</b> aviso`); }
+  } else if (itens.some(i => i.status === 'ok')) {
+    partes.push('<b>0</b> achados');
+  }
+  // `fora de cobertura` nunca sai, nem em zero: é o denominador que impede ler "0 achados" como ok.
+  partes.push(`<b class="${foraN ? 'v-atencao' : ''}">${foraN}</b> fora de cobertura${exts ? ` (${esc(exts)})` : ''}`);
+  const detalhe = pior ? ` — ${esc(pior.evidencia[0] || pior.detalhe).slice(0, 96)}` : '';
+  alvo.innerHTML = partes.join(' · ') + detalhe;
 }
 
 function marcarCarimbo(d) {
@@ -321,6 +408,7 @@ function marcarCarimbo(d) {
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
   c.textContent = `${d.arquivos.length} arquivo(s) · base ${d.baseNome || (d.base || '').slice(0, 8)}`
     + (d.mesclado ? ' · mesclado' : '')
+    + (d.ref ? '' : '')
     + (d.doCache ? ` · do cache de ${quando}` : ' · lido agora');
 }
 
@@ -410,28 +498,25 @@ function montarArquivos(d) {
   }
 }
 
-async function tirarPonto(id) {
+async function tirarPonto(evento, id) {
+  evento.preventDefault();
+  evento.stopPropagation();
   await api('/api/ponto-remover', { id });
-  abrir(atual.botao, true);
+  abrir(atual.botao);
 }
 
 // Recarrega o chamado inteiro: derruba o cache dos N repos dele, dos PRs e da lista, e refaz a
 // barra. Antes só dava para recarregar o repo aberto, e os outros ficavam com dado velho.
 async function recarregarChamado(evento, chamado) {
   evento.stopPropagation();
-  const alvo = evento.target;
+  const alvo = evento.target.closest('button') || evento.target;
   alvo.classList.add('girando');
   try {
     // `silencioso`: quem pede e recarrega sozinho não deve receber o aviso de volta.
     await api('/api/invalidar', { chamado, silencioso: 1 });
     await carregarChamados();
-    if (atual && atual.chamado === chamado) {
-      const botao = document.querySelector(
-        `.repos button[data-p="${atual.projeto}"][data-c="${chamado}"]`);
-      if (botao) {
-        abrir(botao, true);
-      }
-    }
+    // A barra e os chips foram refeitos: reabrir o chamado é o que reconecta `atual` ao DOM novo.
+    abrirChamado(chamado);
     avisarNaTela(`${chamado} recarregado`);
   } finally {
     alvo.classList.remove('girando');
@@ -441,7 +526,7 @@ async function recarregarChamado(evento, chamado) {
 async function recarregar() {
   if (!atual) { return; }
   await api('/api/invalidar', { projeto: atual.projeto, silencioso: 1 });
-  abrir(atual.botao, true);
+  abrir(atual.botao);
 }
 
 // O servidor avisa quando o cache de um projeto cai (o hook de commit dispara isso).
@@ -453,8 +538,8 @@ function escutarEventos() {
     if (dados.tipo !== 'invalidado' || !atual) { return; }
     if (dados.projeto && dados.projeto !== atual.projeto) { return; }
     avisarNaTela(dados.projeto ? `${dados.projeto} mudou — recarregando` : 'cache limpo — recarregando');
-    abrir(atual.botao, true);
-    carregarChamados();
+    const chamado = atual.chamado;
+    carregarChamados().then(() => abrirChamado(chamado));
   };
 }
 
@@ -506,8 +591,8 @@ async function pintar(det, completo) {
       ? `${r.dobradas} linha(s) iguais dobradas · <button class="inteiro" onclick="verInteiro(this)">ver arquivo inteiro (${r.total})</button>`
       : '';
   }
-  const primeira = novo.querySelector('.l.rem, .l.add');
-  if (primeira && !completo) { primeira.scrollIntoView({ block: 'center' }); }
+  // Sem `scrollIntoView` aqui: ele puxava a PÁGINA para o meio do arquivo ao abrir. Com a dobra, a
+  // primeira mudança já fica perto do topo das linhas renderizadas, então o salto só desorientava.
 }
 
 function verInteiro(botao) {
@@ -570,16 +655,25 @@ escutarEventos();
 
 function trocarVisao(qual) {
   visao = qual;
-  for (const b of document.querySelectorAll('#nav button')) {
-    b.classList.toggle('ativa', b.dataset.v === qual);
-  }
-  document.getElementById('painel-chamados').hidden = qual !== 'chamados';
-  document.getElementById('painel-config').hidden = qual !== 'config';
-  if (qual === 'config') {
+  const emConfig = qual === 'config';
+  document.getElementById('painel-chamados').hidden = emConfig;
+  document.getElementById('painel-config').hidden = !emConfig;
+  document.getElementById('titulo-barra').innerHTML = emConfig
+    ? '<span class="mago" aria-hidden="true">⚙</span><span>Configurações</span>'
+    : '<span class="mago" aria-hidden="true">🧙</span><span>Magias do Mago</span>';
+  document.getElementById('btn-config').classList.toggle('ativa', emConfig);
+  document.getElementById('cabecalho').hidden = emConfig;
+  document.getElementById('trilha').hidden = emConfig;
+  if (emConfig) {
     carregarConfigs();
   } else {
-    document.getElementById('conteudo').innerHTML = '<p class="aviso">Escolha um repo à esquerda.</p>';
-    document.getElementById('conteudo').className = '';
+    const alvo = document.getElementById('conteudo');
+    alvo.className = 'aviso';
+    alvo.innerHTML = 'Escolha um chamado à esquerda.';
+    atual = null;
+    if (chamados.length) {
+      abrirChamado(chamados[0].chamado);
+    }
   }
 }
 
@@ -657,6 +751,9 @@ async function salvarConfig(chave) {
 
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
-  abrir, trocarAba, pintar, verInteiro, recarregar, recarregarChamado, ocultar, mostrar, tirarPonto,
+  abrir, abrirChamado, alternarMenu, pintar, verInteiro,
+  recarregar, recarregarChamado, ocultar, mostrar, tirarPonto,
   trocarVisao, abrirConfig, salvarConfig
 });
+// `visao` é lida pelo onclick da engrenagem.
+Object.defineProperty(window, 'visao', { get: () => visao });

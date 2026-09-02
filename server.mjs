@@ -303,7 +303,15 @@ class Servidor {
             }));
         }
         if (url.pathname === '/api/chamados') {
-            const dados = this.emCache('chamados', () => ({ lista: this.workspace.chamados() }), 30000);
+            const dados = this.emCache('chamados', () => {
+                const lista = this.workspace.chamados();
+                // O título vem do cache do Linear: a barra mostrando só `UND-1638` não diz nada.
+                // É leitura de arquivo local, então cabe aqui.
+                for (const c of lista) {
+                    c.titulo = linear.doChamado(c.chamado)?.titulo || null;
+                }
+                return { lista };
+            }, 30000);
             // Os ocultos saem aqui, e nao na varredura: o Workspace responde o que existe, e o
             // que se escolhe ver e decisao da tela. Trocar isso esconderia repo esquecido do
             // proprio calculo que existe para achar repo esquecido.
@@ -314,11 +322,14 @@ class Servidor {
             });
         }
         if (url.pathname === '/api/ocultar') {
+            // Deixa rastro: um chamado que sai do menu sem registro é impossível de explicar depois.
+            this.registrar('ocultar', 'oculto', q.get('chamado'));
             this.ocultos.add(q.get('chamado'));
             this.gravarOcultos();
             return this.json(res, { ocultos: [...this.ocultos] });
         }
         if (url.pathname === '/api/mostrar') {
+            this.registrar('mostrar', 'visivel', q.get('chamado') || '(todos)');
             const chamado = q.get('chamado');
             if (chamado) {
                 this.ocultos.delete(chamado);

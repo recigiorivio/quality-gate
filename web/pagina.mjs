@@ -1,4 +1,12 @@
 // Casca HTML. CSS e JS são arquivos próprios — ver web/app.js.
+//
+// Três zonas, da esquerda para a direita:
+//  - a barra só NAVEGA: uma linha por chamado, engrenagem no pé
+//  - o conteúdo, no meio: veredito, abas, cartões e o diff em largura cheia
+//  - a trilha, à direita: as branches e o Linear — recolhível, porque o diff é a coisa mais larga
+//    do app e há momentos em que ele precisa de todo o espaço
+//
+// Antes a barra fazia os três trabalhos ao mesmo tempo e chegava a 89 linhas em 340px.
 
 export function pagina(esqueleto) {
     return `<!doctype html>
@@ -8,17 +16,31 @@ export function pagina(esqueleto) {
 <link rel="stylesheet" href="/estilo.css">
 </head><body>
 <aside>
-  <nav id="nav">
-    <button class="ativa" data-v="chamados" onclick="trocarVisao('chamados')">Chamados</button>
-    <button data-v="config" onclick="trocarVisao('config')">Configurações</button>
-  </nav>
+  <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span><span>Magias do Mago</span></h1>
   <div id="painel-chamados">
-    <div id="lista" aria-busy="true"><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div><div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div></div>
+    <div id="lista" aria-busy="true">
+      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
+      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
+      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
+    </div>
     <div id="ocultos"></div>
   </div>
   <div id="painel-config" hidden></div>
+  <footer id="pe-barra">
+    <button id="btn-config" onclick="trocarVisao(visao === 'config' ? 'chamados' : 'config')"
+            title="Configurações — as rotinas que eu sigo">
+      <span class="engrenagem" aria-hidden="true">⚙</span><span>Configurações</span>
+    </button>
+  </footer>
 </aside>
-<main><div id="conteudo" class="aviso">Escolha um repo à esquerda.</div></main>
+<main>
+  <div id="cabecalho" hidden></div>
+  <div id="conteudo" class="aviso">Escolha um chamado à esquerda.</div>
+</main>
+<div id="trilha" hidden>
+  <button id="trilha-toggle" onclick="alternarMenu()" title="recolher/expandir">›</button>
+  <div id="trilha-corpo"></div>
+</div>
 <script>window.ESQUELETO = ${JSON.stringify(esqueleto)};</script>
 <script type="module" src="/app.js"></script>
 </body></html>`;

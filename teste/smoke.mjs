@@ -10,6 +10,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,15 +91,30 @@ test('/api/chamados devolve lista com a forma esperada', async () => {
     }
 });
 
+// Grupo fora do ORDEM não dá erro: cai no fim da lista em silêncio. É o que este teste pega.
 test('o esqueleto de cartões cobre todos os grupos que a tela desenha', async () => {
     const { corpo } = await pegar('/');
     const esqueleto = JSON.parse(corpo.match(/window\.ESQUELETO = (\[.*?\]);/s)[1]);
     const app = (await pegar('/app.js')).corpo;
-    const grupos = [...app.matchAll(/\{ id:'([a-z]+)', rotulo:/g)].map(m => m[1]);
-    assert.ok(grupos.length > 0, 'não achei os grupos de aba no app.js');
+    const bloco = app.match(/const ORDEM = \[([^\]]+)\]/);
+    assert.ok(bloco, 'não achei o ORDEM dos grupos no app.js');
+    const grupos = [...bloco[1].matchAll(/'([a-z]+)'/g)].map(m => m[1]);
+    assert.ok(grupos.length > 0, 'o ORDEM está vazio');
     for (const item of esqueleto) {
         assert.ok(grupos.includes(item.grupo),
-            `o item '${item.id}' está no grupo '${item.grupo}', que não é uma aba`);
+            `o item '${item.id}' está no grupo '${item.grupo}', que não está no ORDEM`);
+    }
+});
+
+// Rótulo sem tradução sai como `undefined` no cartão — sem erro nenhum no console.
+test('todo status que a análise emite tem rótulo na tela', async () => {
+    const app = (await pegar('/app.js')).corpo;
+    const rotulos = new Set([...app.matchAll(/(\w+):'[^']+'/g)].map(m => m[1]));
+    const q = readFileSync(new URL('../lib/qualidade.mjs', import.meta.url), 'utf8');
+    const emitidos = new Set([...q.matchAll(/_item\('[^']+', '[^']+', '([a-z]+)'/g)].map(m => m[1])
+        .concat([...q.matchAll(/status: '([a-z]+)'/g)].map(m => m[1])));
+    for (const st of emitidos) {
+        assert.ok(rotulos.has(st), `a análise emite '${st}' e o ROTULO da tela não tem esse status`);
     }
 });
 
@@ -162,7 +178,7 @@ test('/api/qualidade devolve um item por entrada do esqueleto', async t => {
     });
     assert.equal(status, 200);
     assert.ok(Array.isArray(corpo.itens) && corpo.itens.length > 0);
-    const validos = new Set(['ok', 'aviso', 'atencao', 'manual', 'indisponivel']);
+    const validos = new Set(['ok', 'aviso', 'atencao', 'manual', 'ignorado', 'indisponivel']);
     for (const i of corpo.itens) {
         assert.ok(validos.has(i.status), `status inválido '${i.status}' em ${i.id}`);
         assert.equal(typeof i.titulo, 'string');
