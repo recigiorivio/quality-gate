@@ -91,6 +91,32 @@ garantem que abrir um arquivo não trave a aba:
   aba congela. Com a dobra são **4,8 KB e 62 linhas, em 90 ms**. O link **ver arquivo inteiro**
   carrega tudo quando você quiser.
 
+### Expor na rede — opt-in, e nunca sem token
+
+Por padrão a tela escuta só em `127.0.0.1`: de outra máquina a conexão é recusada. Para abrir no seu
+IP:
+
+```bash
+QUALIDADE_HOST=0.0.0.0 npm start
+# qualidade → http://192.168.10.129:4100/?t=9f54324dbcb7e9511660cbc72df93227
+# ⚠  exposto na rede, token sorteado agora — /api/agente executa comando nesta máquina.
+```
+
+Sem `QUALIDADE_TOKEN` ele **sorteia um** e imprime a URL pronta, com o IP da rede em vez de
+`0.0.0.0`. Para um token fixo (link estável para o time): `QUALIDADE_TOKEN=<segredo> QUALIDADE_HOST=0.0.0.0 npm start`.
+
+Toda rota exige o token, por `?t=` ou pelo header `x-qualidade-token`; a comparação é
+`timingSafeEqual`. Quem abre com o `?t=` recebe a página com o token embutido, e as chamadas
+seguintes o levam sozinhas — sem cookie e sem sessão. Acesso negado vai para o `gate.log` com o IP.
+
+**Por que o token não é opcional:** `/api/agente` spawna um `claude -p` com Bash **nesta máquina**.
+Numa rede aberta, isso é execução remota de comando para qualquer um no mesmo Wi-Fi. Também ficariam
+expostos `/api/arquivo` (conteúdo de qualquer arquivo dos 50 repos) e `/api/config-salvar` (escreve as
+rotinas que o agente segue).
+
+Para acesso de fora da LAN, **não** exponha na internet: túnel SSH
+(`ssh -L 4100:localhost:4100 <máquina>`) ou Tailscale, que autenticam antes de chegar aqui.
+
 ## O que a tela mostra, e o que ela deliberadamente não mostra
 
 **Fora da tela**, porque são corrigidos: comentário acima de `class`, comentário dentro do

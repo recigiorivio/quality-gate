@@ -527,3 +527,37 @@ test('registrar de fato escreve no gate.log', async () => {
     assert.ok(depois.length > antes, 'a rota logou nada — registrar está engolindo erro');
     assert.match(depois.trimEnd().split('\n').pop(), /\tponto-remover\tnao-encontrado\t/);
 });
+
+// Expor na rede sem senha deixaria `/api/agente` — que spawna `claude -p` com Bash — aberto para
+// quem estiver na LAN. O teste exige as duas metades: token errado é 401 em TODA rota, e o token
+// certo passa. Sobe um servidor próprio porque o do `before` é local e sem token.
+test('exposto na rede, nada responde sem o token', async () => {
+    const porta = PORTA + 3;
+    const token = 'token-de-teste-abcdef';
+    const filho = spawn('node', ['server.mjs'], {
+        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: token }
+    });
+    try {
+        const base = `http://127.0.0.1:${porta}`;
+        for (let i = 0; i < 60; i++) {
+            try {
+                await fetch(`${base}/?t=${token}`, { signal: AbortSignal.timeout(500) });
+                break;
+            } catch {
+                await new Promise(s => setTimeout(s, 250));
+            }
+        }
+        for (const rota of ['/', '/api/chamados', '/api/agente?chamado=UND-1', '/api/config-salvar']) {
+            const sem = await fetch(`${base}${rota}`);
+            assert.equal(sem.status, 401, `${rota} respondeu sem token`);
+            const errado = await fetch(`${base}${rota}${rota.includes('?') ? '&' : '?'}t=nao-e-o-token`);
+            assert.equal(errado.status, 401, `${rota} aceitou token errado`);
+        }
+        const ok = await fetch(`${base}/?t=${token}`);
+        assert.equal(ok.status, 200, 'o token certo tem que passar');
+        assert.match(await ok.text(), new RegExp(`window.TOKEN = '${token}'`), 'a página tem que levar o token');
+    } finally {
+        filho.kill();
+    }
+});

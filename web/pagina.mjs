@@ -11,7 +11,7 @@
 // A versão dos assets é o mtime deles. Sem isso o navegador segura o app.js entre reinícios do
 // servidor: a tela ficou mostrando 1 arquivo e `base origin/stage` porque o cliente velho não
 // mandava o `chamado`, e o servidor já respondia a comparação da PR. Uma hora de confusão.
-export function pagina(esqueleto, versao = '') {
+export function pagina(esqueleto, versao = '', token = '') {
     return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Qualidade — conferência por chamado</title>
@@ -47,7 +47,7 @@ export function pagina(esqueleto, versao = '') {
   <div id="trilha-corpo"></div>
 </div>
 <script>window.ESQUELETO = ${JSON.stringify(esqueleto)};</script>
-<script>window.VERSAO = '${versao}';</script>
+<script>window.VERSAO = '${versao}'; window.TOKEN = '${token}';</script>
 <script type="module" src="/app.js?v=${versao}"></script>
 </body></html>`;
 }

@@ -42,7 +42,8 @@ const api = (r, p) => {
   const id = Symbol(r);
   emVoo.set(id, r in NOME_DA_ROTA ? NOME_DA_ROTA[r] : r.replace('/api/', ''));
   marcarCarga();
-  return fetch(r + '?' + new URLSearchParams(p))
+  // Exposto na rede, toda chamada leva o token; local, `window.TOKEN` é vazio e nada muda.
+  return fetch(r + '?' + new URLSearchParams(window.TOKEN ? { ...p, t: window.TOKEN } : p))
     .then(x => x.json())
     .finally(() => { emVoo.delete(id); marcarCarga(); });
 };
@@ -717,7 +718,7 @@ async function recarregar() {
 
 // O servidor avisa quando o cache de um projeto cai (o hook de commit dispara isso).
 function escutarEventos() {
-  const fonte = new EventSource('/api/eventos');
+  const fonte = new EventSource('/api/eventos' + (window.TOKEN ? `?t=${encodeURIComponent(window.TOKEN)}` : ''));
   fonte.onmessage = e => {
     let dados = {};
     try { dados = JSON.parse(e.data); } catch { return; }

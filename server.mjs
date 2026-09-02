@@ -4,6 +4,9 @@
 // uso: npm start   (ou node server.mjs)   →   http://localhost:4100
 
 import { createServer } from 'node:http';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
+import { Buffer } from 'node:buffer';
 import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, mkdirSync } from 'node:fs';
 import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -51,6 +54,12 @@ const MODELO_DA_SESSAO = () => {
 };
 
 const PORTA = Number(process.env.PORT || 4100);
+// Preso em 127.0.0.1 por padrão. Expor é opt-in E exige senha, porque `/api/agente` spawna um
+// `claude -p` com Bash nesta máquina: sem token, qualquer um na rede executaria comando aqui.
+const HOST = process.env.QUALIDADE_HOST || '127.0.0.1';
+let TOKEN = process.env.QUALIDADE_TOKEN || '';
+let sorteado = false;
+const SO_LOCAL = HOST === '127.0.0.1' || HOST === 'localhost';
 const execFileAsync = promisify(execFile);
 
 // Allowlist por chave, nunca caminho vindo do cliente: é o que impede escrever fora daqui.
@@ -546,6 +555,18 @@ class Servidor {
         }
     }
 
+    // O IP da rede, para o link impresso ser clicável de outra máquina em vez de dizer 0.0.0.0.
+    ipDaRede() {
+        for (const lista of Object.values(networkInterfaces())) {
+            for (const i of lista || []) {
+                if (i.family === 'IPv4' && !i.internal) {
+                    return i.address;
+                }
+            }
+        }
+        return null;
+    }
+
     // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
     versaoDosAssets() {
         let maior = 0;
@@ -577,8 +598,22 @@ class Servidor {
         const url = new URL(req.url, `http://localhost:${PORTA}`);
         const q = url.searchParams;
 
+        if (TOKEN) {
+            const dado = q.get('t') || req.headers['x-qualidade-token'] || '';
+            // Comparação de tamanho fixo: `===` em string vaza o tamanho do prefixo comum pelo tempo.
+            const ok = dado.length === TOKEN.length
+                && timingSafeEqual(Buffer.from(dado), Buffer.from(TOKEN));
+            if (!ok) {
+                this.registrar('acesso', 'negado', `${req.socket.remoteAddress} ${url.pathname}`);
+                res.writeHead(401, { 'content-type': 'text/plain; charset=utf-8' });
+                return res.end('token inválido — abra a tela com ?t=<QUALIDADE_TOKEN>');
+            }
+        }
+
         if (url.pathname === '/') {
-            const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets());
+            // O token volta embutido na página: quem chegou com `?t=` já provou que tem, e as
+            // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
+            const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(), TOKEN ? q.get('t') || '' : '');
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -755,14 +790,25 @@ class Servidor {
     }
 
     subir() {
-        createServer((req, res) => {
+        const servidor = createServer((req, res) => {
             try {
                 this.rotear(req, res);
             } catch (e) {
                 this.json(res, { erro: e.message }, 500);
             }
-        }).listen(PORTA, '127.0.0.1', () => {
-            console.log(`qualidade → http://localhost:${PORTA}   (workspace: ${WORKSPACE})`);
+        });
+        // Exposto sem `QUALIDADE_TOKEN`: sorteia um e imprime a URL pronta com ele, em vez de
+        // recusar. O que não pode existir é rede aberta SEM token; escolher o token é conveniência.
+        if (!SO_LOCAL && !TOKEN) {
+            TOKEN = randomBytes(16).toString('hex');
+            sorteado = true;
+        }
+        servidor.listen(PORTA, HOST, () => {
+            const alvo = SO_LOCAL ? 'localhost' : (this.ipDaRede() || HOST);
+            console.log(`qualidade → http://${alvo}:${PORTA}/${TOKEN ? `?t=${TOKEN}` : ''}`
+                + `   (workspace: ${WORKSPACE})`
+                + (SO_LOCAL ? '' : `\n⚠  exposto na rede${sorteado ? ', token sorteado agora' : ''} —`
+                    + ` /api/agente executa comando nesta máquina. Sem o ?t= a resposta é 401.`));
         });
     }
 }
