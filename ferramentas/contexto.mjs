@@ -126,7 +126,7 @@ class Contexto {
         const commits = nomeBase ? Number(this.git(projeto, 'rev-list', '--count', `origin/${nomeBase}..${ref}`) || 0) : 0;
 
         const prBruto = this.cmd('gh', ['pr', 'list', '--head', branch, '--state', 'all',
-            '--json', 'number,url,state,baseRefName,isDraft,mergedAt,mergeCommit'], join(WORKSPACE, projeto));
+            '--json', 'number,url,state,baseRefName,isDraft,mergedAt,mergeCommit,baseRefOid,headRefOid'], join(WORKSPACE, projeto));
         let pr = null;
         try {
             pr = prBruto ? (JSON.parse(prBruto)[0] || null) : null;

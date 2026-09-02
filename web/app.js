@@ -365,7 +365,27 @@ async function abrir(chip) {
     if (token !== geracao) { return; }
     itensDoAtual.remotos = r.itens;
     pintarAbasDoAtual(token);
+    // A base da PR só é conhecida depois da rede. Quando ela chega e muda a comparação, o diff e as
+    // checagens desenhados com a topologia estão errados — redesenha os dois com a base certa.
+    if (r.baseNova) {
+      recarregarComparacao(token);
+    }
   });
+}
+
+async function recarregarComparacao(token) {
+  const [d, q, l] = await Promise.all([
+    api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref }),
+    api('/api/qualidade', { chamado: atual.chamado, projeto: atual.projeto, ref: atual.ref }),
+    api('/api/lint', { projeto: atual.projeto, ref: atual.ref })
+  ]);
+  if (token !== geracao) { return; }
+  atual.base = d.base;
+  montarArquivos(d);
+  marcarCarimbo(d);
+  itensDoAtual.locais = q.itens;
+  itensDoAtual.lint = [cartaoDoLint(l)];
+  pintarAbasDoAtual(token);
 }
 
 function pintarAbasDoAtual(token) {
@@ -429,7 +449,7 @@ function marcarCarimbo(d) {
   const c = document.getElementById('carimbo');
   if (!c) { return; }
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
-  c.textContent = `${d.arquivos.length} arquivo(s) · base ${d.baseNome || (d.base || '').slice(0, 8)}`
+  c.textContent = `${d.arquivos.length} arquivo(s) · ${d.via === 'pr' ? '' : 'base '}${d.baseNome || (d.base || '').slice(0, 8)}`
     + (d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
     + (d.ref ? '' : '')
     + (d.doCache ? ` · do cache de ${quando}` : ' · lido agora');

@@ -130,6 +130,34 @@ O rótulo de cada cartão diz o que aconteceu, e dois deles são fáceis de conf
 `indisponível` dizia as duas coisas, e "não se aplica" com cara de problema treina a pessoa a ignorar
 o aviso. Agora só o problema leva esse rótulo, e ele vem com contorno tracejado.
 
+### Com PR, a comparação é a da PR
+
+**Quando existe PR, ela é a autoridade sobre a base.** A tela usa `baseRefOid…headRefOid` — a mesma
+comparação que o GitHub mostra. Sem PR, vale o local: branch local contra a base por topologia.
+
+Isso não é preferência, é conserto. Depois que a branch é mesclada,
+`merge-base(branch, origin/stage)` **é a própria ponta da branch**, então o diff sai vazio por
+construção. Medido no UND-1638, um chamado inteiro em stage:
+
+| Repo | A PR mostra | A tela mostrava | Agora |
+|---|---|---|---|
+| `crohc-view` | 1 | **0** | 1 |
+| `crohc-server` | 2 | **0** | 2 |
+| `migrate-mongo` | 4 | **0** | 4 |
+| `integrations-core` | 27 | **1** | 27 |
+| `integrations-mimic` | 65 | **0** | 65 |
+
+9 de 9 batendo. A topologia adivinhava; a PR **tem a base gravada** e nunca precisou adivinhar.
+
+O `gh` é a única fonte desses dois oids e leva segundos, enquanto o diff é desenhado no passo
+instantâneo. Então o passo remoto **grava** a comparação em `bases-pr.json`: na primeira abertura de
+um repo a tela usa a topologia e se corrige sozinha quando a rede responde; da segunda em diante já
+abre certo. O cache é conveniência — sem ele a tela continua correta, só mais lenta.
+
+Uma comparação, um lugar: `lib/comparacao.mjs`. O diff, as checagens, a análise de AST e o lint pedem
+a base para ele. Cada um resolvendo a sua era o que fazia o cartão de cobertura discordar do diff
+desenhado logo abaixo dele.
+
 ### Branch já mesclada: topologia primeiro, merge-tree depois
 
 A base não vem de ordem fixa de nomes, vem de **topologia**: entre `origin/desenv`, `origin/stage`,

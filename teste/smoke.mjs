@@ -13,6 +13,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { Diff } from '../lib/diff.mjs';
+import { Comparacao } from '../lib/comparacao.mjs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -273,8 +274,9 @@ test('nenhum cartão diz "ok" sobre arquivo que não foi analisado', async t => 
             mentiras.push(`${alvo.projeto}: sem cartão de cobertura`);
             continue;
         }
-        // "0 de N analisados" com N > 0 é ausência de cobertura: nada pode estar verde.
-        const nadaAnalisado = /^0 de [1-9]/.test(cobertura.detalhe);
+        // A regra afinou: o alarme é CÓDIGO sem nenhuma camada. Arquivo que ferramenta nenhuma tem
+        // regra para ler (`.json`, `.md`) não é ausência de cobertura, é ausência de regra.
+        const nadaAnalisado = /de código sem checagem/.test(cobertura.detalhe);
         if (!nadaAnalisado) {
             continue;
         }
@@ -465,4 +467,34 @@ test('eslint só conta como camada se der para rodar', async () => {
     assert.ok(nomes.includes('eslint'), 'crohc-server tem config e node_modules: deveria contar');
     const semInstall = new Lint().detectar('projeto-que-nao-existe').map(l => l.nome);
     assert.deepEqual(semInstall, [], 'repo inexistente não pode declarar linter');
+});
+
+// A regra que fechou a discordância entre a tela e o GitHub: com PR, vale a comparação DELA; sem
+// PR, vale o local. Depois do merge a topologia colapsa (merge-base = ponta da branch) e o diff sai
+// vazio — era isso que fazia a tela mostrar 0 arquivo onde a PR mostrava 2, 4, 27 e 65.
+test('com PR a comparação é a da PR; sem PR, é a local', () => {
+    const { raiz, g } = repoDeTeste('comparacao');
+    g('checkout', '-q', '-b', 'UND-1', 'stage');
+    writeFileSync(join(raiz, 'a.txt'), 'base\nda branch\n');
+    g('commit', '-qam', 'trabalho');
+    const forkPoint = g('rev-parse', 'stage').trim();
+    const head = g('rev-parse', 'UND-1').trim();
+    // a branch é mesclada: a partir daqui merge-base(UND-1, origin/stage) é a PRÓPRIA ponta
+    g('checkout', '-q', 'stage');
+    g('merge', '-q', '--no-ff', '-m', 'merge de UND-1', 'UND-1');
+    g('update-ref', 'refs/remotes/origin/stage', 'stage');
+
+    const c = new Comparacao();
+    const local = c.resolver(raiz, 'UND-1');
+    assert.equal(local.via, 'local');
+    assert.equal(local.diff.listarArquivos(local.base).length, 0,
+        'sem PR, a topologia diz mesclado e não sobra arquivo — é o comportamento antigo');
+
+    c.cache[`${raiz}|UND-1`] = { base: forkPoint, head, numero: 7, estado: 'MERGED', destino: 'stage' };
+    const daPr = c.resolver(raiz, 'UND-1');
+    assert.equal(daPr.via, 'pr');
+    assert.equal(daPr.baseNome ?? daPr.diff.baseNome, 'PR #7 → stage');
+    assert.deepEqual(daPr.diff.listarArquivos(daPr.base).map(a => a.caminho), ['a.txt'],
+        'com PR, aparece o que a PR mostra');
+    rmSync(raiz, { recursive: true, force: true });
 });

@@ -168,12 +168,14 @@ export class ChecarDiff {
         }
         const arquivos = [];
         const naoAnalisados = [];
+        this.apagados = 0;
         const mapaAdicionadas = this._mapaDeAdicionadas(projeto, base);
         for (const linha of nomes.split('\n')) {
             const partes = linha.split('\t');
             const estado = partes[0];
             const caminho = partes[partes.length - 1];
             if (estado === 'D') {
+                this.apagados++;
                 continue;
             }
             if (this.pendentes && !this.pendentes.has(caminho)) {
@@ -417,6 +419,7 @@ export class ChecarDiff {
             baseReal,
             arquivos: arquivos.length,
             naoAnalisados: this.naoAnalisados || [],
+            apagados: this.apagados || 0,
             extensoesNaoCobertas: [...new Set((this.naoAnalisados || [])
                 .map(c => (c.match(/\.[a-z0-9]+$/i) || ['(sem extensão)'])[0]))].sort(),
             achados

@@ -13,6 +13,7 @@ import { Workspace } from './lib/workspace.mjs';
 import { Qualidade } from './lib/qualidade.mjs';
 import { Pontos } from './ferramentas/pontos.mjs';
 import lint from './lib/lint.mjs';
+import comparacao from './lib/comparacao.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
@@ -243,8 +244,8 @@ class Servidor {
     // O linter do projeto, sobre os arquivos do diff. Antes era `npm run check` no repo inteiro:
     // segundos de espera e 83 problemas de código que ninguém tocou.
     async lint(projeto, ref = '') {
-        const d = new Diff(projeto, ref);
-        const arquivos = d.listarArquivos(d.resolverBase()).map(a => a.caminho);
+        const { diff: d, base } = comparacao.resolver(projeto, ref);
+        const arquivos = d.listarArquivos(base).map(a => a.caminho);
         const r = await lint.rodar(projeto, arquivos);
         const erros = r.achados.filter(a => a.severidade === 'erro');
         return {
@@ -260,12 +261,12 @@ class Servidor {
 
     // Sem laço por arquivo: o Diff.listarArquivos já traz +/- de todos numa chamada só.
     listaDeArquivos(projeto, base, ref = '') {
-        const d = new Diff(projeto, ref);
-        const baseReal = d.resolverBase(base);
+        const { diff: d, base: baseReal, via, pr } = comparacao.resolver(projeto, ref, base);
         return {
             projeto, branch: d.branch(), base: baseReal,
             baseNome: d.baseNome || null, mesclado: Boolean(d.mesclado),
             comoSoube: d.comoSoube || null,
+            via, pr: pr ? { numero: pr.numero, estado: pr.estado, destino: pr.destino } : null,
             arquivos: d.listarArquivos(baseReal)
         };
     }
@@ -348,8 +349,7 @@ class Servidor {
         if (url.pathname === '/api/arquivo') {
             const chave = `arquivo|${q.get('projeto')}|${q.get('ref') || ''}|${q.get('caminho')}|${q.get('completo')}`;
             return this.json(res, this.emCache(chave, () => {
-                const d = new Diff(q.get('projeto'), q.get('ref') || '');
-                const base = d.resolverBase(q.get('base'));
+                const { diff: d, base } = comparacao.resolver(q.get('projeto'), q.get('ref') || '', q.get('base'));
                 return d.montarColunas(base, q.get('caminho'), {
                     completo: q.get('completo') === '1',
                     margem: Number(q.get('margem')) || 6
@@ -401,12 +401,31 @@ class Servidor {
         }
         if (url.pathname === '/api/qualidade') {
             return this.json(res, this.emCache(`local|${q.get('projeto')}|${q.get('ref') || ''}`,
-                () => this.qualidade.local(q.get('chamado'), q.get('projeto'), q.get('ref') || '')));
+                () => {
+                    // A mesma comparação do diff: base diferente aqui era o que fazia o cartão de
+                    // cobertura discordar do que a tela mostrava logo abaixo dele.
+                    const c = comparacao.resolver(q.get('projeto'), q.get('ref') || '');
+                    return this.qualidade.local(q.get('chamado'), q.get('projeto'), c.alvo, c.base);
+                }));
         }
         if (url.pathname === '/api/qualidade-remoto') {
             return this.emCacheAsync(`remoto|${q.get('chamado')}|${q.get('projeto')}`,
                 () => this.qualidade.remoto(q.get('chamado'), q.get('projeto')))
-                .then(valor => this.json(res, valor));
+                .then(valor => {
+                    // O `gh` é a única fonte da base da PR: guardar aqui é o que deixa o passo
+                    // instantâneo usar a comparação certa na próxima abertura.
+                    if (valor?.prBase && comparacao.guardar(q.get('projeto'), valor.ref ?? '', valor.prBase)) {
+                        // Só as chaves que dependem da base: derrubar `remoto|` faria o próximo
+                        // pedido recomputar o `gh` e cair aqui de novo.
+                        for (const chave of [...this.cache.keys()]) {
+                            if (/^(arquivos|arquivo|local|lint)\|/.test(chave) && chave.includes(q.get('projeto'))) {
+                                this.cache.delete(chave);
+                            }
+                        }
+                        valor.baseNova = true;
+                    }
+                    return this.json(res, valor);
+                });
         }
         if (url.pathname === '/api/lint') {
             return this.emCacheAsync(`lint|${q.get('projeto')}|${q.get('ref') || ''}`,

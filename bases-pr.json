@@ -1,0 +1,79 @@
+{
+  "workflow-manager|": {
+    "base": "4ca13e2acfdd27fe066ca8899e428d9ab4a92b58",
+    "head": "2cbc495d144f8fcdf145b0fc6268061e4af6bd76",
+    "numero": 125,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "contas-service|UND-1638": {
+    "base": "c6b8e7890bb9ffe013c004285d107783a2eed6ec",
+    "head": "f68c618b80b45dc5f2a39ff4a38f10cfb79a1292",
+    "numero": 42,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "crohc-server|UND-1638": {
+    "base": "b1ce6a4a4816b9b8cfc3983ba2d18e1d0886f4dc",
+    "head": "4e4b84eb182530074d6d1dcc51384d7dad69773b",
+    "numero": 66,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "crohc-view|UND-1638": {
+    "base": "aef2c7405cd40815b2a46f27814d6634ad61f56b",
+    "head": "3f0f6be8eaca0acba5b67b8c39673b9bfba21dd7",
+    "numero": 51,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "drmarvin-core-js|origin/UND-1638": {
+    "base": "f2f47dab89a82278b4dc50c678fd78693469feb0",
+    "head": "058314cd6deba33b2e5495fcdc3f90578a0f803f",
+    "numero": 12,
+    "estado": "MERGED",
+    "destino": "main"
+  },
+  "integrations-core-rivio-one|UND-1638": {
+    "base": "297eba57e5741f7bf9f3e409f0503ca2d41e4ab6",
+    "head": "b760a0c6729cdbb7dc53b63a723f32ef3e1055b6",
+    "numero": 824,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "integrations-mimic-rivio-one|UND-1638": {
+    "base": "d0cfa8a9dd6457fad97acb0d798a7ae256a42ffb",
+    "head": "51c23a66e5be8dae794ccc8ccbd60bd2d1488597",
+    "numero": 74,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "jungle-monorepo|UND-1638": {
+    "base": "cddc80b670ee75df0392e89d3bcbb3e79a0ab5d2",
+    "head": "426d687f620026e92692ca2487352115009db640",
+    "numero": 134,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "migrate-mongo|UND-1638": {
+    "base": "d6fbfedee758acaeba40d67a78ca670a659e4b41",
+    "head": "18bed3163699ca64a2b5617e8cbeb3907e066200",
+    "numero": 37,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "crohc-server|": {
+    "base": "02378abf905be12b035b73101ac3488e9742335a",
+    "head": "6f41fe8340bf4a91d1c531fc633e154b1e832571",
+    "numero": 74,
+    "estado": "MERGED",
+    "destino": "stage"
+  },
+  "ai-browser-agents|": {
+    "base": "8d0f4e758afa21afc656e42ce4e06b9981e071e6",
+    "head": "f43a351f05474d364e94fc550a7cc6563b5601ce",
+    "numero": 196,
+    "estado": "OPEN",
+    "destino": "stage"
+  }
+}
