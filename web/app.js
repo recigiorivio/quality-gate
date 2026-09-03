@@ -283,10 +283,13 @@ async function abrirChamado(chamado) {
     </details>
     <div class="tr-pe">
       <div class="tr-estado" id="tr-estado">${estadoDaComparacao(c)}</div>
-      <button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
+      ${window.LOCAL === false
+    ? `<div class="tr-nota-lan">A corrida do agente só roda na máquina do servidor.
+         Aqui a tela é para ver — as decisões já gravadas valem igual.</div>`
+    : `<button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
               title="roda o Claude para decidir a comparação certa de cada repo e recarrega o chamado — leva minutos">
         <span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>
-      </button>
+      </button>`}
     </div>`;
   for (const [secao, id] of [['branches', 'tr-dobra-branches'], ['prs', 'tr-prs']]) {
     const el = document.getElementById(id);

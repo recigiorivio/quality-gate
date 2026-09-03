@@ -11,7 +11,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, networkInterfaces } from 'node:os';
 import { Diff } from '../lib/diff.mjs';
 import { Comparacao } from '../lib/comparacao.mjs';
 import { dirname, join } from 'node:path';
@@ -531,6 +531,40 @@ test('registrar de fato escreve no gate.log', async () => {
 // Expor na rede sem senha deixaria `/api/agente` — que spawna `claude -p` com Bash — aberto para
 // quem estiver na LAN. O teste exige as duas metades: token errado é 401 em TODA rota, e o token
 // certo passa. Sobe um servidor próprio porque o do `before` é local e sem token.
+// Token protege o ACESSO; isto protege a CAPACIDADE. A corrida spawna `claude -p` com Bash na
+// máquina do servidor, então pela LAN ela não deve nem estar disponível — token vazado, máquina
+// emprestada ou aba esquecida não podem virar execução de comando.
+test('pela rede, a corrida do agente é negada mesmo com o token certo', async () => {
+    const porta = PORTA + 4;
+    const token = 'token-de-teste-lan';
+    const ip = Object.values(networkInterfaces()).flat()
+        .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
+    const filho = spawn('node', ['server.mjs'], {
+        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
+    });
+    try {
+        for (let i = 0; i < 60; i++) {
+            try {
+                await fetch(`http://127.0.0.1:${porta}/?t=${token}`, { signal: AbortSignal.timeout(500) });
+                break;
+            } catch {
+                await new Promise(s => setTimeout(s, 250));
+            }
+        }
+        if (!ip) {
+            return;   // máquina sem interface de rede: nada a exercitar
+        }
+        const pelaLan = await (await fetch(`http://${ip}:${porta}/api/agente?chamado=UND-1&t=${token}`)).json();
+        assert.equal(pelaLan.ok, false, 'a corrida NÃO pode ser aceita pela rede');
+        assert.match(pelaLan.erro, /só roda na máquina/);
+        const html = await (await fetch(`http://${ip}:${porta}/?t=${token}`)).text();
+        assert.match(html, /window\.LOCAL = false/, 'a página tem que dizer ao cliente que ele não é local');
+    } finally {
+        filho.kill();
+    }
+});
+
 test('exposto na rede, nada responde sem o token', async () => {
     const porta = PORTA + 3;
     const token = 'token-de-teste-abcdef';
@@ -556,7 +590,10 @@ test('exposto na rede, nada responde sem o token', async () => {
         }
         const ok = await fetch(`${base}/?t=${token}`);
         assert.equal(ok.status, 200, 'o token certo tem que passar');
-        assert.match(await ok.text(), new RegExp(`window.TOKEN = '${token}'`), 'a página tem que levar o token');
+        const html = await ok.text();
+        assert.match(html, new RegExp(`window.TOKEN = '${token}'`), 'a página tem que levar o token');
+        // De localhost a corrida existe; o teste da negação pela LAN está no caso seguinte.
+        assert.match(html, /window\.LOCAL = true/, 'localhost tem que ser reconhecido como local');
     } finally {
         filho.kill();
     }

@@ -60,6 +60,9 @@ const HOST = process.env.QUALIDADE_HOST || '127.0.0.1';
 let TOKEN = process.env.QUALIDADE_TOKEN || '';
 let sorteado = false;
 const SO_LOCAL = HOST === '127.0.0.1' || HOST === 'localhost';
+// `::ffff:127.0.0.1` é o mesmo 127.0.0.1 em socket IPv6: comparar só a string crua deixaria a
+// própria máquina de fora quando o Node aceita a conexão pela pilha dupla.
+const ehLocal = ip => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(ip || ''));
 const execFileAsync = promisify(execFile);
 
 // Allowlist por chave, nunca caminho vindo do cliente: é o que impede escrever fora daqui.
@@ -307,7 +310,14 @@ class Servidor {
     // Roda o agente de verdade (`claude -p`) para a única coisa que não dá para automatizar: decidir
     // qual PR/branch é a comparação certa de cada repo. O prompt é FIXO aqui — o cliente só manda o
     // ID, validado contra o padrão de chamado. Página local montando prompt seria injeção.
-    agente(chamado, res) {
+    // Só de localhost. O token protege o acesso; isto protege a CAPACIDADE: pela LAN a tela é para
+    // ver, e a corrida — que spawna `claude -p` com Bash aqui — não deve nem estar disponível.
+    // Token vazado, máquina emprestada, aba esquecida: nenhum desses vira execução de comando.
+    agente(chamado, res, remoto) {
+        if (!ehLocal(remoto)) {
+            this.registrar('agente', 'negado-lan', `${remoto} pediu ${chamado}`);
+            return this.json(res, {ok: false, erro: 'a corrida do agente só roda na máquina do servidor'});
+        }
         if (!/^[A-Z]{2,5}-\d+$/.test(chamado || '')) {
             return this.json(res, { ok: false, erro: 'ID de chamado inválido' });
         }
@@ -613,7 +623,8 @@ class Servidor {
         if (url.pathname === '/') {
             // O token volta embutido na página: quem chegou com `?t=` já provou que tem, e as
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
-            const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(), TOKEN ? q.get('t') || '' : '');
+            const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
+                TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress));
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -636,7 +647,7 @@ class Servidor {
             return this.json(res, this.corridaDe(q.get('chamado')) || { chamado: q.get('chamado'), eventos: [] });
         }
         if (url.pathname === '/api/agente') {
-            return this.agente(q.get('chamado'), res);
+            return this.agente(q.get('chamado'), res, req.socket.remoteAddress);
         }
         if (url.pathname === '/api/eventos') {
             return this.eventos(req, res);
