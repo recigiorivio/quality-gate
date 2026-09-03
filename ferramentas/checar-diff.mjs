@@ -88,16 +88,37 @@ export class ChecarDiff {
                 aplicar: a => this._pastaConvencional(a)
             }
         ];
-        this.convencoes = [
-            [/\.action\.js$/, /(^|\/)src\/actions\//],
-            [/\.workflow\.js$/, /(^|\/)src\/(workflows|actions)\//],
-            [/\.service\.js$/, /(^|\/)src\/.*services?\//],
-            [/\.controller\.js$/, /(^|\/)src\/.*controllers?\//],
-            [/\.router\.js$/, /(^|\/)src\/.*routers?\//],
-            [/\.model\.js$/, /(^|\/)src\/.*models?\//],
-            [/\.enum\.js$/, /(^|\/).*enums?\//],
-            [/\.spec\.js$/, /(^|\/)(spec|test|tests|__tests__)\//]
-        ];
+        /*
+         * Convenção de pasta é POR REPO, e cada linha só entra onde o repo de fato usa a pasta.
+         * Medido em 03/09/2026 nos 5 repos: a lista global anterior acusava o padrão da casa em
+         * massa — 427 dos 434 `.controller.js` do crohc-view, 132 de 132 `.router.js` do
+         * crohc-server, 111 de 111 `.service.js` do contas. Esses repos organizam por domínio
+         * (`components/<dominio>/<dominio>.service.js`); só o workflow-manager organiza por tipo.
+         * `.router.js` saiu: não havia um único repo em que a pasta `routers/` existisse.
+         */
+        this.convencoes = {
+            TODOS: [
+                [/\.spec\.js$/, /(^|\/)(spec|test|tests|__tests__)\//]
+            ],
+            'workflow-manager': [
+                [/\.action\.js$/, /(^|\/)src\/actions\//],
+                [/\.workflow\.js$/, /(^|\/)src\/(workflows|actions)\//],
+                [/\.service\.js$/, /(^|\/)src\/services\//],
+                [/\.enum\.js$/, /(^|\/)enums?\//]
+            ],
+            // Enum em `enums/` é dominante aqui (97 de 123 no crohc-server, 106 de 113 na view),
+            // mas NÃO no contas-service, onde os 41 ficam junto do domínio.
+            'crohc-server': [
+                [/\.enum\.js$/, /(^|\/)enums?\//],
+                [/\.model\.js$/, /(^|\/)models?\//]
+            ],
+            'crohc-view': [
+                [/\.enum\.js$/, /(^|\/)enums?\//]
+            ],
+            'migrate-mongo': [
+                [/\.enum\.js$/, /(^|\/)enums?\//]
+            ]
+        };
     }
 
     // Caminho absoluto sempre: usado como módulo, o cwd é de quem importou, não do workspace.
@@ -387,11 +408,16 @@ export class ChecarDiff {
         }
     }
 
+    _convencoesDoProjeto() {
+        const repo = String(this.projeto || '').replace(/\/$/, '').split('/').pop();
+        return [...this.convencoes.TODOS, ...(this.convencoes[repo] || [])];
+    }
+
     _pastaConvencional(a) {
         if (!a.novo) {
             return [];
         }
-        for (const [sufixo, pasta] of this.convencoes) {
+        for (const [sufixo, pasta] of this._convencoesDoProjeto()) {
             if (sufixo.test(a.caminho) && !pasta.test(a.caminho)) {
                 return [{ linha: 1, trecho: `esperado em ${String(pasta).replace(/[\\^$()?:]/g, '')}` }];
             }

@@ -114,6 +114,21 @@ Numa rede aberta, isso é execução remota de comando para qualquer um no mesmo
 expostos `/api/arquivo` (conteúdo de qualquer arquivo dos 50 repos) e `/api/config-salvar` (escreve as
 rotinas que o agente segue).
 
+**A corrida do agente não roda pela rede.** O token protege o *acesso*; isto protege a
+*capacidade*: `/api/agente` recusa por IP de origem, mesmo com o token certo, e a tela pela LAN nem
+desenha o botão — token vazado, máquina emprestada ou aba esquecida não viram execução de comando
+aqui. As decisões já gravadas valem igual para quem está vendo de fora.
+
+CSS, JS e ícone ficam **fora** do token: a URL deles vem do HTML sem o `?t=`, e exigir token ali
+dava 401 no `app.js` — o app não iniciava e a tela ficava carregando para sempre. `/` e todo `/api/`
+seguem exigindo.
+
+### Link com a tarefa
+
+`?chamado=UND-1638&projeto=migrate-mongo` abre a tela já no chamado e no repo certos. A URL
+acompanha a navegação (`history.replaceState`), então dá para copiar da barra do navegador — ou usar
+o 🔗 no cabeçalho — e mandar para alguém. Com token, o `?t=` continua na URL e vai junto.
+
 Para acesso de fora da LAN, **não** exponha na internet: túnel SSH
 (`ssh -L 4100:localhost:4100 <máquina>`) ou Tailscale, que autenticam antes de chegar aqui.
 

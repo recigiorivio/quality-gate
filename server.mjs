@@ -608,7 +608,11 @@ class Servidor {
         const url = new URL(req.url, `http://localhost:${PORTA}`);
         const q = url.searchParams;
 
-        if (TOKEN) {
+        // CSS/JS/ícone da própria tela ficam fora do token: eles não carregam dado nem capacidade, e
+        // a URL deles vem do HTML sem o `?t=` — pedir token ali dava 401 no `app.js`, o app nunca
+        // iniciava e a tela ficava carregando para sempre. `/` e todo `/api/` seguem exigindo.
+        const ehAsset = /^\/[\w-]+\.(css|js|svg)$/.test(url.pathname);
+        if (TOKEN && !ehAsset) {
             const dado = q.get('t') || req.headers['x-qualidade-token'] || '';
             // Comparação de tamanho fixo: `===` em string vaza o tamanho do prefixo comum pelo tempo.
             const ok = dado.length === TOKEN.length

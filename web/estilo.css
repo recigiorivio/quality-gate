@@ -535,3 +535,6 @@ body.arrastando{user-select:none;cursor:col-resize}
 /* Pela LAN o botão do agente não existe — e a tela diz por quê, em vez de só faltar. */
 .tr-nota-lan{font-size:10px;line-height:1.4;color:var(--fraco);background:var(--painel);
   border:1px solid var(--linha);border-radius:7px;padding:7px 9px}
+.cab-link{background:none;border:1px solid var(--linha);border-radius:6px;cursor:pointer;
+  font-size:11px;padding:3px 7px;flex:0 0 auto;color:var(--fraco)}
+.cab-link:hover{border-color:var(--acento);color:var(--acento)}

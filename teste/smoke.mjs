@@ -598,3 +598,33 @@ test('exposto na rede, nada responde sem o token', async () => {
         filho.kill();
     }
 });
+
+// Os assets da própria tela ficam fora do token: a URL deles vem do HTML sem `?t=`, e exigir token
+// ali dava 401 no app.js — o app nunca iniciava e a tela ficava carregando para sempre pela LAN.
+// O que NÃO pode vazar continua exigindo: `/` e todo `/api/`.
+test('com token, os assets abrem e o resto não', async () => {
+    const porta = PORTA + 5;
+    const token = 'token-de-teste-assets';
+    const filho = spawn('node', ['server.mjs'], {
+        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: token }
+    });
+    try {
+        const base = `http://127.0.0.1:${porta}`;
+        for (let i = 0; i < 60; i++) {
+            try {
+                await fetch(`${base}/?t=${token}`, { signal: AbortSignal.timeout(500) });
+                break;
+            } catch {
+                await new Promise(s => setTimeout(s, 250));
+            }
+        }
+        for (const asset of ['/app.js', '/estilo.css', '/realce.js', '/favicon.svg']) {
+            assert.equal((await fetch(`${base}${asset}`)).status, 200, `${asset} precisa abrir sem token`);
+        }
+        assert.equal((await fetch(`${base}/`)).status, 401, 'a casca não pode abrir sem token');
+        assert.equal((await fetch(`${base}/api/chamados`)).status, 401, 'a API não pode abrir sem token');
+    } finally {
+        filho.kill();
+    }
+});

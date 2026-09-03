@@ -198,6 +198,14 @@ async function carregarChamados() {
          </button>`).join('')}</div>`
     : '';
   marcarPinosDaBarra(chamados);
+  // `?chamado=UND-1638` (e `&projeto=`) na URL: é o que faz o link ser passável — abrir a tela já
+  // no chamado certo, de outra máquina, sem procurar na barra.
+  const pedido = new URLSearchParams(location.search);
+  const daUrl = (pedido.get('chamado') || '').toUpperCase();
+  if (!atual && daUrl && chamados.some(c => c.chamado === daUrl)) {
+    abrirChamado(daUrl, pedido.get('projeto') || null);
+    return;
+  }
   if (!atual && chamados.length) {
     abrirChamado(chamados[0].chamado);
   }
@@ -235,7 +243,7 @@ async function marcarPinosDaBarra(lista) {
 
 // O chamado abre em duas partes: um cabeçalho fino no topo do conteúdo, e a TRILHA à direita com as
 // branches e o Linear. A trilha é recolhível porque o diff é a coisa mais larga do app.
-async function abrirChamado(chamado) {
+async function abrirChamado(chamado, projetoPedido = null) {
   const c = chamados.find(x => x.chamado === chamado);
   if (!c) { return; }
   for (const b of document.querySelectorAll('.linha-chamado')) {
@@ -247,6 +255,7 @@ async function abrirChamado(chamado) {
     <span class="cab-id">${chamado}</span>
     <span class="cab-titulo" id="cab-titulo">${esq('esq-linha esq-l2')}</span>
     <span class="carga-texto" id="carga-texto"></span>
+    <button class="cab-link" onclick="copiarLink()" title="copiar o link desta tela">🔗</button>
     <span id="cab-agente"></span>`;
   marcarCarga();
   redesenharAgenteNoTopo();
@@ -357,7 +366,7 @@ async function abrirChamado(chamado) {
   });
 
   // Volta para onde você estava neste chamado; sem memória, cai no repo com o pior pino.
-  const lembrado = localStorage.getItem(`repo-${chamado}`);
+  const lembrado = projetoPedido || localStorage.getItem(`repo-${chamado}`);
   const chipLembrado = lembrado && document.querySelector(`.chip[data-p="${lembrado}"][data-c="${chamado}"]`);
   if (chipLembrado) {
     abrir(chipLembrado);
@@ -414,6 +423,11 @@ async function abrir(chip, forcar = false) {
   chip.classList.add('ativo');
   atual = { projeto: chip.dataset.p, chamado: chip.dataset.c, ref: chip.dataset.ref || '', botao: chip };
   try { localStorage.setItem(`repo-${atual.chamado}`, atual.projeto); } catch { /* sem storage, sem memória */ }
+  // A URL acompanha: copiar da barra do navegador e mandar para alguém abre no mesmo lugar.
+  const q = new URLSearchParams(location.search);
+  q.set('chamado', atual.chamado);
+  q.set('projeto', atual.projeto);
+  history.replaceState(null, '', `${location.pathname}?${q}`);
   const token = ++geracao;
   itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
   const alvo = document.getElementById('conteudo');
@@ -864,6 +878,11 @@ function renderModalEstado(c) {
 }
 
 // A modal acompanha a corrida ao vivo: se estiver aberta, cada evento do agente a redesenha.
+async function copiarLink() {
+  await navigator.clipboard.writeText(location.href);
+  avisarNaTela('link copiado — abre no mesmo chamado e repo');
+}
+
 async function copiarCorrida() {
   const texto = (corridaAberta?.eventos || [])
     .map(e => `${e.passo}\t${e.ferramenta || 'texto'}\t${e.texto}`).join('\n');
@@ -1190,6 +1209,7 @@ async function salvarConfig(chave) {
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
+  copiarLink,
   trocarVisao, abrirConfig, salvarConfig
 });
 // `visao` é lida pelo onclick da engrenagem.
