@@ -38,8 +38,13 @@ async function pegar(rota, params = {}) {
 }
 
 before(async () => {
+    // Host e token FIXOS aqui: agora que o servidor lê o `.env`, um `QUALIDADE_HOST=0.0.0.0` lá
+    // faria a suíte subir exposta — e com token sorteado, o que dá 401 em tudo. O teste não pode
+    // depender do que está no .env de quem roda.
     servidor = spawn('node', ['server.mjs'], {
-        cwd: RAIZ, env: { ...process.env, PORT: String(PORTA) }, stdio: ['ignore', 'pipe', 'pipe']
+        cwd: RAIZ,
+        env: { ...process.env, PORT: String(PORTA), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: '' },
+        stdio: ['ignore', 'pipe', 'pipe']
     });
     for (let i = 0; i < 60; i++) {
         try {

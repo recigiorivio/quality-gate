@@ -528,15 +528,34 @@ export class ChecarDiff {
             ['comentario-em-migration', 'certo-todo', 'import C from "./C.js";\n// TODO: apagar quando o chamado ABC-123 subir\nconst filter = {};\n', 0],
             ['console-log-em-migration', 'errado', 'export const up = async db => {\n    console.log("subindo");\n    await db.x();\n};\n', 1],
             ['console-log-em-migration', 'certo', 'export const up = async db => {\n    await db.x();\n};\n', 0],
-            ['console-log-em-migration', 'certo-fora-de-migration', 'const x = 1;\nconsole.log("ok");\n', 0]
+            ['console-log-em-migration', 'certo-fora-de-migration', 'const x = 1;\nconsole.log("ok");\n', 0],
+            ['arquivo-fora-da-pasta-convencional', 'errado', 'export default class {}\n', 1,
+                { caminho: 'src/manager/x.action.js', projeto: 'workflow-manager' }],
+            ['arquivo-fora-da-pasta-convencional', 'certo', 'export default class {}\n', 0,
+                { caminho: 'src/actions/x.action.js', projeto: 'workflow-manager' }],
+            // O falso positivo que motivou a reescrita: controller de componente AngularJS mora
+            // junto do componente, e são 427 de 434 assim no crohc-view.
+            ['arquivo-fora-da-pasta-convencional', 'certo-controller-de-componente', 'export class X {}\n', 0,
+                { caminho: 'src/app/shared/itens/components/sugestao-pacote/sugestao-pacote.controller.js', projeto: 'crohc-view' }],
+            // Enum junto do domínio é o padrão do contas-service (41 de 41), e regra por repo respeita isso.
+            ['arquivo-fora-da-pasta-convencional', 'certo-enum-do-contas', 'export default new X();\n', 0,
+                { caminho: 'src/api/guia/execucao-acao-automatica.enum.js', projeto: 'contas-service' }],
+            ['arquivo-fora-da-pasta-convencional', 'errado-enum-do-crohc-server', 'export default new X();\n', 1,
+                { caminho: 'src/app/components/arquivos/x.enum.js', projeto: 'crohc-server' }],
+            ['arquivo-fora-da-pasta-convencional', 'certo-spec', 'describe("x", () => {});\n', 0,
+                { caminho: 'spec/x.spec.js', projeto: 'crohc-server' }]
         ];
         let falhas = 0;
-        for (const [nomeRegra, esperado, fonte, qtd] of casos) {
+        const projetoOriginal = this.projeto;
+        for (const [nomeRegra, esperado, fonte, qtd, contexto] of casos) {
             const regra = this.regras.find(r => r.nome === nomeRegra);
             // Caso `certo-fora-de-migration` precisa de caminho que NÃO é migration: é o que prova que
             // a regra não vaza para o resto do repo.
             const ehMigration = /migration/.test(nomeRegra) && esperado !== 'certo-fora-de-migration';
-            const a = { caminho: ehMigration ? 'src/migrations/X/1-x.js' : 'src/foo.js', novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
+            // A regra de pasta depende do repo: cada caso dela traz o seu.
+            this.projeto = contexto?.projeto || projetoOriginal;
+            const caminho = contexto?.caminho || (ehMigration ? 'src/migrations/X/1-x.js' : 'src/foo.js');
+            const a = { caminho, novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
             const achados = regra.aplicar(a);
             const ok = achados.length === qtd;
             if (!ok) {
@@ -544,6 +563,7 @@ export class ChecarDiff {
             }
             console.log(`${ok ? '✓' : '✗'} ${nomeRegra} [${esperado}] esperado ${qtd}, obtido ${achados.length}`);
         }
+        this.projeto = projetoOriginal;
         console.log(falhas ? `\n${falhas} autoteste(s) falhando — não confiar na saída` : '\ntodos os autotestes passaram');
         return falhas === 0;
     }

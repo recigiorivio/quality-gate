@@ -103,7 +103,14 @@ QUALIDADE_HOST=0.0.0.0 npm start
 ```
 
 Sem `QUALIDADE_TOKEN` ele **sorteia um** e imprime a URL pronta, com o IP da rede em vez de
-`0.0.0.0`. Para um token fixo (link estável para o time): `QUALIDADE_TOKEN=<segredo> QUALIDADE_HOST=0.0.0.0 npm start`.
+`0.0.0.0` — mas o token muda a cada start, então o link de ontem morre. Para link estável, defina o
+token.
+
+As três chaves valem no **`.env` do projeto**, não só no shell — `QUALIDADE_HOST`, `QUALIDADE_TOKEN`
+e `PORT`, com os exemplos no `.env.example`. O shell **ganha** do arquivo (`PORT=4199 npm test`
+continua mandando), e a suíte fixa host e token no spawn de propósito: sem isso um
+`QUALIDADE_HOST=0.0.0.0` no `.env` de quem roda subiria os servidores de teste expostos e com token
+sorteado — 401 em tudo.
 
 Toda rota exige o token, por `?t=` ou pelo header `x-qualidade-token`; a comparação é
 `timingSafeEqual`. Quem abre com o `?t=` recebe a página com o token embutido, e as chamadas

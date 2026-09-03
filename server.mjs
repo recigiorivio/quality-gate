@@ -20,6 +20,11 @@ import comparacao from './lib/comparacao.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
+import { aplicarEnv } from './lib/env.mjs';
+
+// Antes de qualquer `process.env`: o `.env` do projeto passa a valer para PORT, QUALIDADE_HOST e
+// QUALIDADE_TOKEN também. O shell continua ganhando do arquivo.
+aplicarEnv();
 
 // O prompt do agente, fixo. É a tarefa que a máquina não faz: num repo com 7 PRs do mesmo chamado,
 // seis mescladas e a aberta sendo outra, nenhuma regra local diz qual importa.
