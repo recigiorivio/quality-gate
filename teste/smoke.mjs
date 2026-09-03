@@ -573,20 +573,27 @@ test('pela rede, a corrida do agente é negada mesmo com o token certo', async (
 test('exposto na rede, nada responde sem o token', async () => {
     const porta = PORTA + 3;
     const token = 'token-de-teste-abcdef';
+    // Pelo IP da rede, não por 127.0.0.1: o localhost é isento de token por decisão, e é
+    // justamente essa isenção que este caso NÃO pode exercitar.
+    const ip = Object.values(networkInterfaces()).flat()
+        .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
     const filho = spawn('node', ['server.mjs'], {
         cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: token }
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
     });
     try {
-        const base = `http://127.0.0.1:${porta}`;
         for (let i = 0; i < 60; i++) {
             try {
-                await fetch(`${base}/?t=${token}`, { signal: AbortSignal.timeout(500) });
+                await fetch(`http://127.0.0.1:${porta}/`, { signal: AbortSignal.timeout(500) });
                 break;
             } catch {
                 await new Promise(s => setTimeout(s, 250));
             }
         }
+        if (!ip) {
+            return;   // máquina sem interface de rede: nada a exercitar
+        }
+        const base = `http://${ip}:${porta}`;
         for (const rota of ['/', '/api/chamados', '/api/agente?chamado=UND-1', '/api/config-salvar']) {
             const sem = await fetch(`${base}${rota}`);
             assert.equal(sem.status, 401, `${rota} respondeu sem token`);
@@ -595,10 +602,11 @@ test('exposto na rede, nada responde sem o token', async () => {
         }
         const ok = await fetch(`${base}/?t=${token}`);
         assert.equal(ok.status, 200, 'o token certo tem que passar');
-        const html = await ok.text();
-        assert.match(html, new RegExp(`window.TOKEN = '${token}'`), 'a página tem que levar o token');
-        // De localhost a corrida existe; o teste da negação pela LAN está no caso seguinte.
-        assert.match(html, /window\.LOCAL = true/, 'localhost tem que ser reconhecido como local');
+        assert.match(await ok.text(), new RegExp(`window.TOKEN = '${token}'`), 'a página tem que levar o token');
+        // Do localhost, sem token nenhum, e reconhecido como local — é o que libera a corrida.
+        const local = await fetch(`http://127.0.0.1:${porta}/`);
+        assert.equal(local.status, 200, 'localhost não pode exigir token');
+        assert.match(await local.text(), /window\.LOCAL = true/, 'localhost tem que ser reconhecido como local');
     } finally {
         filho.kill();
     }
@@ -610,9 +618,11 @@ test('exposto na rede, nada responde sem o token', async () => {
 test('com token, os assets abrem e o resto não', async () => {
     const porta = PORTA + 5;
     const token = 'token-de-teste-assets';
+    const ip = Object.values(networkInterfaces()).flat()
+        .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
     const filho = spawn('node', ['server.mjs'], {
         cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: token }
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
     });
     try {
         const base = `http://127.0.0.1:${porta}`;
@@ -627,8 +637,12 @@ test('com token, os assets abrem e o resto não', async () => {
         for (const asset of ['/app.js', '/estilo.css', '/realce.js', '/favicon.svg']) {
             assert.equal((await fetch(`${base}${asset}`)).status, 200, `${asset} precisa abrir sem token`);
         }
-        assert.equal((await fetch(`${base}/`)).status, 401, 'a casca não pode abrir sem token');
-        assert.equal((await fetch(`${base}/api/chamados`)).status, 401, 'a API não pode abrir sem token');
+        // Do localhost tudo abre (isento); de fora, casca e API exigem token.
+        assert.equal((await fetch(`${base}/`)).status, 200, 'do localhost a casca abre sem token');
+        if (ip) {
+            assert.equal((await fetch(`http://${ip}:${porta}/`)).status, 401, 'de fora, a casca exige token');
+            assert.equal((await fetch(`http://${ip}:${porta}/api/chamados`)).status, 401, 'de fora, a API exige token');
+        }
     } finally {
         filho.kill();
     }
