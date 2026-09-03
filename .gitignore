@@ -17,3 +17,6 @@ comparacoes.json
 
 # log das corridas do agente: estado local
 corridas/
+
+# token sorteado da exposição na rede: segredo local
+token.local

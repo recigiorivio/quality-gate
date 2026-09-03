@@ -102,9 +102,20 @@ QUALIDADE_HOST=0.0.0.0 npm start
 # ⚠  exposto na rede, token sorteado agora — /api/agente executa comando nesta máquina.
 ```
 
-Sem `QUALIDADE_TOKEN` ele **sorteia um** e imprime a URL pronta, com o IP da rede em vez de
-`0.0.0.0` — mas o token muda a cada start, então o link de ontem morre. Para link estável, defina o
-token.
+**O localhost nunca precisa de token.** Ele existe para a rede; exigi-lo de `127.0.0.1` só quebrava
+o `http://localhost:4100/` de sempre. Quem já está na máquina não é a ameaça — e a corrida do agente,
+que é a capacidade perigosa, só roda de lá mesmo.
+
+Sem `QUALIDADE_TOKEN` o servidor sorteia um, **guarda em `token.local`** e imprime a URL pronta com o
+IP da rede. Guardar foi o conserto de um "token inválido": sorteando a cada start, o link de ontem
+morria. Para um token que você escolhe e versiona no seu `.env`:
+
+```
+QUALIDADE_HOST=0.0.0.0
+QUALIDADE_TOKEN=<openssl rand -hex 16>
+```
+
+O `.env` ganha do `token.local`, e o shell ganha dos dois.
 
 As três chaves valem no **`.env` do projeto**, não só no shell — `QUALIDADE_HOST`, `QUALIDADE_TOKEN`
 e `PORT`, com os exemplos no `.env.example`. O shell **ganha** do arquivo (`PORT=4199 npm test`

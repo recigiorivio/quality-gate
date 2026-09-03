@@ -619,7 +619,9 @@ class Servidor {
         // `.ico` e `.png` entram: o navegador pede `/favicon.ico` como reserva por conta própria, e
         // 401 nele faz o ícone da aba cair no genérico. A resposta honesta ali é 404, não 401.
         const ehAsset = /^\/[\w-]+\.(css|js|svg|ico|png|webmanifest)$/.test(url.pathname);
-        if (TOKEN && !ehAsset) {
+        // Quem chega de 127.0.0.1 não precisa de token: o token existe para a REDE, e exigi-lo no
+        // localhost só quebrava o `http://localhost:4100/` de sempre ao expor a tela.
+        if (TOKEN && !ehAsset && !ehLocal(req.socket.remoteAddress)) {
             const dado = q.get('t') || req.headers['x-qualidade-token'] || '';
             // Comparação de tamanho fixo: `===` em string vaza o tamanho do prefixo comum pelo tempo.
             const ok = dado.length === TOKEN.length
@@ -823,8 +825,17 @@ class Servidor {
         // Exposto sem `QUALIDADE_TOKEN`: sorteia um e imprime a URL pronta com ele, em vez de
         // recusar. O que não pode existir é rede aberta SEM token; escolher o token é conveniência.
         if (!SO_LOCAL && !TOKEN) {
-            TOKEN = randomBytes(16).toString('hex');
-            sorteado = true;
+            // Lembrado em disco: sorteado a cada start, o link de ontem morria e "token inválido"
+            // era o que se via. `QUALIDADE_TOKEN` no .env continua ganhando deste arquivo.
+            const guardado = join(import.meta.dirname, 'token.local');
+            if (existsSync(guardado)) {
+                TOKEN = readFileSync(guardado, 'utf8').trim();
+            }
+            if (!TOKEN) {
+                TOKEN = randomBytes(16).toString('hex');
+                writeFileSync(guardado, `${TOKEN}\n`, { mode: 0o600 });
+                sorteado = true;
+            }
         }
         servidor.listen(PORTA, HOST, () => {
             const alvo = SO_LOCAL ? 'localhost' : (this.ipDaRede() || HOST);
