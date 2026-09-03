@@ -87,6 +87,10 @@ function estagioDe(status) {
 const ESQUELETO = window.ESQUELETO || [];
 let atual = null;
 let geracao = 0;
+// Geração do CHAMADO, separada da do repo: o `/api/prs` bate no `gh` e leva segundos, e trocar de
+// chamado antes da resposta fazia a lista do anterior cair na trilha do atual — o "bug dos PRs" que
+// se resolvia saindo e voltando, porque a segunda ida re-renderizava com a resposta certa.
+let geracaoChamado = 0;
 let visao = 'chamados';
 let chamados = [];
 let estadoAgente = { rodando: null, passos: 0 };
@@ -307,7 +311,9 @@ async function abrirChamado(chamado, projetoPedido = null) {
   aplicarRecolhido();
 
   // Identidade e PRs chegam depois: é rede.
+  const tokenChamado = ++geracaoChamado;
   api('/api/prs', { chamado, projetos: c.repos.map(x => x.projeto).join(',') }).then(r => {
+    if (tokenChamado !== geracaoChamado) { return; }
     prsDoChamado = r.prs || [];
     const l = r.linear;
     const titulo = document.getElementById('cab-titulo');

@@ -58,9 +58,12 @@ before(async () => {
     // Precisa de um repo com diff DE VERDADE: pegar o primeiro fazia as rotas de diff virarem skip
     // quando ele estava mesclado — a suíte ficava verde sem exercitar nada.
     const { corpo } = await pegar('/api/chamados');
+    // Com o `chamado`: sem ele a comparação decidida não vale e a busca via 0 arquivo em tudo — 6
+    // casos viravam skip e as rotas de diff deixavam de ser exercitadas.
     for (const c of corpo.lista || []) {
         for (const r of c.repos) {
-            const d = (await pegar('/api/arquivos', { projeto: r.projeto, ref: r.ref || '' })).corpo;
+            const d = (await pegar('/api/arquivos',
+                { projeto: r.projeto, ref: r.ref || '', chamado: c.chamado })).corpo;
             if ((d.arquivos || []).length) {
                 contexto = { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' };
                 break;
@@ -142,7 +145,7 @@ test('/api/arquivos e /api/arquivo devolvem diff coerente', async t => {
     if (!contexto.projeto) {
         return t.skip('nenhum chamado aberto no workspace — rotas de diff não exercitadas');
     }
-    const { status, corpo } = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref });
+    const { status, corpo } = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado });
     assert.equal(status, 200);
     assert.equal(typeof corpo.base, 'string');
     assert.ok(Array.isArray(corpo.arquivos));
@@ -156,7 +159,7 @@ test('/api/arquivos e /api/arquivo devolvem diff coerente', async t => {
     }
     const alvo = corpo.arquivos[0].caminho;
     const um = await pegar('/api/arquivo', {
-        projeto: contexto.projeto, ref: contexto.ref, base: corpo.base, caminho: alvo
+        projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado, base: corpo.base, caminho: alvo
     });
     assert.equal(um.status, 200);
     // As colunas têm que estar alinhadas: é o que faz o painel lado a lado não desalinhar.
@@ -173,15 +176,15 @@ test('a dobra reduz o payload e o modo completo traz tudo', async t => {
     if (!contexto.projeto) {
         return t.skip('nenhum chamado aberto');
     }
-    const lista = (await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref })).corpo;
+    const lista = (await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado })).corpo;
     const grande = (lista.arquivos || [])
         .map(a => a.caminho)
         .find(c => /\.(json|js|mjs)$/.test(c));
     if (!grande) {
         return t.skip('nenhum arquivo js/json no diff');
     }
-    const dobrado = (await pegar('/api/arquivo', { projeto: contexto.projeto, ref: contexto.ref, caminho: grande })).corpo;
-    const inteiro = (await pegar('/api/arquivo', { projeto: contexto.projeto, ref: contexto.ref, caminho: grande, completo: 1 })).corpo;
+    const dobrado = (await pegar('/api/arquivo', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado, caminho: grande })).corpo;
+    const inteiro = (await pegar('/api/arquivo', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado, caminho: grande, completo: 1 })).corpo;
     assert.ok(dobrado.antes.length <= inteiro.antes.length, 'dobrado maior que o completo');
     if (dobrado.dobradas > 0) {
         assert.ok(dobrado.antes.length < inteiro.antes.length, 'disse que dobrou mas não reduziu');
@@ -211,7 +214,7 @@ test('/api/lint diz qual linter rodou, ou que não há linter', async t => {
     if (!contexto.projeto) {
         return t.skip('nenhum chamado aberto');
     }
-    const { status, corpo } = await pegar('/api/lint', { projeto: contexto.projeto, ref: contexto.ref });
+    const { status, corpo } = await pegar('/api/lint', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado });
     assert.equal(status, 200);
     assert.ok(Array.isArray(corpo.linters));
     assert.ok(corpo.linters.length || corpo.nota, 'nem linter nem nota: silêncio não é resposta');
@@ -250,12 +253,12 @@ test('o cache marca doCache e /api/invalidar o derruba', async t => {
         return t.skip('nenhum chamado aberto');
     }
     await pegar('/api/invalidar', { projeto: contexto.projeto });
-    const primeira = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref });
+    const primeira = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado });
     assert.equal(primeira.corpo.doCache, false);
-    const segunda = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref });
+    const segunda = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado });
     assert.equal(segunda.corpo.doCache, true);
     await pegar('/api/invalidar', { projeto: contexto.projeto });
-    const terceira = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref });
+    const terceira = await pegar('/api/arquivos', { projeto: contexto.projeto, ref: contexto.ref, chamado: contexto.chamado });
     assert.equal(terceira.corpo.doCache, false, 'invalidar não derrubou o cache');
 });
 
@@ -646,4 +649,17 @@ test('com token, os assets abrem e o resto não', async () => {
     } finally {
         filho.kill();
     }
+});
+
+// O "bug dos PRs que se resolve saindo e voltando": `/api/prs` bate no `gh` e leva segundos, e
+// trocar de chamado antes da resposta fazia a lista do ANTERIOR cair na trilha do atual. A guarda é
+// uma geração por chamado — este teste exige que ela exista e seja usada no retorno do fetch.
+test('o fetch de PRs tem guarda de geração por chamado', async () => {
+    const app = (await pegar('/app.js')).corpo;
+    assert.match(app, /let geracaoChamado = 0;/, 'sem contador de geração do chamado');
+    const bloco = app.match(/const tokenChamado = \+\+geracaoChamado;[\s\S]{0,400}/);
+    assert.ok(bloco, 'o fetch de PRs não abre uma geração');
+    assert.match(bloco[0], /api\('\/api\/prs'/, 'a geração tem que ser aberta junto do fetch de PRs');
+    assert.match(bloco[0], /if \(tokenChamado !== geracaoChamado\) \{ return; \}/,
+        'o retorno do fetch não compara a geração — resposta velha ainda pinta a tela');
 });
