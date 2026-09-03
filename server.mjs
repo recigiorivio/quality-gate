@@ -585,7 +585,7 @@ class Servidor {
     // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
     versaoDosAssets() {
         let maior = 0;
-        for (const nome of ['app.js', 'estilo.css', 'realce.js', 'pagina.mjs']) {
+        for (const nome of ['app.js', 'estilo.css', 'realce.js', 'pagina.mjs', 'favicon.svg']) {
             try {
                 maior = Math.max(maior, statSync(join(import.meta.dirname, 'web', nome)).mtimeMs);
             } catch {
@@ -616,7 +616,9 @@ class Servidor {
         // CSS/JS/ícone da própria tela ficam fora do token: eles não carregam dado nem capacidade, e
         // a URL deles vem do HTML sem o `?t=` — pedir token ali dava 401 no `app.js`, o app nunca
         // iniciava e a tela ficava carregando para sempre. `/` e todo `/api/` seguem exigindo.
-        const ehAsset = /^\/[\w-]+\.(css|js|svg)$/.test(url.pathname);
+        // `.ico` e `.png` entram: o navegador pede `/favicon.ico` como reserva por conta própria, e
+        // 401 nele faz o ícone da aba cair no genérico. A resposta honesta ali é 404, não 401.
+        const ehAsset = /^\/[\w-]+\.(css|js|svg|ico|png|webmanifest)$/.test(url.pathname);
         if (TOKEN && !ehAsset) {
             const dado = q.get('t') || req.headers['x-qualidade-token'] || '';
             // Comparação de tamanho fixo: `===` em string vaza o tamanho do prefixo comum pelo tempo.
@@ -638,8 +640,9 @@ class Servidor {
             return res.end(corpo);
         }
         // Só nome simples dentro de web/: sem barra e sem `..`, para o caminho não escapar da pasta.
-        if (/^\/[\w-]+\.(css|js|svg)$/.test(url.pathname)) {
-            const tipos = { css: 'text/css', js: 'text/javascript', svg: 'image/svg+xml' };
+        if (/^\/[\w-]+\.(css|js|svg|ico|png)$/.test(url.pathname)) {
+            const tipos = { css: 'text/css', js: 'text/javascript', svg: 'image/svg+xml',
+                ico: 'image/x-icon', png: 'image/png' };
             try {
                 const corpo = readFileSync(join(import.meta.dirname, 'web', url.pathname.slice(1)));
                 res.writeHead(200, {

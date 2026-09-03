@@ -15,7 +15,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true) {
     return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Qualidade — conferência por chamado</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=${versao}">
 <link rel="stylesheet" href="/estilo.css?v=${versao}">
 </head><body>
 <aside>
