@@ -366,8 +366,14 @@ configurado diz **"nenhum linter configurado"** em vez de fingir que passou.
 - **queries**: acha as chamadas ao banco no AST e marca filtro vazio, campo aninhado, regex sem
   âncora `^`, operador negativo, `updateMany`/`deleteMany` sem campo de recorte, e `sort` sem `limit`
   (pela cadeia de chamadas, não pelo texto da linha). Distingue `.find({...})` do driver de
-  `.find(x => ...)` de array pelo **tipo do nó** do primeiro argumento. 10 casos certo/errado
-  calibrados
+  `.find(x => ...)` de array pelo **tipo do nó** do primeiro argumento. Os 11 casos certo/errado
+  rodam em `checar-diff.mjs --autoteste`, junto com os das checagens.
+
+  Recorte é reconhecido pela **forma do nome** — `id<Entidade>` ou `<entidade>Id` —, não por lista:
+  a lista fixa não conhecia `idPendenciaManual` nem `guiaId` e acusava dois filtros certos do
+  UND-1991. E filtro com **espalhamento** (`{...conta, ativa: true}`) não é acusado de falta de
+  recorte: os campos vêm de outro lugar e a ferramenta não os vê — afirmar ali é o falso positivo
+  que ensina a ignorar o aviso.
 - **refatoração**: método novo com mais de 40 linhas pelo **span do nó**, corrida de 4+ linhas
   idênticas repetida no diff, e nome de método novo que já aparece em outro arquivo (`git grep`, não
   memória)

@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Diff, WORKSPACE } from '../lib/diff.mjs';
+import ast, { CASOS_DE_QUERY } from '../lib/ast.mjs';
 
 const RAIZ_WS = WORKSPACE;
 // Extensões que as regras de texto cobrem. Fora daqui o arquivo é DECLARADO não analisado — silêncio
@@ -548,6 +549,23 @@ export class ChecarDiff {
         }
     }
 
+    // As regras de query alimentam o cartão de índices, não as checagens do diff, mas o autoteste é um
+    // comando só: regra sem os dois lados provados é regra em que não se confia.
+    _autotesteDeQueries() {
+        let falhas = 0;
+        for (const [nome, rotulo, fonte, risco, esperado] of CASOS_DE_QUERY) {
+            const achadas = ast.queries(fonte) || [];
+            const riscos = achadas.flatMap(q => q.riscos);
+            const obtido = risco === null ? achadas.length > 0 : riscos.some(r => r.includes(risco));
+            const ok = obtido === esperado;
+            if (!ok) {
+                falhas++;
+            }
+            console.log(`${ok ? '✓' : '✗'} ${nome} [${rotulo}] esperado ${esperado}, obtido ${obtido}`);
+        }
+        return falhas;
+    }
+
     autoteste() {
         const casos = [
             ['comentario-acima-de-class', 'errado', '// faz coisa\nclass Foo {\n}\n', 1],
@@ -603,6 +621,7 @@ export class ChecarDiff {
                 { caminho: 'src/api/guia/guia.service.js', projeto: 'contas-service', soNovas: false }]
         ];
         let falhas = 0;
+        falhas += this._autotesteDeQueries();
         const projetoOriginal = this.projeto;
         for (const [nomeRegra, esperado, fonte, qtd, contexto] of casos) {
             const regra = this.regras.find(r => r.nome === nomeRegra);
