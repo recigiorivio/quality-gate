@@ -86,6 +86,12 @@ export class ChecarDiff {
                 severidade: 'aviso',
                 doc: 'sufixo do arquivo determina a pasta',
                 aplicar: a => this._pastaConvencional(a)
+            },
+            {
+                nome: 'model-de-outro-dominio',
+                severidade: 'aviso',
+                doc: 'qualidade-de-codigo.md § Estrutura — procurar o service/comando do domínio antes de ler o model',
+                aplicar: a => this._modelDeOutroDominio(a)
             }
         ];
         /*
@@ -425,6 +431,37 @@ export class ChecarDiff {
         return [];
     }
 
+    /*
+     * `app.get(modelEnum.X)` numa linha nova de arquivo que nao e do dominio X. O dominio vem do nome do
+     * model (ARQUIVO -> arquivo, GUIA_PROCESSAMENTO -> guia-processamento) e "ser do dominio" e ter uma
+     * pasta ou o proprio nome do arquivo comecando por ele (`arquivos/`, `arquivo.service.js`,
+     * `setor/` para SETOR_ATENDIMENTO). Nao sabe se o service existe: por isso e aviso, nao erro.
+     */
+    _modelDeOutroDominio(a) {
+        if (/\.spec\.js$|(^|\/)(spec|models?|config)\//.test(a.caminho)) {
+            return [];
+        }
+        const segmentos = a.caminho.toLowerCase().split('/');
+        const nomeDoArquivo = segmentos[segmentos.length - 1].split('.')[0];
+        const doDominio = dominio => [...segmentos.slice(0, -1), nomeDoArquivo].some(seg =>
+            seg === dominio || seg === `${dominio}s` || seg.startsWith(dominio) || (seg.length >= 4 && dominio.startsWith(seg)));
+        const achados = [];
+        a.linhas.forEach((linha, i) => {
+            if (!a.adicionadas.has(i + 1)) {
+                return;
+            }
+            const m = /app\.get\(\s*(?:modelEnum|ModelEnum)\.([A-Z][A-Z0-9_]*)\s*\)/.exec(linha);
+            if (!m) {
+                return;
+            }
+            const dominio = m[1].toLowerCase().replace(/_/g, '-');
+            if (!doDominio(dominio)) {
+                achados.push({ linha: i + 1, trecho: `${m[0]} fora do domínio '${dominio}': há ${dominio}.service.js ou comando find? use-o` });
+            }
+        });
+        return achados;
+    }
+
     executar(projeto, base, ref = '') {
         this.projeto = projeto;
         this.ref = ref;
@@ -543,7 +580,27 @@ export class ChecarDiff {
             ['arquivo-fora-da-pasta-convencional', 'errado-enum-do-crohc-server', 'export default new X();\n', 1,
                 { caminho: 'src/app/components/arquivos/x.enum.js', projeto: 'crohc-server' }],
             ['arquivo-fora-da-pasta-convencional', 'certo-spec', 'describe("x", () => {});\n', 0,
-                { caminho: 'spec/x.spec.js', projeto: 'crohc-server' }]
+                { caminho: 'spec/x.spec.js', projeto: 'crohc-server' }],
+            // O caso real: a ficha de pendencia lendo tiss_arquivo pelo model, com ArquivoService.findById existindo.
+            ['model-de-outro-dominio', 'errado', 'const arquivo = await app.get(modelEnum.ARQUIVO).findById(id, {idCliente: 1}).lean();\n', 1,
+                { caminho: 'src/api/alerta-integracao-cta-pendencia/alerta-integracao-cta-pendencia.service.js', projeto: 'contas-service' }],
+            ['model-de-outro-dominio', 'errado-evolucao', 'const doc = await app.get(modelEnum.EVOLUCOES).findById(id);\n', 1,
+                { caminho: 'src/api/guia-processamento/ativacoes/criar-ativacao-pendencia.js', projeto: 'contas-service' }],
+            ['model-de-outro-dominio', 'certo-proprio-dominio', 'const model = app.get(modelEnum.EVOLUCOES);\n', 0,
+                { caminho: 'src/api/evolucoes/evolucoes.service.js', projeto: 'contas-service' }],
+            ['model-de-outro-dominio', 'certo-pasta-no-plural', 'const model = app.get(modelEnum.ARQUIVO);\n', 0,
+                { caminho: 'src/app/components/arquivos/commands/arquivo-find.js', projeto: 'crohc-server' }],
+            ['model-de-outro-dominio', 'certo-pasta-abreviada', 'const model = this.app.get(modelEnum.SETOR_ATENDIMENTO);\n', 0,
+                { caminho: 'src/app/components/setor/setor-atendimento.service.js', projeto: 'crohc-server' }],
+            // O workflow-manager organiza por tipo: o dominio esta no nome do arquivo, nao na pasta.
+            ['model-de-outro-dominio', 'certo-organizado-por-tipo', 'const model = app.get(modelEnum.ARQUIVO);\n', 0,
+                { caminho: 'src/services/arquivo.service.js', projeto: 'workflow-manager' }],
+            ['model-de-outro-dominio', 'errado-organizado-por-tipo', 'const arquivos = await app.get(modelEnum.ARQUIVO).find({});\n', 1,
+                { caminho: 'src/services/unificado/unificado-itens.service.js', projeto: 'workflow-manager' }],
+            ['model-de-outro-dominio', 'certo-registro-de-models', 'app.set(x, connection.model(ModelEnum.ARQUIVO, schema));\n', 0,
+                { caminho: 'src/config/models.js', projeto: 'workflow-manager' }],
+            ['model-de-outro-dominio', 'certo-linha-antiga', 'const model = app.get(modelEnum.ARQUIVO);\n', 0,
+                { caminho: 'src/api/guia/guia.service.js', projeto: 'contas-service', soNovas: false }]
         ];
         let falhas = 0;
         const projetoOriginal = this.projeto;
@@ -555,7 +612,8 @@ export class ChecarDiff {
             // A regra de pasta depende do repo: cada caso dela traz o seu.
             this.projeto = contexto?.projeto || projetoOriginal;
             const caminho = contexto?.caminho || (ehMigration ? 'src/migrations/X/1-x.js' : 'src/foo.js');
-            const a = { caminho, novo: true, linhas: fonte.split('\n'), adicionadas: new Set(fonte.split('\n').map((_, i) => i + 1)) };
+            const adicionadas = contexto?.soNovas === false ? new Set() : new Set(fonte.split('\n').map((_, i) => i + 1));
+            const a = { caminho, novo: true, linhas: fonte.split('\n'), adicionadas };
             const achados = regra.aplicar(a);
             const ok = achados.length === qtd;
             if (!ok) {
