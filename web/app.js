@@ -754,6 +754,9 @@ function tirarOverlay() {
   if (!o) { return; }
   o.classList.add('saindo');
   setTimeout(() => o.remove(), 240);
+  // A barra de rolagem entra 1 s depois do conteúdo, com fade: o espaço dela já está reservado, e
+  // aparecer de estalo no meio do resto que ainda está chegando é justamente o que incomoda.
+  setTimeout(() => document.body.classList.add('com-barra'), 1000);
 }
 
 function montarArquivos(d) {

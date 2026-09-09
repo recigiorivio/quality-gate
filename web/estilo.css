@@ -572,3 +572,21 @@ body.arrastando{user-select:none;cursor:col-resize}
 #carregando-tela.saindo{opacity:0;pointer-events:none}
 .giro-grande{width:30px;height:30px;border-width:3px}
 main{position:relative}
+
+/* Barra de rolagem discreta e que SURGE. A canaleta já está reservada (`scrollbar-gutter`), então
+   mostrar o polegar depois não empurra nada: é só aparência. Sem isso ela aparecia de estalo no
+   instante em que o diff entra, no meio de tudo o mais que estava acontecendo. */
+main::-webkit-scrollbar,#painel-chamados::-webkit-scrollbar,.me-log::-webkit-scrollbar,
+.pa-linhas::-webkit-scrollbar{width:11px;height:11px}
+main::-webkit-scrollbar-track,#painel-chamados::-webkit-scrollbar-track,
+.me-log::-webkit-scrollbar-track,.pa-linhas::-webkit-scrollbar-track{background:transparent}
+main::-webkit-scrollbar-thumb,#painel-chamados::-webkit-scrollbar-thumb,
+.me-log::-webkit-scrollbar-thumb,.pa-linhas::-webkit-scrollbar-thumb{
+  background:transparent;border-radius:20px;border:3px solid transparent;background-clip:content-box;
+  transition:background-color .45s ease-out}
+body.com-barra main::-webkit-scrollbar-thumb,
+body.com-barra #painel-chamados::-webkit-scrollbar-thumb,
+body.com-barra .me-log::-webkit-scrollbar-thumb,
+body.com-barra .pa-linhas::-webkit-scrollbar-thumb{background-color:var(--linha)}
+body.com-barra main:hover::-webkit-scrollbar-thumb,
+body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:var(--fraco)}
