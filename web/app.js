@@ -54,12 +54,14 @@ const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar',
 
 // Esqueleto na forma do que vem, em vez da palavra "carregando": mostra quanto vem e onde, e a tela
 // não pula quando o conteúdo entra no lugar.
-const esq = (classe = '') => `<div class="esq ${classe}"></div>`;
-const esqLinhas = (...larguras) => larguras.map(l => esq(`esq-linha esq-${l}`)).join('');
-const esqRepos = n => Array.from({ length: n }, () =>
-  `<div class="esq-repo">${esq('esq-nome esq-linha')}${esq('esq-tag')}</div>`).join('');
-const esqCodigo = n => `<div class="esq-codigo">${Array.from({ length: n },
-  (_, i) => esq(`esq-linha esq-l${(i % 4) + 1}`)).join('')}</div>`;
+// Círculo girando, não barra cinza — mas a CAIXA continua reservada: são estas alturas que
+// derrubaram o deslocamento de layout de 0,232 para 0,0375. Um giro solto não ocupa espaço, e sem o
+// espaço reservado o salto volta inteiro quando o conteúdo entra.
+const girando = altura => `<div class="carregando" style="min-height:${altura}px"><span class="giro"></span></div>`;
+const esq = (classe = '') => girando(/l2|titulo/.test(classe) ? 22 : 25);
+const esqLinhas = (...larguras) => girando(larguras.length * 25);
+const esqRepos = n => girando(Math.max(1, n) * 26);
+const esqCodigo = n => girando(Math.max(2, n) * 15 + 26);
 // Sem abas: 6 a 11 cartões não justificam 4 abas. A lista é única e os grupos só definem a ORDEM.
 const ORDEM = [
   'trabalho', 'dados', 'refatoracao', 'atencao'
@@ -110,11 +112,40 @@ function pinoDo(itens) {
 
 // Uma lista só, ordenada por grupo. Todo cartão nasce recolhido — quem resume o conjunto é o
 // veredito de uma linha acima, então abrir sozinho só empurraria os outros para baixo.
+// Substitui só o cartão que mudou. Reescrever a lista inteira acontecia 6 vezes numa abertura (uma
+// por resposta que chega) — era isso que fazia o centro piscar — e FECHAVA os cartões que a pessoa
+// tinha aberto, porque o novo HTML nasce sem o `open`.
 function desenharCartoes(itens) {
+  const alvo = document.getElementById('cartoes');
   const ordenados = [...itens].sort((a, b) =>
     (ORDEM.indexOf(a.grupo) + 1 || 99) - (ORDEM.indexOf(b.grupo) + 1 || 99));
-  document.getElementById('cartoes').innerHTML = ordenados.map(cartao).join('');
+  const existentes = new Map([...alvo.children].map(el => [el.dataset.id, el]));
+  const desenhados = ordenados.map(i => {
+    const antigo = existentes.get(i.id);
+    const html = cartao(i);
+    // Compara sem o `open`: o atributo é escolha da pessoa, não conteúdo, e mantê-lo fora da
+    // comparação é o que impede a resposta seguinte de fechar o cartão que ela acabou de abrir.
+    if (antigo && semAberto(antigo.outerHTML) === semAberto(html)) {
+      return antigo;
+    }
+    const molde = document.createElement('div');
+    molde.innerHTML = html;
+    const novo = molde.firstElementChild;
+    if (antigo?.open) {
+      novo.open = true;
+    }
+    return novo;
+  });
+  // Só mexe no DOM se a sequência mudou de fato.
+  const igual = desenhados.length === alvo.children.length
+    && desenhados.every((el, n) => alvo.children[n] === el);
+  if (igual) {
+    return;
+  }
+  suave(() => alvo.replaceChildren(...desenhados));
 }
+
+const semAberto = html => html.replace(/\s+open(=""|='')?/, '');
 
 function cartaoDoLint(r) {
   const linters = (r.linters || []).join(', ');
@@ -147,7 +178,7 @@ function cartaoDoLint(r) {
 
 function cartao(i) {
   if (i.status === 'carregando') {
-    return `<div class="check st-carregando" aria-busy="true">
+    return `<div class="check st-carregando" data-id="${i.id}" aria-busy="true">
       <div class="linha1"><span class="tag">${ROTULO[i.status]}</span>
       <span class="titulo">${esc(i.titulo)}</span></div></div>`;
   }
@@ -161,9 +192,9 @@ function cartao(i) {
     ${i.pontoId ? `<button class="tirar" title="tirar este ponto da lista"
       onclick="tirarPonto(event,'${i.pontoId}')">×</button>` : ''}`;
   if (!corpo) {
-    return `<div class="check st-${i.status} sem-corpo"><div class="linha1">${resumo}</div></div>`;
+    return `<div class="check st-${i.status} sem-corpo" data-id="${i.id}"><div class="linha1">${resumo}</div></div>`;
   }
-  return `<details class="check st-${i.status}">
+  return `<details class="check st-${i.status}" data-id="${i.id}">
     <summary class="linha1">${resumo}</summary>
     <div class="corpo-check">${corpo}</div>
   </details>`;
@@ -294,9 +325,9 @@ async function abrirChamado(chamado, projetoPedido = null) {
           ${r.naBranch || (r.branch && r.branch === r.branchAtual) ? '' : `<span class="chip-fora" title="o checkout local está em ${esc(r.branchAtual)}, não nesta branch">≠</span>`}
         </button>`).join('')}</div>
     </details>
-    <details class="tr-secao tr-dobra" id="tr-prs" ${aberta('prs')}>
+    <details class="tr-secao tr-dobra" id="tr-prs" style="--altura-prs:${c.repos.length * 26}px" ${aberta('prs')}>
       <summary class="tr-titulo">Pull requests</summary>
-      <div class="tr-carregando">${esqLinhas('l2', 'l1')}</div>
+      <div class="tr-carregando">${esqRepos(c.repos.length)}</div>
     </details>
     <div class="tr-pe">
       <div class="tr-estado" id="tr-estado">${estadoDaComparacao(c)}</div>
@@ -359,7 +390,7 @@ async function abrirChamado(chamado, projetoPedido = null) {
         prAlvo.appendChild(corpoPr);
       }
       prAlvo.querySelector('.tr-carregando')?.remove();
-      corpoPr.innerHTML = `
+      const htmlPr = `
         ${comPr.map(x => `
           <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')} ${classeDecisao(x)}"
              href="${x.url}" target="_blank" rel="noopener"
@@ -371,6 +402,11 @@ async function abrirChamado(chamado, projetoPedido = null) {
             <span class="tr-pr-seta">↗</span>
           </a>`).join('') || '<div class="tr-nota">nenhum PR</div>'}
         ${semPr.length ? `<div class="tr-sem-pr">sem PR: ${esc(semPr.join(', '))}</div>` : ''}`;
+      // Só troca se mudou: a lista de 28 PRs era reescrita a cada resposta, e cada reescrita é um
+      // pisca na trilha.
+      if (corpoPr.innerHTML !== htmlPr) {
+        suave(() => { corpoPr.innerHTML = htmlPr; });
+      }
     }
     pintarAbasDoAtual();
   });
@@ -519,6 +555,7 @@ function pintarAbasDoAtual(token) {
     .concat(itensDoAtual.pontos);
   desenharCartoes(todos);
   escreverVeredito(todos);
+  tirarOverlay();
 }
 
 // O mesmo resumo de uma linha que a rotina escreve no fim: contagens e, depois do travessão, o pior
@@ -612,12 +649,19 @@ function comprimir(nome, no) {
   return [nome, no];
 }
 
+// A altura do corpo é RESERVADA a partir do tamanho da mudança, que o /api/arquivos já informa.
+// Com esqueleto fixo de 6 linhas contra conteúdo de centenas, cada arquivo pintado empurrava tudo
+// abaixo dele — medido: dois saltos de ~0,095 de CLS por abertura, os maiores da tela. A conta é a
+// da dobra: linhas mudadas mais o contexto dos dois lados, com teto.
+const linhasEstimadas = a => Math.min(140, (a.adicionadas || 0) + (a.removidas || 0) + 14);
+
 function linhaDeArquivo(a, aberto) {
-  return `<details class="arq" data-caminho="${esc(a.caminho)}" ${aberto ? 'open' : ''}>
+  const linhas = linhasEstimadas(a);
+  return `<details class="arq" data-caminho="${esc(a.caminho)}" data-linhas="${linhas}" ${aberto ? 'open' : ''}>
     <summary><b>${esc(a.nome || a.caminho)}</b><span class="badge">${a.estado}</span>
       <span class="mais">+${a.adicionadas}</span><span class="menos">-${a.removidas}</span>
       <span class="dobra"></span></summary>
-    <div class="corpo"></div>
+    <div class="corpo" style="min-height:${linhas * 15 + 26}px"></div>
   </details>`;
 }
 
@@ -703,7 +747,17 @@ function irParaRepo(projeto) {
   if (chip) { abrir(chip); }
 }
 
+// Sai na primeira coisa de verdade que chega, com fade, e não volta: da segunda carga em diante o
+// que avisa é o fio no topo.
+function tirarOverlay() {
+  const o = document.getElementById('carregando-tela');
+  if (!o) { return; }
+  o.classList.add('saindo');
+  setTimeout(() => o.remove(), 240);
+}
+
 function montarArquivos(d) {
+  tirarOverlay();
   const caixa = document.getElementById('arquivos');
   if (!caixa) { return; }
   caixa.className = '';
@@ -1013,6 +1067,22 @@ function painelAgente(texto, classe = '', extra = '') {
   return p;
 }
 
+// Crossfade nativo quando o navegador tem (Chrome/Safari recentes); sem ele, troca direta como
+// antes. Não é biblioteca: é o `startViewTransition` do próprio navegador.
+let transicaoEmCurso = false;
+
+function suave(troca) {
+  // Uma de cada vez: chamar com outra em curso aborta a anterior e o navegador loga
+  // "Transition was skipped" no console — erro visível para quem abre o inspetor.
+  if (typeof document.startViewTransition !== 'function' || transicaoEmCurso) {
+    troca();
+    return;
+  }
+  transicaoEmCurso = true;
+  const t = document.startViewTransition(troca);
+  t.finished.catch(() => {}).finally(() => { transicaoEmCurso = false; });
+}
+
 // Junta as chaves que chegam quase juntas (diff, checagens e lint revalidam de uma vez) num
 // redesenho só, e guarda a rolagem: perder o lugar no diff é pior que ver o dado velho por 1 s.
 let redesenhoAgendado = null;
@@ -1067,7 +1137,8 @@ async function pintar(det, completo) {
   // Marca ANTES do await: a marca só existia depois, então duas chamadas concorrentes passavam as
   // duas e o mesmo arquivo era buscado em dobro. Com 7 arquivos abrindo juntos, isso multiplica.
   corpo.dataset.pronto = completo ? 'completo' : 'carregando';
-  corpo.innerHTML = esqCodigo(6);
+  // O esqueleto ocupa a altura estimada em vez de 6 linhas fixas: é o que evita o salto na troca.
+  corpo.innerHTML = esqCodigo(Math.min(30, Math.round(Number(det.dataset.linhas || 6) / 3)));
   const r = await api('/api/arquivo', {
     chamado: atual.chamado,
     projeto: atual.projeto, base: atual.base, ref: atual.ref,
@@ -1089,6 +1160,8 @@ async function pintar(det, completo) {
   const novo = document.createElement('div');
   novo.className = 'par';
   novo.dataset.pronto = '1';
+  // Herda a altura reservada: sem isto o salto volta exatamente no instante da troca.
+  novo.style.minHeight = corpo.style.minHeight;
   novo.innerHTML = `<div class="col"><h4>antes</h4>${lado(r.antes)}</div>
     <div class="alca" title="arraste para mover a divisão · duplo clique volta ao meio"></div>
     <div class="col"><h4>depois</h4>${lado(r.depois)}</div>`;

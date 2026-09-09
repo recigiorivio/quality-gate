@@ -23,9 +23,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true) {
     <span><span class="nome">Magias do Mago</span><span class="sub">conferência por chamado</span></span></h1>
   <div id="painel-chamados">
     <div id="lista" aria-busy="true">
-      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
-      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
-      <div class="esq-repo"><div class="esq esq-nome esq-linha"></div><div class="esq esq-tag"></div></div>
+      <div class="carregando" style="min-height:78px"><span class="giro"></span></div>
     </div>
     <div id="ocultos"></div>
   </div>
@@ -41,6 +39,10 @@ export function pagina(esqueleto, versao = '', token = '', local = true) {
 <main>
   <div id="cabecalho" hidden></div>
   <div id="conteudo" class="aviso">Escolha um chamado à esquerda.</div>
+  <!-- Cobre o conteúdo só na PRIMEIRA carga, quando não há nada para mostrar. Já vem no HTML para
+       não depender do JS, e sai no primeiro conteúdo que chega. Nas cargas seguintes quem avisa é o
+       fio do topo: cobrir a tela inteira por um cache hit de 100 ms seria pisca, não informação. -->
+  <div id="carregando-tela"><span class="giro giro-grande"></span><span>lendo os repos…</span></div>
 </main>
 <div id="trilha" hidden>
   <button id="trilha-toggle" onclick="alternarMenu()" title="recolher/expandir">›</button>

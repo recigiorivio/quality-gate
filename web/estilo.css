@@ -33,7 +33,7 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 #titulo-barra .nome{font-weight:700;font-size:19px;letter-spacing:-.025em;color:var(--fg)}
 #titulo-barra .sub{font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--fraco)}
-#painel-chamados,#painel-config{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0}
+#painel-chamados,#painel-config{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0;scrollbar-gutter:stable}
 
 /* uma linha por chamado: a barra só navega */
 .linha-chamado{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:3px;
@@ -214,7 +214,11 @@ body.trilha-recolhida #trilha-corpo{display:none}
 .veredito b.v-atencao{color:var(--erro)}
 .veredito b.v-aviso{color:var(--aviso)}
 
-main{overflow-y:auto;padding:0 22px 60px;min-height:0}
+main{overflow-y:auto;padding:0 22px 60px;min-height:0;
+  /* A barra nasce ausente e aparece quando o diff entra: os 15 px que ela toma reflowiam a tela
+     inteira (CLS medido de 0,232, com dois saltos de ~0,097 no instante do diff). `stable` reserva
+     a canaleta desde o começo. */
+  scrollbar-gutter:stable}
 main>.aviso{padding:34px 22px}
 .recarregar{background:var(--painel);border:1px solid var(--linha);color:var(--fg);padding:6px 12px;
   border-radius:8px;cursor:pointer;font-weight:600;font-size:11px;transition:border-color .12s}
@@ -399,7 +403,7 @@ body.arrastando{user-select:none;cursor:col-resize}
 .pa-fechar{background:none;border:0;color:var(--fraco);cursor:pointer;font-weight:400;font-size:15px;line-height:1;
   padding:0 3px;border-radius:4px}
 .pa-fechar:hover{background:var(--rem);color:var(--erro)}
-.pa-linhas{max-height:242px;overflow-y:auto;padding:6px 10px 8px}
+.pa-linhas{max-height:242px;overflow-y:auto;padding:6px 10px 8px;scrollbar-gutter:stable}
 .pa-linha{font:400 11px/1.45 ui-monospace,monospace;color:var(--fg);padding:2px 0;
   border-top:1px solid transparent;word-break:break-word}
 .pa-linha code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;
@@ -507,7 +511,7 @@ body.arrastando{user-select:none;cursor:col-resize}
 .me-nota{font-size:11px;color:var(--fraco);margin-top:3px;line-height:1.4}
 .me-quando{white-space:nowrap;color:var(--fraco);font-size:11px;text-align:right}
 .me-log-titulo{padding:12px 18px 4px;font-weight:700;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--fraco)}
-.me-log{max-height:38vh;overflow-y:auto;padding:0 18px 10px}
+.me-log{max-height:38vh;overflow-y:auto;padding:0 18px 10px;scrollbar-gutter:stable}
 .me-ev{display:grid;grid-template-columns:24px auto 1fr;gap:4px 7px;align-items:baseline;
   padding:5px 0;border-top:1px solid var(--linha)}
 .me-ev-passo{font-weight:700;font-size:9px;color:var(--fraco);text-align:right}
@@ -538,3 +542,33 @@ body.arrastando{user-select:none;cursor:col-resize}
 .cab-link{background:none;border:1px solid var(--linha);border-radius:6px;cursor:pointer;
   font-size:11px;padding:3px 7px;flex:0 0 auto;color:var(--fraco)}
 .cab-link:hover{border-color:var(--acento);color:var(--acento)}
+
+/* Transição nativa do navegador (View Transitions): a troca de conteúdo passa a ser um crossfade de
+   180 ms em vez de um pisca. Sem biblioteca — quem não suporta simplesmente troca como antes. */
+@view-transition{navigation:none}
+::view-transition-old(root),::view-transition-new(root){animation-duration:180ms}
+.check,.tr-pr,#tr-merge,#cartoes{view-transition-class:suave}
+::view-transition-group(*){animation-duration:180ms}
+
+/* O texto da carga muda 59× numa abertura e empurrava o chip do agente a cada mudança. */
+.carga-texto{min-width:210px;justify-content:flex-end}
+
+/* Altura reservada onde o esqueleto e o conteúdo divergiam — medido: `#ocultos` saltava de 9 para
+   31 px e a seção de PRs de 66 para 168, empurrando o pé da trilha duas vezes por abertura. */
+#ocultos{min-height:26px}
+.tr-corpo,.tr-carregando{min-height:var(--altura-prs,0)}
+
+/* Caixa de carregamento: o giro centrado numa área de altura reservada. A altura vem do `style`
+   inline, calculada de quanto o conteúdo vai ocupar — o giro é o visual, a caixa é o que impede o
+   salto. Substituiu as barras cinza com brilho, que ocupavam o lugar mas pareciam conteúdo. */
+.carregando{display:grid;place-items:center;width:100%}
+.carregando .giro{width:15px;height:15px;border-width:2px;opacity:.75}
+
+/* Overlay da primeira carga: cobre o conteúdo, não a barra nem a trilha — elas já têm o que mostrar
+   ou o próprio giro. Sai na primeira coisa que chega e nunca volta: quem avisa depois é o fio. */
+#carregando-tela{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;
+  gap:12px;background:var(--bg);z-index:4;font-weight:500;font-size:11.5px;color:var(--fraco);
+  transition:opacity .22s ease-out}
+#carregando-tela.saindo{opacity:0;pointer-events:none}
+.giro-grande{width:30px;height:30px;border-width:3px}
+main{position:relative}
