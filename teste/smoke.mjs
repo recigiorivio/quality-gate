@@ -313,8 +313,10 @@ test('o cartão de cobertura declara as extensões que ficaram de fora', async t
     assert.ok(c, 'cartão de cobertura ausente');
     assert.match(c.detalhe, /arquivo\(s\)|alteração/, `detalhe sem denominador: ${c.detalhe}`);
     if (/de \d+ arquivo/.test(c.detalhe) && !/^(\d+) de \1 /.test(c.detalhe)) {
-        assert.ok(c.evidencia.some(e => /extens/i.test(e)),
-            'cobertura parcial sem dizer quais extensões ficaram de fora');
+        // Exige a extensão NOMEADA, não a palavra "extensão": o texto mudou para "sem regra
+        // aplicável: .json" quando as três camadas entraram, e o que importa é dizer QUAIS.
+        assert.ok(c.evidencia.some(e => /\.[a-z0-9]{1,10}\b/i.test(e)),
+            `cobertura parcial sem nomear as extensões: ${JSON.stringify(c.evidencia)}`);
     }
 });
 

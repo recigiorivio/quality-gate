@@ -217,27 +217,31 @@ async function carregarChamados() {
 
 // O pino da linha do chamado é o PIOR dos repos dele: a barra tem que dizer onde olhar antes de
 // você abrir. Roda em segundo plano, um repo por vez — o servidor é síncrono no que é local.
+// Todos os repos de todos os chamados de uma vez. Eram dois laços com `await` dentro: 7 chamados
+// vezes N repos, um pedido esperando o outro, e a carga da tela ia de 7,4 s a 12,6 s por causa
+// disto. Os pedidos são independentes — o único acoplamento é o pior estado por chamado, que se
+// calcula depois de todos voltarem.
 async function marcarPinosDaBarra(lista) {
-  for (const c of lista) {
-    let pior = 'ok';
-    let achados = 0;
-    for (const r of c.repos) {
-      let q;
-      try {
-        q = await api('/api/qualidade', { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' });
-      } catch {
-        continue;
-      }
-      const itens = q.itens || [];
-      achados += itens.filter(i => i.status === 'atencao' || i.status === 'aviso').length;
-      const p = pinoDo(itens);
-      if (p === 'atencao' || (p === 'aviso' && pior !== 'atencao')) {
-        pior = p;
-      }
-      // Guarda para a área de menu não recalcular ao abrir.
-      r.pino = p;
+  const pedidos = lista.flatMap(c => c.repos.map(r =>
+    api('/api/qualidade', { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' })
+      .then(q => ({ c, r, itens: q.itens || [] }))
+      .catch(() => ({ c, r, itens: null }))));
+  const porChamado = new Map(lista.map(c => [c.chamado, { pior: 'ok', achados: 0 }]));
+  for (const { c, r, itens } of await Promise.all(pedidos)) {
+    if (!itens) {
+      continue;
     }
-    const pino = document.querySelector(`.linha-chamado[data-c="${c.chamado}"] .pino-repo`);
+    const acc = porChamado.get(c.chamado);
+    acc.achados += itens.filter(i => i.status === 'atencao' || i.status === 'aviso').length;
+    const p = pinoDo(itens);
+    if (p === 'atencao' || (p === 'aviso' && acc.pior !== 'atencao')) {
+      acc.pior = p;
+    }
+    // Guarda para a área de menu não recalcular ao abrir.
+    r.pino = p;
+  }
+  for (const [chamado, { pior, achados }] of porChamado) {
+    const pino = document.querySelector(`.linha-chamado[data-c="${chamado}"] .pino-repo`);
     if (pino) {
       pino.className = `pino-repo p-${pior}`;
       pino.title = achados ? `${achados} achado(s) neste chamado` : 'nada a corrigir na conferência local';

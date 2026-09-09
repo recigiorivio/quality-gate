@@ -205,13 +205,43 @@ class Servidor {
         }
     }
 
+    // Fora do cache da varredura: decisões e arquivamento são lookup em dicionário, e dentro do
+    // cache de 30 s uma decisão nova só aparecia meio minuto depois.
+    responderChamados(res, dados) {
+        // Os ocultos saem aqui, e nao na varredura: o Workspace responde o que existe, e o
+        // que se escolhe ver e decisao da tela. Trocar isso esconderia repo esquecido do
+        // proprio calculo que existe para achar repo esquecido.
+        // FORA do cache: a varredura dos repos é caríssima e vale 30 s, mas a decisão é um lookup
+        // em dicionário. Dentro do cache, uma decisão nova só aparecia 30 s depois — e a faixa
+        // de mesclagem ficava dizendo "não decidido" com o diff ao lado já mostrando a PR.
+        this.enriquecerDecisoes(dados.lista);
+        this.arquivarResolvidos(dados.lista);
+        return this.json(res, {
+            ...dados,
+            // Fora do `emCache`: o estado da corrida muda por segundo e não pode ficar em cache
+            // de 30 s — a pessoa recarrega justamente para saber se o agente ainda está de pé.
+            agente: {
+                rodando: this.agenteRodando || null,
+                passos: this.agenteRodando ? (this.agentePassos || 0) : 0,
+                desde: this.agenteRodando ? this.agenteDesde : null,
+                ultimo: this.agenteFim || null
+            },
+            lista: dados.lista.filter(c => !this.ocultos.has(c.chamado)),
+            // Com o título: só o `UND-1638` na lista de ocultos não diz o que se está trazendo
+            // de volta, exatamente como não dizia nas linhas visíveis.
+            ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado))
+                .map(c => ({ chamado: c.chamado, titulo: c.titulo || null }))
+        });
+    }
+
     // Invalida por projeto, por chamado, ou tudo. Por chamado é o recorte que faltava: um chamado
     // toca vários repos, e derrubar só o que está aberto deixava os outros seis com dado velho.
     // Lê do cache; só varre o disco se a lista ainda não foi pedida uma vez.
     _reposDoChamado(chamado) {
-        const guardado = this.cache.get('chamados');
-        const lista = guardado?.valor?.lista ?? this.workspace.chamados();
-        return (lista.find(x => x.chamado === chamado)?.repos || []).map(r => r.projeto);
+        // A última lista conhecida, não o cache: ele guarda promessa, e isto é chamado de caminho
+        // sync. Sem lista ainda (nenhuma abertura de tela), o escopo por chamado não se aplica.
+        const lista = this.ultimaLista;
+        return lista ? (lista.find(x => x.chamado === chamado)?.repos || []).map(r => r.projeto) : [];
     }
 
     invalidar({ projeto, chamado, silencioso } = {}) {
@@ -674,39 +704,19 @@ class Servidor {
             }));
         }
         if (url.pathname === '/api/chamados') {
-            const dados = this.emCache('chamados', () => {
-                const lista = this.workspace.chamados();
+            return this.emCacheAsync('chamados', async () => {
+                const lista = await this.workspace.chamados();
+                // Cópia crua ao lado do cache: o `emCacheAsync` guarda uma PROMESSA, e a
+                // invalidação por chamado é sync — lendo `valor.lista` ela achava `undefined` e
+                // deixava de derrubar os repos do chamado, sem erro nenhum.
+                this.ultimaLista = lista;
                 // O título vem do cache do Linear: a barra mostrando só `UND-1638` não diz nada.
                 // É leitura de arquivo local, então cabe aqui.
                 for (const c of lista) {
                     c.titulo = linear.doChamado(c.chamado)?.titulo || null;
                 }
                 return { lista };
-            }, 30000);
-            // Os ocultos saem aqui, e nao na varredura: o Workspace responde o que existe, e o
-            // que se escolhe ver e decisao da tela. Trocar isso esconderia repo esquecido do
-            // proprio calculo que existe para achar repo esquecido.
-            // FORA do cache: a varredura dos repos é caríssima e vale 30 s, mas a decisão é um lookup
-            // em dicionário. Dentro do cache, uma decisão nova só aparecia 30 s depois — e a faixa
-            // de mesclagem ficava dizendo "não decidido" com o diff ao lado já mostrando a PR.
-            this.enriquecerDecisoes(dados.lista);
-            this.arquivarResolvidos(dados.lista);
-            return this.json(res, {
-                ...dados,
-                // Fora do `emCache`: o estado da corrida muda por segundo e não pode ficar em cache
-                // de 30 s — a pessoa recarrega justamente para saber se o agente ainda está de pé.
-                agente: {
-                    rodando: this.agenteRodando || null,
-                    passos: this.agenteRodando ? (this.agentePassos || 0) : 0,
-                    desde: this.agenteRodando ? this.agenteDesde : null,
-                    ultimo: this.agenteFim || null
-                },
-                lista: dados.lista.filter(c => !this.ocultos.has(c.chamado)),
-                // Com o título: só o `UND-1638` na lista de ocultos não diz o que se está trazendo
-                // de volta, exatamente como não dizia nas linhas visíveis.
-                ocultos: dados.lista.filter(c => this.ocultos.has(c.chamado))
-                    .map(c => ({ chamado: c.chamado, titulo: c.titulo || null }))
-            });
+            }, 30000).then(dados => this.responderChamados(res, dados));
         }
         if (url.pathname === '/api/ocultar') {
             // Deixa rastro: um chamado que sai do menu sem registro é impossível de explicar depois.

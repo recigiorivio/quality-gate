@@ -1,21 +1,85 @@
 {
   "_comentario": "De-para entre as regras que o time escreveu e as checagens implementadas. O teste teste/doutrina.mjs falha se uma regra declarada aqui não existir no checar-diff.mjs. Serve para 'metade implementado' deixar de ser invisível: foi assim que 'migration não leva comentário NEM console.log' ficou meses com só a segunda metade.",
   "regras": [
-    { "doutrina": "Nada acima de `class X {`", "checagem": "comentario-acima-de-class", "corrige": true },
-    { "doutrina": "Dentro de `const definition = {}` de model: nenhum comentário", "checagem": "comentario-dentro-de-definition", "corrige": true },
-    { "doutrina": "Comentário explicativo no máximo 2 linhas, exceto TODO", "checagem": "comentario-bloco-longo", "corrige": false },
-    { "doutrina": "Migration não leva comentário", "checagem": "comentario-em-migration", "corrige": true },
-    { "doutrina": "Migration não leva console.log", "checagem": "console-log-em-migration", "corrige": true },
-    { "doutrina": "Se o arquivo é uma classe, nada solto no topo do módulo", "checagem": "declaracao-solta-em-arquivo-de-classe", "corrige": false },
-    { "doutrina": "Derivar do enum, nunca repetir o valor", "checagem": "literal-onde-cabe-enum", "corrige": false },
-    { "doutrina": "Arquivo novo na pasta que o sufixo indica", "checagem": "arquivo-fora-da-pasta-convencional", "corrige": false },
-    { "doutrina": "Spec novo só onde a política do repo permite", "checagem": "spec-novo-onde-a-politica-nao-permite", "corrige": false },
-
-    { "doutrina": "Chaves em `if`: sempre bloco { }", "checagem": null, "porque": "já é `curly: [error, all]` no eslint dos repos — o cartão de lint cobre" },
-    { "doutrina": "Teste tem que ter dentes: reverter a correção e confirmar que quebra", "checagem": null, "porque": "não é decidível do diff; fica como julgamento no cartão de testes" },
-    { "doutrina": "Chave nova de tradução exige migrate", "checagem": null, "porque": "cruza dois repos; candidato ao ripple.mjs" },
-    { "doutrina": "Rota nova exige entrada no gateway", "checagem": null, "porque": "cruza dois repos; candidato ao ripple.mjs" },
-    { "doutrina": "Ação nova exige classe de permissão em cada visão", "checagem": null, "porque": "cruza dois repos; candidato ao ripple.mjs" },
-    { "doutrina": "Role nova exige criação no provedor de identidade (staging e prod)", "checagem": null, "porque": "não aparece em diff nenhum; só a pergunta de fechamento pega" }
+    {
+      "doutrina": "Nada acima de `class X {`",
+      "checagem": "comentario-acima-de-class",
+      "corrige": true
+    },
+    {
+      "doutrina": "Dentro de `const definition = {}` de model: nenhum comentário",
+      "checagem": "comentario-dentro-de-definition",
+      "corrige": true
+    },
+    {
+      "doutrina": "Comentário explicativo no máximo 2 linhas, exceto TODO",
+      "checagem": "comentario-bloco-longo",
+      "corrige": false
+    },
+    {
+      "doutrina": "Migration não leva comentário",
+      "checagem": "comentario-em-migration",
+      "corrige": true
+    },
+    {
+      "doutrina": "Migration não leva console.log",
+      "checagem": "console-log-em-migration",
+      "corrige": true
+    },
+    {
+      "doutrina": "Se o arquivo é uma classe, nada solto no topo do módulo",
+      "checagem": "declaracao-solta-em-arquivo-de-classe",
+      "corrige": false
+    },
+    {
+      "doutrina": "Derivar do enum, nunca repetir o valor",
+      "checagem": "literal-onde-cabe-enum",
+      "corrige": false
+    },
+    {
+      "doutrina": "Arquivo novo na pasta que o sufixo indica",
+      "checagem": "arquivo-fora-da-pasta-convencional",
+      "corrige": false
+    },
+    {
+      "doutrina": "Ler o model de outro domínio direto, havendo service ou comando dele",
+      "checagem": "model-de-outro-dominio",
+      "corrige": false
+    },
+    {
+      "doutrina": "Spec novo só onde a política do repo permite",
+      "checagem": "spec-novo-onde-a-politica-nao-permite",
+      "corrige": false
+    },
+    {
+      "doutrina": "Chaves em `if`: sempre bloco { }",
+      "checagem": null,
+      "porque": "já é `curly: [error, all]` no eslint dos repos — o cartão de lint cobre"
+    },
+    {
+      "doutrina": "Teste tem que ter dentes: reverter a correção e confirmar que quebra",
+      "checagem": null,
+      "porque": "não é decidível do diff; fica como julgamento no cartão de testes"
+    },
+    {
+      "doutrina": "Chave nova de tradução exige migrate",
+      "checagem": null,
+      "porque": "cruza dois repos; candidato ao ripple.mjs"
+    },
+    {
+      "doutrina": "Rota nova exige entrada no gateway",
+      "checagem": null,
+      "porque": "cruza dois repos; candidato ao ripple.mjs"
+    },
+    {
+      "doutrina": "Ação nova exige classe de permissão em cada visão",
+      "checagem": null,
+      "porque": "cruza dois repos; candidato ao ripple.mjs"
+    },
+    {
+      "doutrina": "Role nova exige criação no provedor de identidade (staging e prod)",
+      "checagem": null,
+      "porque": "não aparece em diff nenhum; só a pergunta de fechamento pega"
+    }
   ]
 }
