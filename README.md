@@ -437,6 +437,33 @@ O cálculo sync (o git do diff) revalida em `setTimeout(0)`: rodando no meio da 
 o event loop que a resposta está usando. Uma revalidação por chave de cada vez — sem a trava, cada
 pedido de uma chave velha enfileirava outra varredura.
 
+Os TTLs (5 min, 30 s para a lista de chamados) deixaram de ser um portão e passaram a ser só o
+momento de revalidar. As formas de forçar continuam:
+
+- botão **recarregar** no cabeçalho — invalida o cache **do projeto aberto** e relê
+- botão **↻ na linha do chamado** — invalida os **N repos daquele chamado**, os PRs e a lista, e refaz
+  a barra mantendo o chamado aberto e o repo selecionado. Antes só dava para recarregar o repo aberto,
+  e os outros seis ficavam com dado velho
+- **sozinho**, quando o hook de `PostToolUse` vê um `git commit`/`merge`/`rebase`/`checkout`/`reset`:
+  chama `/api/invalidar` e a tela aberta recebe o aviso por SSE, mostra um toast e relê
+- o TTL, que agora dispara a revalidação em segundo plano em vez de fazer alguém esperar
+
+O carimbo ao lado do botão diz se o que está na tela foi **lido agora** ou veio **do cache de** que
+horas — é como se verifica que um reload de fato recarregou.
+
+Duas armadilhas que apareceram construindo isso:
+
+- **o eco do próprio pedido.** O `/api/invalidar` dispara SSE de volta para quem pediu, e o handler
+  reabria o repo em paralelo com o reload explícito: o do evento populava o cache e o explícito lia a
+  cópia, deixando o carimbo em "do cache" logo depois de recarregar. Resolvido por desenho, não por
+  timing: quem pede e recarrega sozinho passa `silencioso=1` e não recebe o aviso. O hook não passa,
+  então outras abas continuam sendo notificadas
+- **invalidar não pode revarrer.** Resolver os repos do chamado com uma varredura nova custava
+  **6,1 s de event loop bloqueado**; a lista já está em cache, pedida pela própria barra que disparou
+  a invalidação. Agora: **0,8 ms**
+
+> Mudança em `lib/` exige **reiniciar o servidor**: invalidar o cache não recarrega módulo ES já em
+> memória.
 
 ## Ferramentas
 
