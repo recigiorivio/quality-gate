@@ -564,7 +564,9 @@ function marcarCarimbo(d) {
   // `??` não entra em diff nenhum: sem esta frase, "12 ✎" no chip ao lado de um diff de 5 parecia
   // bug do diff — era o diff sendo fiel ao git. O passo 1.0 da rotina de fim é quem resolve.
   const novos = (d.naoRastreados || []).length;
+  // `revalidando` = o que está na tela é do cache e já expirou; o novo vem por SSE quando muda.
   c.textContent = `${d.arquivos.length} arquivo(s) · ${fonte}`
+    + (d.revalidando ? ' · atualizando…' : '')
     + (novos ? ` · ⚠ ${novos} novo(s) fora do diff — nunca passaram pelo git add` : '')
     + (d.via !== 'local' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
     + (d.via === 'local' && d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
@@ -778,6 +780,12 @@ function escutarEventos() {
           carregarChamados().then(() => abrirChamado(c));
         }
       }
+      return;
+    }
+    // Revalidação terminada e o valor MUDOU: a tela já mostrou o velho e agora troca. Vem só
+    // quando muda de verdade — o servidor compara a impressão antes de avisar, senão seria piscada.
+    if (dados.tipo === 'atualizado') {
+      agendarRedesenho(dados.chave);
       return;
     }
     if (dados.tipo !== 'invalidado' || !atual) { return; }
@@ -1003,6 +1011,41 @@ function painelAgente(texto, classe = '', extra = '') {
   while (linhas.children.length > 120) { linhas.firstChild.remove(); }
   linhas.scrollTop = linhas.scrollHeight;
   return p;
+}
+
+// Junta as chaves que chegam quase juntas (diff, checagens e lint revalidam de uma vez) num
+// redesenho só, e guarda a rolagem: perder o lugar no diff é pior que ver o dado velho por 1 s.
+let redesenhoAgendado = null;
+const chavesPendentes = new Set();
+
+function agendarRedesenho(chave) {
+  if (!atual || !chave) { return; }
+  chavesPendentes.add(chave);
+  clearTimeout(redesenhoAgendado);
+  redesenhoAgendado = setTimeout(async () => {
+    const chaves = [...chavesPendentes];
+    chavesPendentes.clear();
+    const daBarra = chaves.some(k => k.startsWith('chamados'));
+    const doRepo = chaves.some(k => /^(arquivos|arquivo|local|lint)\|/.test(k) && k.includes(atual.projeto));
+    const doChamado = chaves.some(k => /^(prs|remoto)\|/.test(k) && k.includes(atual.chamado));
+    if (daBarra) {
+      await carregarChamados();
+    }
+    if (doChamado) {
+      const alvo = document.querySelector('main');
+      const onde = alvo?.scrollTop || 0;
+      await abrirChamado(atual.chamado, atual.projeto);
+      if (alvo) { alvo.scrollTop = onde; }
+    } else if (doRepo) {
+      const alvo = document.querySelector('main');
+      const onde = alvo?.scrollTop || 0;
+      await abrir(atual.botao, true);
+      if (alvo) { alvo.scrollTop = onde; }
+    }
+    if (daBarra || doChamado || doRepo) {
+      avisarNaTela('atualizado');
+    }
+  }, 400);
 }
 
 function avisarNaTela(texto) {

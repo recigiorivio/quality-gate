@@ -136,28 +136,97 @@ class Servidor {
     }
 
     // Cache com invalidação explícita: o TTL é a rede de segurança, o gatilho de verdade é o commit.
+    // Serve o velho e revalida atrás: expirado deixa de ser motivo para ESPERAR. A tela abre com o
+    // que já tem, o recálculo roda fora do caminho da requisição, e um evento SSE avisa — só se o
+    // valor mudou de verdade, senão o redesenho seria piscada sem informação.
     emCache(chave, calcular, ttl = 300000) {
         const guardado = this.cache.get(chave);
-        if (guardado && Date.now() - guardado.quando < ttl) {
-            return { ...guardado.valor, doCache: true, desde: guardado.quando };
+        if (guardado) {
+            const idade = Date.now() - guardado.quando;
+            if (idade >= ttl) {
+                this.revalidar(chave, calcular, false);
+            }
+            return {
+                ...guardado.valor, doCache: true, desde: guardado.quando,
+                revalidando: idade >= ttl
+            };
         }
         const valor = calcular();
-        this.cache.set(chave, { quando: Date.now(), valor });
+        this.cache.set(chave, { quando: Date.now(), valor, impressao: this._impressao(valor) });
         return { ...valor, doCache: false, desde: Date.now() };
+    }
+
+    // `setTimeout(0)` porque o cálculo sync (git do diff) travaria o event loop no meio da resposta
+    // que está sendo escrita. Uma revalidação por chave de cada vez: sem a trava, cada requisição
+    // de uma chave velha enfileirava outra varredura.
+    revalidar(chave, calcular, assincrono) {
+        const guardado = this.cache.get(chave);
+        if (!guardado || guardado.revalidando) {
+            return;
+        }
+        guardado.revalidando = true;
+        const gravar = valor => {
+            const impressao = this._impressao(valor);
+            const mudou = impressao !== guardado.impressao;
+            this.cache.set(chave, { quando: Date.now(), valor, impressao });
+            if (mudou) {
+                this.avisar({ tipo: 'atualizado', chave });
+            }
+        };
+        const erro = () => {
+            // Falhou a revalidação: mantém o velho e libera a trava, para a próxima tentar de novo.
+            guardado.revalidando = false;
+        };
+        if (assincrono) {
+            Promise.resolve().then(calcular).then(gravar).catch(erro);
+            return;
+        }
+        setTimeout(() => {
+            try {
+                gravar(calcular());
+            } catch {
+                erro();
+            }
+        }, 0);
+    }
+
+    // Impressão barata só para responder "mudou?": a alternativa era comparar objetos inteiros a
+    // cada revalidação, e o que se decide com isso é apenas redesenhar ou não.
+    _impressao(valor) {
+        try {
+            const t = JSON.stringify(valor);
+            let h = 0;
+            for (let i = 0; i < t.length; i++) {
+                h = (h * 31 + t.charCodeAt(i)) | 0;
+            }
+            return `${t.length}:${h}`;
+        } catch {
+            return String(Date.now());
+        }
     }
 
     // Versão assíncrona do cache, para o que é rede. Guarda a PROMESSA: duas requisições
     // simultâneas do mesmo dado esperam a mesma chamada em vez de disparar duas.
     async emCacheAsync(chave, calcular, ttl = 300000) {
         const guardado = this.cache.get(chave);
-        if (guardado && Date.now() - guardado.quando < ttl) {
+        if (guardado) {
+            const idade = Date.now() - guardado.quando;
+            if (idade >= ttl) {
+                this.revalidar(chave, calcular, true);
+            }
             const valor = await guardado.valor;
-            return { ...valor, doCache: true, desde: guardado.quando };
+            return { ...valor, doCache: true, desde: guardado.quando, revalidando: idade >= ttl };
         }
         const promessa = calcular();
         this.cache.set(chave, { quando: Date.now(), valor: promessa });
         try {
             const valor = await promessa;
+            // A impressão só existe depois que a promessa resolve: guardar antes compararia contra
+            // a promessa, e toda revalidação pareceria mudança.
+            const atual = this.cache.get(chave);
+            if (atual && atual.valor === promessa) {
+                atual.impressao = this._impressao(valor);
+            }
             return { ...valor, doCache: false, desde: Date.now() };
         } catch (e) {
             this.cache.delete(chave);

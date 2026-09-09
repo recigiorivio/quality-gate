@@ -665,3 +665,24 @@ test('o fetch de PRs tem guarda de geração por chamado', async () => {
     assert.match(bloco[0], /if \(tokenChamado !== geracaoChamado\) \{ return; \}/,
         'o retorno do fetch não compara a geração — resposta velha ainda pinta a tela');
 });
+
+// Serve-velho-e-revalida: expirado deixou de ser motivo para ESPERAR. O teste exige as duas metades
+// — a resposta expirada vem marcada `revalidando` e do cache, e a revalidação escreve um valor novo
+// sem que ninguém tenha esperado por ela.
+test('cache expirado serve o velho e revalida atrás', async () => {
+    // TTL de 30 s é o do `chamados`, o único curto o bastante para o teste não ficar eterno.
+    const primeira = (await pegar('/api/chamados')).corpo;
+    assert.ok(Array.isArray(primeira.lista), 'primeira leitura tem que trazer a lista');
+    const segunda = (await pegar('/api/chamados')).corpo;
+    assert.equal(segunda.doCache, true, 'a segunda leitura tem que vir do cache');
+    assert.ok(!segunda.revalidando, 'dentro do TTL não há o que revalidar');
+
+    await new Promise(s => setTimeout(s, 31000));
+    const t = Date.now();
+    const expirada = (await pegar('/api/chamados')).corpo;
+    const levou = Date.now() - t;
+    assert.equal(expirada.doCache, true, 'expirada TAMBÉM vem do cache — é o ponto');
+    assert.equal(expirada.revalidando, true, 'expirada tem que se declarar em revalidação');
+    assert.ok(levou < 1500, `serviu em ${levou} ms: expirado não pode esperar a varredura`);
+    assert.equal(expirada.desde, segunda.desde, 'o dado servido tem que ser o mesmo de antes');
+});
