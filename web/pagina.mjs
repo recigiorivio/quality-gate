@@ -11,7 +11,7 @@
 // A versão dos assets é o mtime deles. Sem isso o navegador segura o app.js entre reinícios do
 // servidor: a tela ficou mostrando 1 arquivo e `base origin/stage` porque o cliente velho não
 // mandava o `chamado`, e o servidor já respondia a comparação da PR. Uma hora de confusão.
-export function pagina(esqueleto, versao = '', token = '', local = true) {
+export function pagina(esqueleto, versao = '', token = '', local = true, linear = '') {
     return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Qualidade — conferência por chamado</title>
@@ -28,6 +28,14 @@ export function pagina(esqueleto, versao = '', token = '', local = true) {
     <div id="ocultos"></div>
   </div>
   <div id="painel-config" hidden></div>
+  <div id="painel-implantacao" hidden></div>
+  <div id="acao-barra">
+    <button id="btn-implantacao" onclick="trocarVisao(visao === 'implantacao' ? 'chamados' : 'implantacao')"
+            title="Implantação — o que está em stage e ainda não foi para main">
+      <span class="foguete" aria-hidden="true">🚀</span><span>Implantação</span>
+      <span class="conta-impl" id="conta-impl"></span>
+    </button>
+  </div>
   <footer id="pe-barra">
     <button id="btn-config" onclick="trocarVisao(visao === 'config' ? 'chamados' : 'config')"
             title="Configurações — as rotinas que eu sigo">
@@ -49,7 +57,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true) {
   <div id="trilha-corpo"></div>
 </div>
 <script>window.ESQUELETO = ${JSON.stringify(esqueleto)};</script>
-<script>window.VERSAO = '${versao}'; window.TOKEN = '${token}'; window.LOCAL = ${local};</script>
+<script>window.VERSAO = '${versao}'; window.LINEAR = '${linear}'; window.TOKEN = '${token}'; window.LOCAL = ${local};</script>
 <script type="module" src="/app.js?v=${versao}"></script>
 </body></html>`;
 }

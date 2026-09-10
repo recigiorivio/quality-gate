@@ -20,3 +20,6 @@ corridas/
 
 # token sorteado da exposição na rede: segredo local
 token.local
+
+# repos escolhidos para a implantação: estado local
+implantacao.json

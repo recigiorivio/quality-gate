@@ -594,10 +594,14 @@ function marcarCarimbo(d) {
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
   // Comparação não definida é palpite, e palpite não anunciado foi o que fez a tela mostrar 0
   // arquivo em 8 repos onde as PRs mostravam de 1 a 65. Aqui ele é anunciado.
-  const fonte = d.via !== 'local'
-    ? `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`
-    : `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ ${d.erroDaDecisao
-      ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`;
+  // Base informada é a comparação de release: não há decisão nem mesclagem a declarar aqui, e
+  // dizer "null (branch) · aberto" era ruído sobre um diff que não é de chamado nenhum.
+  const fonte = d.via === 'informada'
+    ? `${esc(atual?.ref || '')} contra a base de ${esc(atual?.projeto || '')}`
+    : d.via !== 'local'
+      ? `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`
+      : `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ ${d.erroDaDecisao
+        ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`;
   // `??` não entra em diff nenhum: sem esta frase, "12 ✎" no chip ao lado de um diff de 5 parecia
   // bug do diff — era o diff sendo fiel ao git. O passo 1.0 da rotina de fim é quem resolve.
   const novos = (d.naoRastreados || []).length;
@@ -605,7 +609,7 @@ function marcarCarimbo(d) {
   c.textContent = `${d.arquivos.length} arquivo(s) · ${fonte}`
     + (d.revalidando ? ' · atualizando…' : '')
     + (novos ? ` · ⚠ ${novos} novo(s) fora do diff — nunca passaram pelo git add` : '')
-    + (d.via !== 'local' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
+    + (d.via !== 'local' && d.via !== 'informada' ? ` · ${d.mesclado ? 'resolvido' : 'aberto'}` : '')
     + (d.via === 'local' && d.mesclado ? (d.comoSoube === 'conteudo' ? ' · mesclado (squash)' : ' · mesclado') : '')
     + (d.ref ? '' : '')
     + (d.doCache ? ` · do cache de ${quando}` : ' · lido agora');
@@ -828,6 +832,16 @@ function escutarEventos() {
       }
       atualizarModalEstado();
       painelAgente(dados.texto || '', dados.fase === 'fim' ? (dados.ok ? 'fim' : 'erro') : '', dados.ferramenta || '');
+      if (dados.fase === 'fim' && dados.chamado === 'implantação') {
+        estadoAgente = { rodando: null, passos: 0 };
+        redesenharAgenteNoTopo(dados);
+        const alvo = document.getElementById('analise-implantacao');
+        if (alvo && dados.texto) {
+          alvo.innerHTML = `<div class="impl-analise"><h3 class="secao">Análise do agente</h3>
+            <pre>${esc(dados.texto)}</pre></div>`;
+        }
+        return;
+      }
       if (dados.fase === 'fim') {
         pararBotaoAgente();
         painelAgente(dados.ok ? `terminou em ${dados.segundos}s — recarregando a tela` : 'terminou com erro',
@@ -1092,7 +1106,9 @@ let redesenhoAgendado = null;
 const chavesPendentes = new Set();
 
 function agendarRedesenho(chave) {
-  if (!atual || !chave) { return; }
+  // Na implantação não há chamado nem chip: o redesenho por chamado tentaria reabrir um `botao`
+  // que é null. A fila se atualiza ao entrar na visão.
+  if (!atual || !chave || atual.implantacao) { return; }
   chavesPendentes.add(chave);
   clearTimeout(redesenhoAgendado);
   redesenhoAgendado = setTimeout(async () => {
@@ -1235,20 +1251,186 @@ aplicarSplit(lerSplit());
 ligarArrasto();
 carregarChamados();
 escutarEventos();
+// A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
+api('/api/implantacao', {}).then(r => {
+  filaImplantacao = r.fila || [];
+  escolhidosImplantacao = new Set(r.escolhidos || []);
+  marcarContaImplantacao();
+});
+
+// ---------- implantação: o que vai de stage para main ----------
+
+const urlDoLinear = id => (window.LINEAR ? `https://linear.app/${window.LINEAR}/issue/${id}` : '#');
+
+let filaImplantacao = [];
+let escolhidosImplantacao = new Set();
+
+async function carregarImplantacao() {
+  const alvo = document.getElementById('painel-implantacao');
+  alvo.innerHTML = girando(120);
+  const r = await api('/api/implantacao', {});
+  filaImplantacao = r.fila || [];
+  escolhidosImplantacao = new Set(r.escolhidos || []);
+  desenharFilaImplantacao();
+  marcarContaImplantacao();
+  // Só os escolhidos ganham detalhe: são 22 repos à frente, um deles com 563 commits, e calcular
+  // tudo é trabalho jogado fora — o resumo é uma contagem, o detalhe é log mais numstat.
+  for (const p of escolhidosImplantacao) {
+    detalharRepo(p);
+  }
+}
+
+function marcarContaImplantacao() {
+  const c = document.getElementById('conta-impl');
+  if (c) {
+    c.textContent = escolhidosImplantacao.size || '';
+  }
+}
+
+function desenharFilaImplantacao() {
+  const alvo = document.getElementById('painel-implantacao');
+  const escolhidos = filaImplantacao.filter(f => escolhidosImplantacao.has(f.projeto));
+  const resto = filaImplantacao.filter(f => !escolhidosImplantacao.has(f.projeto));
+  alvo.innerHTML = `
+    <div class="impl-topo">
+      <span>${escolhidos.length} de ${filaImplantacao.length} repos</span>
+      ${escolhidos.length ? `<button class="impl-acao" onclick="analisarImplantacao()">🧙 analisar</button>` : ''}
+    </div>
+    ${escolhidos.map(linhaImplantacao).join('') || '<p class="vazio">escolha os repos desta implantação abaixo</p>'}
+    ${resto.length ? `<details class="impl-resto" ${escolhidos.length ? '' : 'open'}>
+        <summary>${resto.length} repo(s) fora desta implantação</summary>
+        ${resto.map(linhaImplantacao).join('')}
+      </details>` : ''}`;
+}
+
+function linhaImplantacao(f) {
+  const marcado = escolhidosImplantacao.has(f.projeto);
+  const d = f.detalhe;
+  return `<div class="impl-linha ${marcado ? 'escolhido' : ''}" data-p="${f.projeto}">
+      <label class="impl-marca" title="entra nesta implantação">
+        <input type="checkbox" ${marcado ? 'checked' : ''} onchange="alternarRepo('${f.projeto}')">
+      </label>
+      <button class="impl-corpo" onclick="abrirImplantacao('${f.projeto}')">
+        <span class="impl-nome">${esc(f.projeto)}</span>
+        <span class="impl-sub">${f.commits} commit(s)${f.atras ? ` · main ${f.atras} à frente` : ''}${
+          d ? ` · ${d.arquivos} arq · ${d.ids.length} chamado(s)` : ''}</span>
+        ${d?.migrates.length ? `<span class="impl-selo" title="${d.migrates.length} migrate(s) neste release">migrate</span>` : ''}
+      </button>
+    </div>`;
+}
+
+async function alternarRepo(projeto) {
+  if (escolhidosImplantacao.has(projeto)) {
+    escolhidosImplantacao.delete(projeto);
+  } else {
+    escolhidosImplantacao.add(projeto);
+    detalharRepo(projeto);
+  }
+  desenharFilaImplantacao();
+  marcarContaImplantacao();
+  await api('/api/implantacao-escolher', { projetos: [...escolhidosImplantacao].join(',') });
+}
+
+async function detalharRepo(projeto) {
+  const d = await api('/api/implantacao-detalhe', { projeto });
+  const f = filaImplantacao.find(x => x.projeto === projeto);
+  if (f && !d.erro) {
+    f.detalhe = d;
+    desenharFilaImplantacao();
+  }
+}
+
+// Reusa o visualizador de diff inteiro: ele já aceita base e alvo arbitrários, então o release é
+// só outra comparação — merge-base(main, stage) contra stage.
+async function abrirImplantacao(projeto) {
+  const d = await api('/api/implantacao-detalhe', { projeto });
+  if (d.erro) {
+    return;
+  }
+  for (const l of document.querySelectorAll('.impl-linha')) {
+    l.classList.toggle('ativo', l.dataset.p === projeto);
+  }
+  atual = { projeto, chamado: null, ref: d.origem, base: d.base, implantacao: true, botao: null };
+  // Cabeçalho e trilha são do chamado: aqui não há chamado, e deixá-los visíveis mostrava o
+  // UND-1991 em cima de um release de outro assunto.
+  document.getElementById('cabecalho').hidden = true;
+  document.getElementById('trilha').hidden = true;
+  const alvo = document.getElementById('conteudo');
+  alvo.className = '';
+  document.querySelector('main').scrollTop = 0;
+  alvo.innerHTML = `
+    <div class="impl-cabeca">
+      <h2>${esc(projeto)}</h2>
+      <span class="impl-de-para">${esc(d.origem)} → ${esc(d.destino)}</span>
+    </div>
+    <div class="impl-numeros">
+      <span><b>${d.commits}</b> commits</span>
+      <span><b>${d.arquivos}</b> arquivos</span>
+      <span class="mais">+${d.adicionadas}</span><span class="menos">-${d.removidas}</span>
+      <span><b>${d.autores.length}</b> autor(es)</span>
+      ${d.migrates.length ? `<span class="impl-alerta">${d.migrates.length} migrate(s)</span>` : ''}
+      ${d.pacote ? '<span class="impl-alerta">package.json</span>' : ''}
+    </div>
+    <div class="impl-chamados">${d.ids.map(id =>
+    `<a class="impl-id" href="${urlDoLinear(id)}" target="_blank" rel="noopener">${id}</a>`).join('') || '<i>nenhum ID nos títulos</i>'}</div>
+    <div id="analise-implantacao"></div>
+    <h3 class="secao">Commits <span class="carimbo">${(d.primeiroCommit || '').slice(0, 10)} a ${(d.ultimoCommit || '').slice(0, 10)}</span></h3>
+    <div class="impl-commits">${d.listaDeCommits.map(c => `
+      <div class="impl-commit"><code>${c.hash}</code>
+        <span class="impl-titulo">${esc(c.titulo)}</span>
+        <span class="impl-autor">${esc(c.autor)}</span>
+        <span class="impl-data">${c.data.slice(0, 10)}</span></div>`).join('')}</div>
+    <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
+    <div id="arquivos" aria-busy="true">${esqCodigo(6)}</div>`;
+  const arq = await api('/api/arquivos', { projeto, ref: d.origem, base: d.base });
+  atual.dados = arq;
+  montarArquivos(arq);
+  marcarCarimbo(arq);
+}
+
+async function analisarImplantacao() {
+  const projetos = [...escolhidosImplantacao];
+  if (!projetos.length) {
+    return;
+  }
+  estadoAgente = { rodando: 'implantação', passos: 0 };
+  redesenharAgenteNoTopo();
+  painelAgente(`analisando a implantação de ${projetos.length} repo(s)…`, 'inicio');
+  const r = await api('/api/agente-implantacao', { projetos: projetos.join(',') });
+  if (!r.ok) {
+    painelAgente(r.erro || 'não consegui iniciar', 'erro');
+  }
+}
 
 // ---------- as duas seções da barra ----------
+
+// Três visões na mesma barra: chamados (o trabalho de agora), implantação (o acumulado indo para
+// main) e configurações. O título e o pé acompanham, e a trilha só existe na de chamados.
+const TITULOS = {
+  chamados: ['🧙', 'Magias do Mago', 'conferência por chamado'],
+  implantacao: ['🚀', 'Implantação', 'o que vai de stage para main'],
+  config: ['⚙', 'Configurações', 'as rotinas que eu sigo']
+};
 
 function trocarVisao(qual) {
   visao = qual;
   const emConfig = qual === 'config';
-  document.getElementById('painel-chamados').hidden = emConfig;
+  const emImplantacao = qual === 'implantacao';
+  document.getElementById('painel-chamados').hidden = emConfig || emImplantacao;
   document.getElementById('painel-config').hidden = !emConfig;
-  document.getElementById('titulo-barra').innerHTML = emConfig
-    ? '<span class="mago" aria-hidden="true">⚙</span><span>Configurações</span>'
-    : '<span class="mago" aria-hidden="true">🧙</span><span>Magias do Mago</span>';
+  document.getElementById('painel-implantacao').hidden = !emImplantacao;
+  const [icone, nome, sub] = TITULOS[qual] || TITULOS.chamados;
+  document.getElementById('titulo-barra').innerHTML =
+    `<span class="mago" aria-hidden="true">${icone}</span>
+     <span><span class="nome">${nome}</span><span class="sub">${sub}</span></span>`;
   document.getElementById('btn-config').classList.toggle('ativa', emConfig);
-  document.getElementById('cabecalho').hidden = emConfig;
-  document.getElementById('trilha').hidden = emConfig;
+  document.getElementById('btn-implantacao').classList.toggle('ativa', emImplantacao);
+  document.getElementById('cabecalho').hidden = emConfig || emImplantacao;
+  document.getElementById('trilha').hidden = emConfig || emImplantacao;
+  if (emImplantacao) {
+    carregarImplantacao();
+    return;
+  }
   if (emConfig) {
     carregarConfigs();
   } else {
@@ -1338,6 +1520,7 @@ async function salvarConfig(chave) {
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
+  alternarRepo, abrirImplantacao, analisarImplantacao,
   copiarLink,
   trocarVisao, abrirConfig, salvarConfig
 });

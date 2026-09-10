@@ -17,6 +17,7 @@ import { Qualidade } from './lib/qualidade.mjs';
 import { Pontos } from './ferramentas/pontos.mjs';
 import lint from './lib/lint.mjs';
 import comparacao from './lib/comparacao.mjs';
+import implantacao from './lib/implantacao.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
@@ -57,6 +58,27 @@ const MODELO_DA_SESSAO = () => {
         return 'default do CLI';
     }
 };
+
+// O prompt da implantação. Fixo aqui pelo mesmo motivo do outro: o cliente só escolhe os repos, e
+// página local montando prompt é injeção. O inventário vem pronto — o agente não precisa varrer.
+const PROMPT_IMPLANTACAO = (repos, inventario) => `Analise a implantação de stage para main destes repos: ${repos}.
+
+O inventário já está levantado. NÃO refaça git log nem gh; leia o código quando precisar entender uma mudança.
+
+${inventario}
+
+Diga, em português, o que eu preciso saber ANTES de mesclar — e só o que muda a decisão:
+
+1. O que entra, por repo, em uma linha cada: o efeito para quem usa, não o nome do arquivo.
+2. Ordem de implantação, se importa: migrate antes do serviço, biblioteca antes de quem a consome,
+   contrato de fila/rota que quebra se um lado for sem o outro. Diga o porquê de cada dependência.
+3. Riscos: mudança de contrato (rota, fila, schema, enum), índice novo em coleção grande, migrate
+   destrutivo, mudança de comportamento padrão, remoção de campo que alguém pode estar lendo.
+4. O que conferir DEPOIS do deploy, e onde olhar (log, métrica, tela).
+5. O que ficou pela metade: chamado cujo trabalho aparece em um repo e não nos outros da lista.
+
+Se algo não der para afirmar pelo diff, diga que não dá — não invente. Não edite arquivo nenhum,
+não commite, não abra PR, não rode teste de projeto, e não mate o servidor da porta 4100.`;
 
 const PORTA = Number(process.env.PORT || 4100);
 // Preso em 127.0.0.1 por padrão. Expor é opt-in E exige senha, porque `/api/agente` spawna um
@@ -414,6 +436,40 @@ class Servidor {
     // Roda o agente de verdade (`claude -p`) para a única coisa que não dá para automatizar: decidir
     // qual PR/branch é a comparação certa de cada repo. O prompt é FIXO aqui — o cliente só manda o
     // ID, validado contra o padrão de chamado. Página local montando prompt seria injeção.
+    // A mesma corrida do agente, outro prompt e outro inventário. Só de localhost, pelo mesmo
+    // motivo: spawna `claude -p` com Bash nesta máquina.
+    async agenteImplantacao(projetos, res, remoto) {
+        if (!ehLocal(remoto)) {
+            return this.json(res, { ok: false, erro: 'a corrida do agente só roda na máquina do servidor' });
+        }
+        if (!projetos.length) {
+            return this.json(res, { ok: false, erro: 'nenhum repo escolhido' });
+        }
+        if (this.agenteRodando) {
+            return this.json(res, { ok: false, erro: `já rodando para ${this.agenteRodando}` });
+        }
+        this.agenteRodando = 'implantação';
+        this.agentePassos = 0;
+        this.agenteDesde = Date.now();
+        this.registrar('agente', 'inicio', `implantação: ${projetos.join(',')}`);
+        this.json(res, { ok: true, chamado: 'implantação', aviso: 'acompanhe pelo SSE' });
+        this.avisar({ tipo: 'agente', fase: 'andando', chamado: 'implantação', passo: 0,
+            texto: `modelo ${MODELO_DA_SESSAO()} · esforço high — levantando o que entra em ${projetos.length} repo(s)…` });
+        const partes = await Promise.all(projetos.map(async p => {
+            const d = await implantacao.detalhe(p);
+            if (!d) {
+                return `### ${p}\n  (sem origin/main ou origin/stage)`;
+            }
+            return `### ${p}  —  ${d.commits} commits, ${d.arquivos} arquivos, +${d.adicionadas} -${d.removidas}`
+                + `\n  chamados: ${d.ids.join(', ') || '(nenhum ID nos títulos)'}`
+                + (d.migrates.length ? `\n  MIGRATES: ${d.migrates.join(', ')}` : '')
+                + (d.pacote ? '\n  mexe em package.json' : '')
+                + `\n  base para o diff: git -C ${p} diff ${d.base} ${d.origem}`
+                + `\n  commits:\n${d.listaDeCommits.map(c => `    ${c.hash} ${c.titulo} (${c.autor}, ${c.data.slice(0, 10)})`).join('\n')}`;
+        }));
+        this._rodarAgente('implantação', partes.join('\n\n'), Date.now(), PROMPT_IMPLANTACAO(projetos.join(', '), partes.join('\n\n')));
+    }
+
     // Só de localhost. O token protege o acesso; isto protege a CAPACIDADE: pela LAN a tela é para
     // ver, e a corrida — que spawna `claude -p` com Bash aqui — não deve nem estar disponível.
     // Token vazado, máquina emprestada, aba esquecida: nenhum desses vira execução de comando.
@@ -471,9 +527,9 @@ class Servidor {
         return blocos.join('\n\n');
     }
 
-    _rodarAgente(chamado, inventario, inicio) {
+    _rodarAgente(chamado, inventario, inicio, promptPronto = null) {
         const filho = spawn('claude', [
-            '-p', PROMPT_COMPARACAO(chamado, inventario),
+            '-p', promptPronto || PROMPT_COMPARACAO(chamado, inventario),
             // `high` fixo, não o default da sessão: a tarefa é julgamento (desempatar PRs do mesmo dia,
             // ver se um commit local já entrou por squash) e `xhigh`/`max` não melhoraram isso — só
             // esticam a corrida, que a pessoa está olhando esperar.
@@ -534,7 +590,10 @@ class Servidor {
             corrida.ok = codigo === 0;
             corrida.resumo = ultimoTexto || null;
             corrida.erro = codigo === 0 ? null : (erro.trim().split('\n')[0] || `código ${codigo}`);
-            this._conferirDecisoes(chamado).then(divergentes => {
+            // A conferência de números é da corrida de COMPARAÇÃO: na implantação não há PR para
+            // comparar contra, e rodar `gh pr view` de decisão nenhuma só atrasaria o fim.
+            const conferir = chamado === 'implantação' ? Promise.resolve([]) : this._conferirDecisoes(chamado);
+            conferir.then(divergentes => {
                 corrida.divergentes = divergentes;
                 this.gravarCorrida(corrida);
                 const resumo = divergentes.length
@@ -736,7 +795,7 @@ class Servidor {
             // O token volta embutido na página: quem chegou com `?t=` já provou que tem, e as
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
             const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
-                TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress));
+                TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace());
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -758,6 +817,30 @@ class Servidor {
         }
         if (url.pathname === '/api/agente-log') {
             return this.json(res, this.corridaDe(q.get('chamado')) || { chamado: q.get('chamado'), eventos: [] });
+        }
+        if (url.pathname === '/api/implantacao') {
+            // Só a contagem: quem está à frente. O TTL é curto porque a fila muda a cada merge.
+            return this.emCacheAsync('implantacao', async () => ({
+                fila: await implantacao.resumo(),
+                escolhidos: implantacao.escolhidos()
+            }), 60000).then(v => this.json(res, v));
+        }
+        if (url.pathname === '/api/implantacao-detalhe') {
+            const projeto = q.get('projeto');
+            return this.emCacheAsync(`impl|${projeto}`,
+                () => implantacao.detalhe(projeto).then(d => d || { projeto, erro: 'sem origin/main ou origin/stage' }),
+                60000).then(v => this.json(res, v));
+        }
+        if (url.pathname === '/api/implantacao-escolher') {
+            const projetos = (q.get('projetos') || '').split(',').filter(Boolean);
+            implantacao.escolher(projetos);
+            this.registrar('implantacao', 'escolha', projetos.join(',') || '(nenhum)');
+            this.cache.delete('implantacao');
+            return this.json(res, { escolhidos: projetos });
+        }
+        if (url.pathname === '/api/agente-implantacao') {
+            return this.agenteImplantacao((q.get('projetos') || '').split(',').filter(Boolean),
+                res, req.socket.remoteAddress);
         }
         if (url.pathname === '/api/agente') {
             return this.agente(q.get('chamado'), res, req.socket.remoteAddress);
