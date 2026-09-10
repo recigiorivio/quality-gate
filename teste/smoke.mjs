@@ -12,15 +12,22 @@ import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir, networkInterfaces } from 'node:os';
-import { Diff } from '../lib/diff.mjs';
+import { Diff, CatFile, WORKSPACE } from '../lib/diff.mjs';
 import { Comparacao } from '../lib/comparacao.mjs';
 import { Implantacao } from '../lib/implantacao.mjs';
+import { repos as catalogoDoBanco } from '../lib/db.mjs';
+import { recusarEstadoDeProducao } from './anteparo.mjs';
 import { ler, gravar, mesclar } from '../lib/estado.mjs';
+import { caminhoEstado, fechar } from '../lib/db.mjs';
+import { Workspace } from '../lib/workspace.mjs';
 import { mdParaHtml } from '../web/markdown.js';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)));
+
+recusarEstadoDeProducao();
+
 // Porta fixa e distinta da do app (4100): porta sorteada tornava impossível saber, olhando o
 // terminal, se o que subiu era o servidor de verdade ou o do teste.
 const PORTA = Number(process.env.PORTA_TESTE || 4199);
@@ -28,6 +35,67 @@ const BASE = `http://127.0.0.1:${PORTA}`;
 
 let servidor;
 let contexto = { chamado: null, projeto: null, ref: '', caminho: null };
+
+// `after` só roda se a suíte terminar normalmente. Abortada por Ctrl-C, timeout do runner ou kill,
+// ela deixava `node server.mjs` de pé na porta de teste, e a rodada seguinte media o servidor velho.
+const servidores = new Set();
+
+function encerrarServidores() {
+    for (const filho of servidores) {
+        try {
+            filho.kill('SIGKILL');
+        } catch {
+            // já morreu, que é justamente o objetivo
+        }
+    }
+    servidores.clear();
+}
+
+process.on('exit', encerrarServidores);
+for (const sinal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sinal, () => {
+        encerrarServidores();
+        process.exit(1);
+    });
+}
+
+// Sobe um servidor e espera ele responder. O registro é o que faz o encerramento valer para os
+// QUATRO servidores da suíte, e não só para o do `before`.
+async function subirServidor({ porta, host = '127.0.0.1', token = '' }) {
+    const filho = spawn('node', ['server.mjs'], {
+        cwd: RAIZ,
+        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: host, QUALIDADE_TOKEN: token },
+        stdio: ['ignore', 'pipe', 'pipe']
+    });
+    servidores.add(filho);
+    filho.on('exit', () => servidores.delete(filho));
+    // Pipe que ninguém lê enche em 64 KB e BLOQUEIA o servidor no meio da suíte — e a falha aparece
+    // em testes aleatórios lá na frente. Consumir sempre; a cauda fica para diagnóstico.
+    filho.cauda = '';
+    for (const fluxo of [filho.stdout, filho.stderr]) {
+        fluxo.setEncoding('utf8');
+        fluxo.on('data', d => {
+            filho.cauda = (filho.cauda + d).slice(-4000);
+        });
+    }
+    const sonda = token ? `http://127.0.0.1:${porta}/?t=${token}` : `http://127.0.0.1:${porta}/`;
+    for (let i = 0; i < 60; i++) {
+        try {
+            await fetch(sonda, { signal: AbortSignal.timeout(500) });
+            return filho;
+        } catch {
+            await new Promise(s => setTimeout(s, 250));
+        }
+    }
+    // Servidor que não sobe fazia a suíte inteira falhar em testes que não têm nada a ver. Estourar
+    // aqui, com a cauda do processo, diz o motivo de uma vez.
+    throw new Error(`o servidor de teste não subiu na porta ${porta}:\n${filho.cauda}`);
+}
+
+function derrubarServidor(filho) {
+    servidores.delete(filho);
+    filho.kill();
+}
 
 async function pegar(rota, params = {}) {
     const url = new URL(rota, BASE);
@@ -40,45 +108,31 @@ async function pegar(rota, params = {}) {
     return { status: r.status, corpo: r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text() };
 }
 
+// Os alvos vêm do Workspace, não de `/api/chamados`: a rota tira os OCULTOS, que são preferência de
+// exibição do usuário — chamado escondido da tela continua sendo repo com trabalho para conferir.
+async function alvosDoWorkspace() {
+    const lista = await new Workspace().chamados();
+    return lista.flatMap(c => c.repos.map(r => ({ chamado: c.chamado, ...r })));
+}
+
 before(async () => {
     // Host e token FIXOS aqui: agora que o servidor lê o `.env`, um `QUALIDADE_HOST=0.0.0.0` lá
     // faria a suíte subir exposta — e com token sorteado, o que dá 401 em tudo. O teste não pode
     // depender do que está no .env de quem roda.
-    servidor = spawn('node', ['server.mjs'], {
-        cwd: RAIZ,
-        env: { ...process.env, PORT: String(PORTA), QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: '' },
-        stdio: ['ignore', 'pipe', 'pipe']
-    });
-    for (let i = 0; i < 60; i++) {
-        try {
-            await fetch(BASE, { signal: AbortSignal.timeout(500) });
-            break;
-        } catch {
-            await new Promise(s => setTimeout(s, 250));
-        }
-    }
-    // Descobre um alvo real em vez de fixar um nome de repo: o teste tem que valer em qualquer workspace.
-    // Precisa de um repo com diff DE VERDADE: pegar o primeiro fazia as rotas de diff virarem skip
-    // quando ele estava mesclado — a suíte ficava verde sem exercitar nada.
-    const { corpo } = await pegar('/api/chamados');
-    // Com o `chamado`: sem ele a comparação decidida não vale e a busca via 0 arquivo em tudo — 6
-    // casos viravam skip e as rotas de diff deixavam de ser exercitadas.
-    for (const c of corpo.lista || []) {
-        for (const r of c.repos) {
-            const d = (await pegar('/api/arquivos',
-                { projeto: r.projeto, ref: r.ref || '', chamado: c.chamado })).corpo;
-            if ((d.arquivos || []).length) {
-                contexto = { chamado: c.chamado, projeto: r.projeto, ref: r.ref || '' };
-                break;
-            }
-        }
-        if (contexto.projeto) {
+    servidor = await subirServidor({ porta: PORTA });
+    // Alvo com diff DE VERDADE: repo fixo não valeria em outro workspace, e pegar o primeiro fazia
+    // as rotas de diff virarem skip quando ele estava mesclado — a suíte verde sem exercitar nada.
+    for (const alvo of await alvosDoWorkspace()) {
+        const d = (await pegar('/api/arquivos',
+            { projeto: alvo.projeto, ref: alvo.ref || '', chamado: alvo.chamado })).corpo;
+        if ((d.arquivos || []).length) {
+            contexto = { chamado: alvo.chamado, projeto: alvo.projeto, ref: alvo.ref || '' };
             break;
         }
     }
 });
 
-after(() => servidor?.kill());
+after(encerrarServidores);
 
 test('a casca HTML sobe e referencia o app', async () => {
     const { status, corpo } = await pegar('/');
@@ -273,8 +327,7 @@ test('rota inexistente devolve 404 em vez de estourar', async () => {
 test('nenhum cartão diz "ok" sobre arquivo que não foi analisado', async t => {
     // A invariante que motivou este teste: um diff de 56 arquivos Python devolvia "nenhum achado" em
     // todos os cartões, e ausência de cobertura era lida como aprovação.
-    const { corpo } = await pegar('/api/chamados');
-    const alvos = (corpo.lista || []).flatMap(c => c.repos.map(r => ({ chamado: c.chamado, ...r })));
+    const alvos = await alvosDoWorkspace();
     if (!alvos.length) {
         return t.skip('nenhum chamado aberto');
     }
@@ -304,8 +357,7 @@ test('nenhum cartão diz "ok" sobre arquivo que não foi analisado', async t => 
 });
 
 test('o cartão de cobertura declara as extensões que ficaram de fora', async t => {
-    const { corpo } = await pegar('/api/chamados');
-    const alvo = (corpo.lista || []).flatMap(c => c.repos.map(r => ({ chamado: c.chamado, ...r })))[0];
+    const alvo = (await alvosDoWorkspace())[0];
     if (!alvo) {
         return t.skip('nenhum chamado aberto');
     }
@@ -503,35 +555,53 @@ test('a tela obedece a decisão do agente, e declara quando não há decisão', 
     g('merge', '-q', '--no-ff', '-m', 'merge de UND-1', 'UND-1');
     g('update-ref', 'refs/remotes/origin/stage', 'stage');
 
-    const tmp = join(mkdtempSync(join(tmpdir(), 'qualidade-dec-')), 'comparacoes.json');
-    const c = new Comparacao(tmp);
-    const semDecisao = c.resolver(raiz, 'UND-1', null, 'UND-1');
-    assert.equal(semDecisao.via, 'local', 'sem decisão, a via tem que se declarar local');
-    assert.equal(semDecisao.diff.listarArquivos(semDecisao.base).length, 0);
+    // O construtor de `Comparacao` sumiu na migração para o banco: o `tmp` que ia aqui era
+    // descartado, e a decisão caía no estado de produção. Isolar hoje é trocar `QUALIDADE_ESTADO` e
+    // `fechar()` — é em `abrir()` que o arquivo do banco é resolvido.
+    const estadoAnterior = process.env.QUALIDADE_ESTADO;
+    const estadoDoCaso = mkdtempSync(join(tmpdir(), 'qualidade-dec-'));
+    process.env.QUALIDADE_ESTADO = estadoDoCaso;
+    fechar();
+    try {
+        const c = new Comparacao();
+        const semDecisao = c.resolver(raiz, 'UND-1', null, 'UND-1');
+        assert.equal(semDecisao.via, 'local', 'sem decisão, a via tem que se declarar local');
+        assert.equal(semDecisao.diff.listarArquivos(semDecisao.base).length, 0);
 
-    c.definir('UND-1', raiz, {
-        via: 'pr', pr: 7, base: forkPoint, head, destino: 'stage', situacao: 'aberto'
-    });
-    const daPr = c.resolver(raiz, 'UND-1', null, 'UND-1');
-    assert.equal(daPr.via, 'pr');
-    assert.equal(daPr.diff.baseNome, 'PR #7 → stage');
-    assert.equal(daPr.diff.mesclado, false, 'situacao=aberto não pode virar mesclado');
-    assert.deepEqual(daPr.diff.listarArquivos(daPr.base).map(a => a.caminho), ['a.txt'],
-        'com decisão, aparece o que a PR mostra');
+        c.definir('UND-1', raiz, {
+            via: 'pr', pr: 7, base: forkPoint, head, destino: 'stage', situacao: 'aberto'
+        });
+        const daPr = c.resolver(raiz, 'UND-1', null, 'UND-1');
+        assert.equal(daPr.via, 'pr');
+        assert.equal(daPr.diff.baseNome, 'PR #7 → stage');
+        assert.equal(daPr.diff.mesclado, false, 'situacao=aberto não pode virar mesclado');
+        assert.deepEqual(daPr.diff.listarArquivos(daPr.base).map(a => a.caminho), ['a.txt'],
+            'com decisão, aparece o que a PR mostra');
 
-    // e a situação é veredito do agente, não recálculo da ferramenta
-    c.definir('UND-1', raiz, { via: 'stage', branch: 'UND-1', base: 'origin/stage', situacao: 'resolvido' });
-    const contraStage = c.resolver(raiz, 'UND-1', null, 'UND-1');
-    assert.equal(contraStage.via, 'stage');
-    assert.equal(contraStage.diff.mesclado, true);
-    rmSync(raiz, { recursive: true, force: true });
+        // e a situação é veredito do agente, não recálculo da ferramenta
+        c.definir('UND-1', raiz, { via: 'stage', branch: 'UND-1', base: 'origin/stage', situacao: 'resolvido' });
+        const contraStage = c.resolver(raiz, 'UND-1', null, 'UND-1');
+        assert.equal(contraStage.via, 'stage');
+        assert.equal(contraStage.diff.mesclado, true);
+    } finally {
+        fechar();
+        if (estadoAnterior === undefined) {
+            delete process.env.QUALIDADE_ESTADO;
+        } else {
+            process.env.QUALIDADE_ESTADO = estadoAnterior;
+        }
+        // O diretório do caso também sai: só a variável de ambiente apontava para ele, e a próxima
+        // atribuição o deixava órfão. Eram 242 pastas e 5,1 MB acumulados, uma por rodada.
+        rmSync(estadoDoCaso, { recursive: true, force: true });
+        rmSync(raiz, { recursive: true, force: true });
+    }
 });
 
 // `appendFileSync` ficou meses usado e não importado: `registrar` lançava, o catch engolia, e as
 // linhas DEPOIS dela no mesmo bloco nunca rodavam — foi assim que o fim da corrida do agente não
 // invalidava o cache nem avisava a tela. O log é a prova de que a função inteira rodou.
 test('registrar de fato escreve no gate.log', async () => {
-    const log = join(dirname(dirname(fileURLToPath(import.meta.url))), 'gate.log');
+    const log = join(caminhoEstado(), 'gate.log');
     const antes = existsSync(log) ? readFileSync(log, 'utf8').length : 0;
     // `ponto-remover` de um id inexistente loga e não muda nada — as outras rotas que logam têm
     // efeito colateral (ocultar/mostrar chamado), e teste não pode mexer no que o usuário vê.
@@ -552,19 +622,8 @@ test('pela rede, corrida e busca de refs são negadas mesmo com o token certo', 
     const token = 'token-de-teste-lan';
     const ip = Object.values(networkInterfaces()).flat()
         .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
-    const filho = spawn('node', ['server.mjs'], {
-        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
-    });
+    const filho = await subirServidor({ porta, host: '0.0.0.0', token });
     try {
-        for (let i = 0; i < 60; i++) {
-            try {
-                await fetch(`http://127.0.0.1:${porta}/?t=${token}`, { signal: AbortSignal.timeout(500) });
-                break;
-            } catch {
-                await new Promise(s => setTimeout(s, 250));
-            }
-        }
         if (!ip) {
             return;   // máquina sem interface de rede: nada a exercitar
         }
@@ -578,7 +637,7 @@ test('pela rede, corrida e busca de refs são negadas mesmo com o token certo', 
         const html = await (await fetch(`http://${ip}:${porta}/?t=${token}`)).text();
         assert.match(html, /window\.LOCAL = false/, 'a página tem que dizer ao cliente que ele não é local');
     } finally {
-        filho.kill();
+        derrubarServidor(filho);
     }
 });
 
@@ -589,19 +648,8 @@ test('exposto na rede, nada responde sem o token', async () => {
     // justamente essa isenção que este caso NÃO pode exercitar.
     const ip = Object.values(networkInterfaces()).flat()
         .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
-    const filho = spawn('node', ['server.mjs'], {
-        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
-    });
+    const filho = await subirServidor({ porta, host: '0.0.0.0', token });
     try {
-        for (let i = 0; i < 60; i++) {
-            try {
-                await fetch(`http://127.0.0.1:${porta}/`, { signal: AbortSignal.timeout(500) });
-                break;
-            } catch {
-                await new Promise(s => setTimeout(s, 250));
-            }
-        }
         if (!ip) {
             return;   // máquina sem interface de rede: nada a exercitar
         }
@@ -620,7 +668,7 @@ test('exposto na rede, nada responde sem o token', async () => {
         assert.equal(local.status, 200, 'localhost não pode exigir token');
         assert.match(await local.text(), /window\.LOCAL = true/, 'localhost tem que ser reconhecido como local');
     } finally {
-        filho.kill();
+        derrubarServidor(filho);
     }
 });
 
@@ -632,20 +680,9 @@ test('com token, os assets abrem e o resto não', async () => {
     const token = 'token-de-teste-assets';
     const ip = Object.values(networkInterfaces()).flat()
         .find(i => i && i.family === 'IPv4' && !i.internal)?.address;
-    const filho = spawn('node', ['server.mjs'], {
-        cwd: RAIZ, stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, PORT: String(porta), QUALIDADE_HOST: '0.0.0.0', QUALIDADE_TOKEN: token }
-    });
+    const filho = await subirServidor({ porta, host: '0.0.0.0', token });
     try {
         const base = `http://127.0.0.1:${porta}`;
-        for (let i = 0; i < 60; i++) {
-            try {
-                await fetch(`${base}/?t=${token}`, { signal: AbortSignal.timeout(500) });
-                break;
-            } catch {
-                await new Promise(s => setTimeout(s, 250));
-            }
-        }
         for (const asset of ['/app.js', '/estilo.css', '/realce.js', '/favicon.svg']) {
             assert.equal((await fetch(`${base}${asset}`)).status, 200, `${asset} precisa abrir sem token`);
         }
@@ -656,7 +693,7 @@ test('com token, os assets abrem e o resto não', async () => {
             assert.equal((await fetch(`http://${ip}:${porta}/api/chamados`)).status, 401, 'de fora, a API exige token');
         }
     } finally {
-        filho.kill();
+        derrubarServidor(filho);
     }
 });
 
@@ -965,7 +1002,7 @@ test('edição manual sobrevive à detecção; linha detectada é recalculada', 
         const antes = impl.catalogo.listar();
         const alvo = antes.find(r => r.ativo)?.projeto;
         assert.ok(alvo, 'catálogo sem repo ativo para o teste');
-        impl.catalogo.salvar(antes.map(r => (r.projeto === alvo
+        impl.catalogo.substituirTudo(antes.map(r => (r.projeto === alvo
             ? { ...r, origem: 'origin/inventada', destino: 'origin/tambem-inventada' } : r)));
         assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).fonte, 'manual',
             'mexer na linha tem que marcá-la como manual');
@@ -984,42 +1021,96 @@ test('edição manual sobrevive à detecção; linha detectada é recalculada', 
 
 // Desligar é decisão de gente e tem que colar; mas o `ativo:false` de uma detecção que FALHOU não
 // pode virar decisão — foi o que manteve 4 repos fora depois de eu corrigir a detecção deles.
-test('desligar um repo vira manual e sobrevive; falha de detecção não', async () => {
+// Dois invariantes OPOSTOS, e por isso dois casos. Espremidos num só, a primeira metade tornava a
+// linha `manual` e a segunda não conseguia mais montar o caso dela — `gravarDetectados` recusa
+// tocar linha manual, que é justamente o que o primeiro caso prova. Teste que não consegue montar
+// o próprio cenário é teste que passou a medir outra coisa.
+test('desligar um repo vira manual e a detecção não religa', async () => {
     const impl = new Implantacao();
-    const bruto = existsSync(join(DIR_ESTADO, 'repos.json'))
-        ? readFileSync(join(DIR_ESTADO, 'repos.json'), 'utf8') : null;
+    let alvo = null;
     try {
         if (!impl.catalogo.listar().length) {
             await impl.catalogo.detectar();
         }
-        const antes = impl.catalogo.listar();
-        const alvo = antes.find(r => r.ativo)?.projeto;
+        alvo = impl.catalogo.listar().find(r => r.ativo)?.projeto;
         assert.ok(alvo, 'catálogo sem repo ativo para o teste');
-        impl.catalogo.salvar(antes.map(r => (r.projeto === alvo ? { ...r, ativo: false } : r)));
+        impl.catalogo.salvarUm({ ...impl.catalogo.listar().find(r => r.projeto === alvo), ativo: false });
         const desligado = impl.catalogo.listar().find(r => r.projeto === alvo);
         assert.equal(desligado.fonte, 'manual', 'desmarcar tem que contar como edição');
         assert.equal(desligado.ativo, false);
         await impl.catalogo.detectar();
         assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, false,
             'a detecção religou um repo que a pessoa desligou');
-
-        // Agora o contrário: linha DETECTADA que ficou sem par numa rodada anterior tem que voltar
-        // a ligar quando o par aparece. O estado é gravado direto no catálogo porque é só assim que
-        // ele nasce — `salvar` marca toda mudança como manual, por desenho.
-        gravar(join(DIR_ESTADO, 'repos.json'), {
-            repos: antes.map(r => (r.projeto === alvo
-                ? { projeto: alvo, origem: null, destino: null, fonte: 'detectado', ativo: false } : r))
-        });
-        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, false, 'montagem do caso');
-        await impl.catalogo.detectar();
-        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, true,
-            'linha detectada é derivada: com par encontrado, ela liga de novo');
     } finally {
-        if (bruto === null) {
-            rmSync(join(DIR_ESTADO, 'repos.json'), { force: true });
-        } else {
-            writeFileSync(join(DIR_ESTADO, 'repos.json'), bruto);
+        // Devolve exatamente a linha que este caso marcou, e não "a primeira manual que aparecer":
+        // o catálogo pode ter linha manual de verdade, e limpeza que adivinha apaga decisão alheia.
+        if (alvo) {
+            catalogoDoBanco.remover(alvo);
+            await impl.catalogo.detectar();
         }
+    }
+});
+
+// O contrário: linha DETECTADA é derivada, recalculada a cada rodada. Sem par ela desliga; quando o
+// par aparece, ela religa sozinha — sem ninguém marcar nada à mão. Foi este invariante que eu errei
+// duas vezes no dia em que o catálogo nasceu, honrando o `ativo:false` de uma detecção que falhara
+// como se fosse decisão de gente.
+test('linha detectada é derivada: sem par desliga, com par religa', async () => {
+    const impl = new Implantacao();
+    if (!impl.catalogo.listar().length) {
+        await impl.catalogo.detectar();
+    }
+    const todas = impl.catalogo.listar();
+    const alvo = todas.find(r => r.ativo && r.fonte === 'detectado')?.projeto;
+    assert.ok(alvo, 'catálogo sem repo detectado e ativo para o teste');
+
+    // Monta pelo caminho que de fato produz este estado: `gravarDetectados` com o par vazio é o que
+    // `detectar()` grava quando não acha branch. Gravar `repos.json` aqui virou no-op no dia em que
+    // o catálogo saiu do arquivo para a tabela.
+    catalogoDoBanco.gravarDetectados(todas.map(r => (r.projeto === alvo
+        ? { projeto: alvo, origem: null, destino: null, motivo: 'sem par nesta rodada' } : r)));
+    const semPar = impl.catalogo.listar().find(r => r.projeto === alvo);
+    assert.equal(semPar.fonte, 'detectado', 'a montagem não pode transformar a linha em manual');
+    assert.equal(semPar.ativo, false, 'sem par, a linha derivada desliga');
+
+    await impl.catalogo.detectar();
+    assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, true,
+        'com par encontrado, a linha derivada tem que religar sozinha');
+});
+
+// A rota é o caminho do botão: medido antes da correção, a aba B repunha a cópia velha e a edição
+// da aba A sumia com `ok: true` — o módulo ficava verde e a tela perdia a edição.
+test('/api/repos-salvar grava a linha nomeada e recusa a lista inteira sem `substituir`', async () => {
+    const post = corpo => fetch(`${BASE}/api/repos-salvar`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(corpo)
+    }).then(async r => ({ status: r.status, corpo: await r.json() }));
+    try {
+        await post({ repo: { projeto: 'rota-alfa', origem: 'origin/stage', destino: 'origin/main', ativo: true } });
+        await post({ repo: { projeto: 'rota-beta', origem: 'origin/stage', destino: 'origin/main', ativo: true } });
+        const listaQueAAbaBCarregou = (await pegar('/api/repos')).corpo.repos;
+
+        const editada = await post({ repo: { projeto: 'rota-alfa', origem: 'origin/desenv', destino: 'origin/main', ativo: true } });
+        assert.equal(editada.corpo.repos.find(r => r.projeto === 'rota-alfa').origem, 'origin/desenv');
+
+        const velha = await post({ repos: listaQueAAbaBCarregou });
+        assert.equal(velha.status, 400, 'a rota aceitou a lista inteira — é o pedido que apaga a edição da outra aba');
+        assert.match(velha.corpo.erro, /substituir/);
+        const depois = (await pegar('/api/repos')).corpo.repos;
+        assert.equal(depois.find(r => r.projeto === 'rota-alfa').origem, 'origin/desenv',
+            'a edição da aba A sumiu depois do salvamento da aba B');
+
+        const semBeta = await post({ remover: 'rota-beta' });
+        assert.equal(semBeta.corpo.repos.some(r => r.projeto === 'rota-beta'), false, 'remover não tirou a linha nomeada');
+        assert.equal((await post({ remover: 'rota-beta' })).corpo.ok, true, 'repetir a remoção tem que ser inócuo');
+
+        // A substituição em massa continua existindo: a lista vai inteira, menos o repo de teste,
+        // e é ele que tem que sumir. Sem `substituir` este mesmo corpo seria recusado acima.
+        const massa = await post({ repos: depois.filter(r => r.projeto !== 'rota-alfa'), substituir: true });
+        assert.equal(massa.corpo.repos.some(r => r.projeto === 'rota-alfa'), false,
+            'com `substituir` a lista inteira tem que apagar quem não veio nela');
+    } finally {
+        await post({ remover: 'rota-alfa' });
+        await post({ remover: 'rota-beta' });
     }
 });
 
@@ -1069,3 +1160,57 @@ test('marcar/desmarcar um repo é idempotente', async () => {
     }
 });
 
+
+// ── o cat-file de vida longa tem teto e expira ────────────────────────────────
+
+// Vazamento invisível: sem teto, cada repo visitado deixava um `git cat-file --batch` parado pelo
+// resto da vida do servidor, que fica dias no ar num workspace de 51 repos.
+test('canais cat-file respeitam o teto e somem quando param de ser usados', async t => {
+    const repos = readdirSync(WORKSPACE)
+        .filter(p => existsSync(join(WORKSPACE, p, '.git')))
+        .slice(0, CatFile.TETO + 4);
+    if (repos.length <= CatFile.TETO) {
+        return t.skip(`workspace com ${repos.length} repos: não dá para passar do teto`);
+    }
+
+    // Só os filhos DESTE processo: outros agentes rodam cat-file na mesma máquina, e o total dela
+    // não diz nada. O servidor da suíte é filho, mas os cat-file dele são netos e ficam de fora.
+    const contarCanais = () => {
+        const saida = execFileSync('sh', ['-c',
+            `pgrep -P ${process.pid} | xargs -I{} ps -o command= -p {} 2>/dev/null`
+            + ' | grep -c "cat.file ..batch" || true'], { encoding: 'utf8' });
+        return Number(saida.trim()) || 0;
+    };
+    const esperarCanais = async quantos => {
+        for (let i = 0; i < 40 && contarCanais() !== quantos; i++) {
+            await new Promise(r => setTimeout(r, 50));
+        }
+        return contarCanais();
+    };
+
+    try {
+        for (const repo of repos) {
+            new Diff(repo, 'HEAD')._totalDeLinhas('README.md');
+        }
+        assert.equal(CatFile.abertos.size, CatFile.TETO,
+            `${repos.length} repos abertos deixaram ${CatFile.abertos.size} canais no mapa`);
+        assert.equal(await esperarCanais(CatFile.TETO), CatFile.TETO,
+            'processos cat-file vivos passaram do teto');
+
+        // A contagem tem de bater com o `git show`, que não usa canal nenhum: teto que devolve
+        // número errado depois do despejo é pior que o vazamento.
+        const [primeiro] = repos;
+        const pelaCasca = new Diff(primeiro, 'HEAD')._totalDeLinhas('README.md');
+        const pelaVerdade = execFileSync('sh', ['-c',
+            `git -C ${join(WORKSPACE, primeiro)} show HEAD:README.md | wc -l`], { encoding: 'utf8' });
+        assert.equal(pelaCasca, Number(pelaVerdade.trim()),
+            'canal reaberto depois do despejo devolveu conteúdo errado');
+
+        CatFile.expirarInativos(Date.now() + CatFile.INATIVIDADE);
+        assert.equal(CatFile.abertos.size, 0, 'canal inativo ficou no mapa');
+        assert.equal(await esperarCanais(0), 0, 'processo cat-file sobreviveu à expiração');
+        assert.equal(CatFile.faxina, null, 'faxina continuou agendada com o mapa vazio');
+    } finally {
+        CatFile.fecharTodos();
+    }
+});

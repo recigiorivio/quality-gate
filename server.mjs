@@ -7,7 +7,7 @@ import { createServer } from 'node:http';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { Buffer } from 'node:buffer';
-import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, readdirSync } from 'node:fs';
 import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
@@ -16,6 +16,7 @@ import { Workspace } from './lib/workspace.mjs';
 import { Qualidade } from './lib/qualidade.mjs';
 import { Pontos } from './ferramentas/pontos.mjs';
 import lint from './lib/lint.mjs';
+import { corridas, caminhoEstado } from './lib/db.mjs';
 import comparacao from './lib/comparacao.mjs';
 import implantacao from './lib/implantacao.mjs';
 import prs from './lib/prs.mjs';
@@ -42,8 +43,9 @@ Regra de decisão, por repo:
 - PR mesclada mas com commit local depois dela (confira com git log origin/<base>..<branch> só se houver dúvida): --pr=N --aberto
 
 Grave a partir de /Users/recigiorivio/node_workspace, um comando por repo:
-  node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que, em uma frase>"
-  ou  node qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
+  node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que, em uma frase>"
+  ou  node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
+A flag evita o ExperimentalWarning do SQLite no stderr; não troque por --no-warnings.
 
 NÃO confira número de arquivos: o servidor confere ao final e mostra o que não bateu.
 Só o chamado ${chamado}: não olhe, não decida e não grave nada de nenhum outro. Não rode teste de projeto. Não edite arquivo nenhum, não commite, não abra PR. NÃO mate nem reinicie o servidor da porta 4100.
@@ -111,10 +113,6 @@ const CONFIGS = {
     }
 };
 
-// Chamado some do menu porque o usuario mandou, nunca porque o programa achou que era velho:
-// "antigo" aqui e a branch parada, e branch parada e exatamente a que se esquece de terminar.
-const ARQUIVO_OCULTOS = join(import.meta.dirname, 'ocultos.json');
-
 class Servidor {
     constructor() {
         this.workspace = new Workspace();
@@ -126,16 +124,23 @@ class Servidor {
         this.mostradosEm = {};
     }
 
+    // Preferência de gente, e por isso mora no diretório de estado, junto do banco: preso na raiz,
+    // ficava fora do `QUALIDADE_ESTADO` e toda sonda gravava a escolha de verdade do usuário.
+    arquivoOcultos() {
+        return join(caminhoEstado(), 'ocultos.json');
+    }
+
     lerOcultos() {
         try {
-            return existsSync(ARQUIVO_OCULTOS) ? JSON.parse(readFileSync(ARQUIVO_OCULTOS, 'utf8')) : [];
+            const arquivo = this.arquivoOcultos();
+            return existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, 'utf8')) : [];
         } catch {
             return [];
         }
     }
 
     gravarOcultos() {
-        writeFileSync(ARQUIVO_OCULTOS, JSON.stringify([...this.ocultos], null, 2));
+        writeFileSync(this.arquivoOcultos(), JSON.stringify([...this.ocultos], null, 2));
         this.cache.delete('chamados');
     }
 
@@ -256,8 +261,8 @@ class Servidor {
         }
     }
 
-    // Grava só o conteúdo, no caminho que a allowlist define. Backup ao lado antes de sobrescrever:
-    // é arquivo de instrução editado à mão, e um salvamento errado apaga regra que custou caro.
+    // Nomear o que mudou, como em `/api/implantacao-escolher`: `repo` grava UMA linha e `remover`
+    // apaga UMA. A lista inteira é a cópia velha da aba, e por isso exige `substituir: true`.
     salvarRepos(req, res) {
         let corpo = '';
         req.on('data', d => {
@@ -268,18 +273,42 @@ class Servidor {
         });
         req.on('end', () => {
             try {
-                const { repos: entradas } = JSON.parse(corpo || '{}');
-                if (!Array.isArray(entradas)) {
-                    return this.json(res, { erro: 'esperava uma lista de repos' }, 400);
+                const { repo, remover, repos: entradas, substituir } = JSON.parse(corpo || '{}');
+                if (repo) {
+                    const linha = implantacao.catalogo.salvarUm(repo);
+                    return this.responderRepos(res, 'salvar-um', linha.projeto);
                 }
-                const lista = implantacao.catalogo.salvar(entradas);
-                this.registrar('repos', 'salvar', `${lista.filter(r => r.ativo).length} ativos de ${lista.length}`);
-                this.invalidarImplantacao();
-                return this.json(res, { ok: true, repos: lista });
+                if (remover) {
+                    const foi = implantacao.catalogo.remover(remover);
+                    return this.responderRepos(res, 'remover', `${remover}${foi ? '' : ' (não estava no catálogo)'}`);
+                }
+                if (Array.isArray(entradas) && substituir === true) {
+                    implantacao.catalogo.substituirTudo(entradas);
+                    return this.responderRepos(res, 'substituir-tudo', `${entradas.length} enviados`);
+                }
+                // Aceitar a lista sem `substituir` "por compatibilidade" seria manter o defeito
+                // com outro nome: é exatamente o pedido que apagava a edição da outra aba.
+                this.registrar('repos', 'recusado',
+                    `pedido sem repo/remover/substituir${Array.isArray(entradas) ? ` (lista de ${entradas.length})` : ''}`);
+                return this.json(res, {
+                    erro: 'diga o que mudou: {"repo":{…}} grava uma linha, {"remover":"projeto"} apaga uma.'
+                        + ' A lista inteira só com {"repos":[…],"substituir":true} — ela apaga todo repo que não vier nela.'
+                }, 400);
             } catch (e) {
-                return this.json(res, { erro: e.message }, 500);
+                // Pedido malformado do cliente é 400, não 500: `salvarUm` recusa `{repo:{}}` sem
+                // projeto, e devolver 500 ali culpa o servidor por erro de quem chamou — e some no
+                // meio dos alertas de falha de verdade.
+                const doCliente = /sem projeto|forma esperada|JSON|deve ser|inválid/i.test(e.message);
+                return this.json(res, { erro: e.message }, doCliente ? 400 : 500);
             }
         });
+    }
+
+    responderRepos(res, acao, detalhe) {
+        const repos = implantacao.catalogo.listar();
+        this.registrar('repos', acao, `${detalhe}; ${repos.filter(r => r.ativo).length} ativos de ${repos.length}`);
+        this.invalidarImplantacao();
+        return this.json(res, { ok: true, repos, detectadoEm: implantacao.catalogo.detectadoEm() });
     }
 
     // Toda leitura da implantação sai do par de branches do catálogo: mexeu no catálogo, o que
@@ -292,6 +321,8 @@ class Servidor {
         }
     }
 
+    // Grava só o conteúdo, no caminho que a allowlist define. Backup ao lado antes de sobrescrever:
+    // é arquivo de instrução editado à mão, e um salvamento errado apaga regra que custou caro.
     salvarConfig(req, res) {
         let corpo = '';
         req.on('data', d => {
@@ -323,7 +354,7 @@ class Servidor {
 
     registrar(acao, resultado, detalhe = '') {
         try {
-            appendFileSync(join(import.meta.dirname, 'gate.log'),
+            appendFileSync(join(caminhoEstado(), 'gate.log'),
                 `${new Date().toISOString()}\t${acao}\t${resultado}\t${String(detalhe).slice(0, 200)}\n`);
         } catch {
             // log é observabilidade, não pode derrubar a rota
@@ -706,28 +737,23 @@ class Servidor {
         });
     }
 
-    // Uma corrida por chamado, a última: histórico completo seria útil e ninguém pediu, e o arquivo
-    // por chamado é o que deixa o reload da página (e o reinício do servidor) não perder nada.
+    // Todas as corridas ficam gravadas, não só a última: o arquivo por chamado sobrescrevia a
+    // anterior a cada rodada, e "o que o agente fez antes" era justamente o que se queria reler.
     gravarCorrida(corrida) {
         try {
-            mkdirSync(join(import.meta.dirname, 'corridas'), { recursive: true });
-            writeFileSync(this._caminhoCorrida(corrida.chamado), `${JSON.stringify(corrida, null, 1)}\n`);
+            corridas.gravar(corrida);
         } catch (e) {
             this.registrar('agente', 'log-falhou', e.message);
         }
     }
 
-    _caminhoCorrida(chamado) {
-        return join(import.meta.dirname, 'corridas', `${String(chamado).replace(/[^A-Za-z0-9-]/g, '')}.json`);
-    }
-
     corridaDe(chamado) {
-        // Em memória primeiro: durante a corrida o arquivo ainda não existe.
+        // Em memória primeiro: durante a corrida o banco ainda não tem o fim nem os últimos passos.
         if (this.corridaViva?.chamado === chamado) {
             return { ...this.corridaViva, rodando: true };
         }
         try {
-            return JSON.parse(readFileSync(this._caminhoCorrida(chamado), 'utf8'));
+            return corridas.ultima(chamado);
         } catch {
             return null;
         }
@@ -839,15 +865,19 @@ class Servidor {
         return null;
     }
 
-    // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
+    // Varre a pasta em vez de uma lista de nomes: asset fora dela não entrava no maior mtime, e a
+    // tela seguia servindo o app.js velho do cache do navegador depois de ele ser partido em dois.
     versaoDosAssets() {
         let maior = 0;
-        for (const nome of ['app.js', 'markdown.js', 'estilo.css', 'realce.js', 'pagina.mjs', 'favicon.svg']) {
-            try {
+        try {
+            for (const nome of readdirSync(join(import.meta.dirname, 'web'))) {
+                if (!/\.(css|js|mjs|svg|ico|png|webmanifest)$/.test(nome)) {
+                    continue;
+                }
                 maior = Math.max(maior, statSync(join(import.meta.dirname, 'web', nome)).mtimeMs);
-            } catch {
-                // asset ausente não impede a página de subir
             }
+        } catch {
+            // pasta ausente não impede a página de subir
         }
         return String(Math.round(maior));
     }
@@ -915,7 +945,17 @@ class Servidor {
             }
         }
         if (url.pathname === '/api/agente-log') {
-            return this.json(res, this.corridaDe(q.get('chamado')) || { chamado: q.get('chamado'), eventos: [] });
+            // Com `id`, uma corrida antiga do histórico; sem ele, a última do chamado — que é o que
+            // a tela pede desde sempre e continua recebendo na mesma forma.
+            const corrida = q.get('id') ? corridas.obter(Number(q.get('id'))) : this.corridaDe(q.get('chamado'));
+            return this.json(res, corrida || { chamado: q.get('chamado'), eventos: [] });
+        }
+        // Sem os eventos, que são dezenas por corrida: esta rota é para escolher qual abrir, e quem
+        // quer os passos pede `/api/agente-log?id=`.
+        if (url.pathname === '/api/agente-historico') {
+            return this.json(res, {
+                corridas: corridas.historico(q.get('chamado'), Number(q.get('limite')) || 20)
+            });
         }
         if (url.pathname === '/api/implantacao') {
             // Só a contagem: quem está à frente. O TTL é curto porque a fila muda a cada merge.

@@ -973,8 +973,10 @@ function renderModalEstado(c) {
                <button class="me-copiar" onclick="copiarCorrida()">copiar</button></div>
              <div class="me-log">${log}</div>`
     : '<div class="me-log-titulo">nenhuma corrida registrada para este chamado</div>'}
-    <div class="me-pe">Clicar numa linha abre o repo. Decisões em <code>qualidade/comparacoes.json</code>;
-      <code>comparacao.mjs definir/remover</code> muda à mão.</div>`;
+    <div class="me-pe">Clicar numa linha abre o repo. As decisões ficam na tabela <code>decisoes</code>
+      do <code>qualidade/qualidade.db</code>: <code>comparacao.mjs definir/remover</code> muda uma,
+      <code>comparacao.mjs listar</code> mostra as gravadas. Editar o <code>comparacoes.json</code>
+      à mão não muda mais nada — ele só foi lido na primeira importação.</div>`;
 }
 
 // A modal acompanha a corrida ao vivo: se estiver aberta, cada evento do agente a redesenha.
@@ -1487,8 +1489,8 @@ function desenharTrilhaImplantacao(d) {
   marcarAnaliseDisponivel();
 }
 
-// O botão só aparece quando existe análise para abrir. A corrida fica em disco (`corridas/`), então
-// ela sobrevive ao reload e ao reinício — e um botão que abre modal vazia é pior que botão nenhum.
+// O botão só aparece quando existe análise para abrir. A corrida fica na tabela `corridas` do
+// banco, então sobrevive ao reload e ao reinício — e botão que abre modal vazia é pior que nenhum.
 async function marcarAnaliseDisponivel() {
   const c = await api('/api/agente-log', { chamado: 'implantação' });
   analiseAberta = c?.resumo ? c : null;
@@ -1837,7 +1839,7 @@ async function carregarConfigs() {
     `abrirConfig('${c.chave}')`)).join('')}
     <div class="grupo-config">Catálogo</div>
     ${item('repos', 'Repositórios', 'Quais entram na comparação de implantação, e com qual par de branches',
-    'qualidade/repos.json', 'abrirRepos()')}`;
+    'qualidade.db · tabela repos', 'abrirRepos()')}`;
   const primeiro = document.querySelector('.item-config');
   if (primeiro && !document.querySelector('.item-config.ativo')) {
     abrirConfig(primeiro.dataset.k);
@@ -1978,13 +1980,28 @@ function filtrarRepos(texto) {
   }
 }
 
+// Quem MUDOU, por nome. A rota deixou de aceitar a lista inteira de propósito: mandar tudo é o
+// pedido destrutivo que apagava a edição da outra aba — duas abas, a segunda salva a cópia velha,
+// a primeira edição some sem erro. Aqui a tela passa a dizer o que mudou, uma linha por vez.
+const reposEditados = new Set();
+const reposRemovidos = new Set();
+
 function mexerNoRepo(i, campo, valor) {
   catalogoRepos[i][campo] = typeof valor === 'string' ? valor.trim() || null : valor;
+  reposEditados.add(catalogoRepos[i].projeto);
   reposSujos();
 }
 
 function removerRepo(i) {
-  catalogoRepos.splice(i, 1);
+  const [fora] = catalogoRepos.splice(i, 1);
+  if (!fora) {
+    return;
+  }
+  reposEditados.delete(fora.projeto);
+  // Linha acrescentada nesta sessão e ainda não salva só existiu aqui: não há o que remover lá.
+  if (fora.jaSalvo !== false) {
+    reposRemovidos.add(fora.projeto);
+  }
   desenharRepos();
   reposSujos();
 }
@@ -1999,7 +2016,8 @@ function adicionarRepo() {
   }
   const origem = document.getElementById('novo-origem').value.trim() || 'origin/stage';
   const destino = document.getElementById('novo-destino').value.trim() || 'origin/main';
-  catalogoRepos.push({ projeto, origem, destino, fonte: 'manual', ativo: true, motivo: null });
+  catalogoRepos.push({ projeto, origem, destino, fonte: 'manual', ativo: true, motivo: null, jaSalvo: false });
+  reposEditados.add(projeto);
   catalogoRepos.sort((a, b) => a.projeto.localeCompare(b.projeto));
   desenharRepos();
   reposSujos();
@@ -2013,32 +2031,63 @@ function reposSujos() {
   }
 }
 
+const pedirAoCatalogo = corpo => fetch(`/api/repos-salvar${window.TOKEN ? `?t=${window.TOKEN}` : ''}`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(corpo)
+}).then(x => x.json()).catch(x => ({ erro: x.message }));
+
 async function salvarRepos() {
   const e = document.getElementById('estado-repos');
-  e.className = 'selo pr-carregando';
-  e.textContent = 'salvando…';
-  const r = await fetch(`/api/repos-salvar${window.TOKEN ? `?t=${window.TOKEN}` : ''}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ repos: catalogoRepos })
-  }).then(x => x.json()).catch(x => ({ erro: x.message }));
-  if (r.erro) {
-    e.className = 'selo pr-sem-pr';
-    e.textContent = `erro: ${r.erro}`;
+  const editados = [...reposEditados];
+  const removidos = [...reposRemovidos];
+  if (!editados.length && !removidos.length) {
+    e.className = 'selo pr-carregando';
+    e.textContent = 'nada mudou';
     return;
   }
-  catalogoRepos = r.repos;
-  desenharRepos();
+  e.className = 'selo pr-carregando';
+  e.textContent = `salvando ${editados.length + removidos.length}…`;
+  // Um pedido por linha. Parece mais chamada do que antes e é — mas cada uma nomeia o seu alvo, e
+  // duas abas editando repos diferentes agora convivem em vez de uma apagar a outra.
+  const respostas = await Promise.all([
+    ...editados.map(projeto => {
+      const r = catalogoRepos.find(x => x.projeto === projeto);
+      if (!r) {
+        return Promise.resolve({});
+      }
+      const { jaSalvo, ...linha } = r;
+      return pedirAoCatalogo({ repo: linha });
+    }),
+    ...removidos.map(projeto => pedirAoCatalogo({ remover: projeto }))
+  ]);
+  const falhou = respostas.find(r => r.erro);
+  if (falhou) {
+    e.className = 'selo pr-sem-pr';
+    e.textContent = `erro: ${falhou.erro}`;
+    return;
+  }
+  reposEditados.clear();
+  reposRemovidos.clear();
+  // Relê do servidor em vez de confiar na cópia local: outra aba pode ter mexido em linhas que
+  // não são minhas, e é justamente isso que agora sobrevive.
+  const atualizado = await api('/api/repos', {});
+  catalogoRepos = atualizado.repos || [];
+  desenharRepos(atualizado.detectadoEm);
   // A fila do menu vem do catálogo: salvar sem recarregá-la deixava a barra mostrando repos que
   // acabaram de sair da comparação.
   carregarImplantacao();
-  avisarNaTela(`${r.repos.filter(x => x.ativo).length} repos na comparação`);
+  avisarNaTela(`${editados.length} salvo(s)${removidos.length ? `, ${removidos.length} removido(s)` : ''}`
+    + ` · ${catalogoRepos.filter(x => x.ativo).length} na comparação`);
 }
 
 async function detectarRepos() {
   const alvo = document.getElementById('conteudo');
   alvo.innerHTML = girando(240);
   const r = await api('/api/repos-detectar', {});
+  // A detecção reescreveu o catálogo no servidor: edição pendente daqui virou passado.
+  reposEditados.clear();
+  reposRemovidos.clear();
   catalogoRepos = r.repos || [];
   desenharRepos(r.detectadoEm);
   carregarImplantacao();

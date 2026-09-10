@@ -11,6 +11,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ChecarDiff } from '../ferramentas/checar-diff.mjs';
+import { recusarEstadoDeProducao } from './anteparo.mjs';
+
+recusarEstadoDeProducao();
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)));
 const doutrina = JSON.parse(readFileSync(join(RAIZ, 'doutrina.json'), 'utf8'));

@@ -18,6 +18,9 @@ comparacoes.json
 # log das corridas do agente: estado local
 corridas/
 
+# dump de `banco.mjs exportar`: é o MESMO conteúdo local do banco, em JSON
+exportado/
+
 # token sorteado da exposição na rede: segredo local
 token.local
 
@@ -26,3 +29,9 @@ implantacao.json
 
 # catálogo de repos e pares de branches: nomes de repo do workspace de quem roda
 repos.json
+
+# o banco tem o MESMO conteúdo local que os JSONs acima (nº de PR, nomes de repo, achados
+# internos). O -wal e o -shm são companhia obrigatória do arquivo principal.
+qualidade.db
+qualidade.db-wal
+qualidade.db-shm

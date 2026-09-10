@@ -8,7 +8,22 @@ antes/depois embaixo. Mais as ferramentas de linha de comando que ela usa.
 **Instalação: [`instalacao/README.md`](instalacao/README.md)** — e `node instalacao/verificar.mjs`
 diz o que falta antes de você tentar.
 
-Sem dependência e sem `npm install`. Só o Node do sistema (20.11+).
+Sem dependência e sem `npm install` — continua valendo, e o `package.json` não tem `dependencies`.
+
+**Mas o piso do Node subiu para 22.5.0** (`engines.node`), e vale explicar por quê para ninguém
+perder uma tarde: o estado que dois processos escrevem passou de JSON para um SQLite, e o SQLite vem
+do módulo **embutido** `node:sqlite`, que só existe a partir do Node 22.5.0. Ou seja: nenhum pacote
+novo entrou, só um módulo do próprio Node que é novo demais para o piso antigo (20.11).
+
+Em Node 20 nada avisa antes. O `npm install` não existe aqui para reclamar do `engines`, o
+`instalacao/verificar.mjs` **ainda cobra só 20.11 e deixa passar** (é o próximo conserto), a tela
+sobe, e a quebra chega no primeiro acesso ao banco como `ERR_UNKNOWN_BUILTIN_MODULE` em
+`node:sqlite` — um erro que fala de módulo inexistente, não de versão velha. Se você viu isso, é a
+versão do Node:
+
+```bash
+node -v                # precisa ser >= 22.5.0
+```
 
 ---
 
@@ -217,17 +232,19 @@ tinha decidido. Ele também explicou cada escolha na `--nota`, incluindo que a b
 
 E ele achou um bug meu do jeito mais direto possível: **matou e reiniciou o servidor**. O
 `Comparacao` lia o JSON uma vez, no import, então a decisão que ele acabava de gravar era invisível
-para o servidor vivo, a verificação não batia, e reiniciar era a saída. Agora ele relê pelo mtime, e
-essa `versao` entra nas chaves de cache — senão a resposta velha continuaria sendo servida. O prompt
-também proíbe reiniciar, mas a correção é a releitura; a proibição é só o cinto.
+para o servidor vivo, a verificação não batia, e reiniciar era a saída. Agora ele lê do banco a cada
+chamada, e a `versao` do domínio `decisoes` — um contador que **sobe também quando quem gravou foi o
+outro processo** — entra nas chaves de cache, senão a resposta velha continuaria sendo servida. O
+prompt também proíbe reiniciar, mas a correção é a releitura; a proibição é só o cinto.
 
 Decisão que **não se aplica** (branch apagada, base que não existe naquele repo) não cai no local em
 silêncio: o carimbo diz `⚠ decisão ignorada: sem merge-base entre 'origin/stage' e 'UND-1971'`.
 
 
-A tela **não adivinha** qual comparação vale num repo. A rotina de fim de trabalho decide e grava em
-`comparacoes.json`; aqui só se obedece. Sem decisão, a tela usa o local e escreve
-`⚠ comparação não definida` no carimbo — porque **palpite não anunciado** foi o que criou o problema.
+A tela **não adivinha** qual comparação vale num repo. A rotina de fim de trabalho decide e grava uma
+linha na tabela `decisoes` do `qualidade.db`; aqui só se obedece. Sem decisão, a tela usa o local e
+escreve `⚠ comparação não definida` no carimbo — porque **palpite não anunciado** foi o que criou o
+problema.
 
 Automatizar foi tentado e falhou por um motivo concreto. Num chamado real havia **22 branches em 12
 repos** e, num único repo, **7 PRs em 7 branches**: seis mescladas e a aberta sendo outra. Nenhuma
@@ -245,9 +262,10 @@ branch**, então o diff sai vazio por construção.
 9 de 9 batendo depois de decidir. E a decisão carrega **o veredito**, não só a base:
 
 ```bash
-node qualidade/ferramentas/comparacao.mjs definir UND-1638 integrations-core-rivio-one --pr=856 \
+node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs \
+  definir UND-1638 integrations-core-rivio-one --pr=856 \
   --nota="6 PRs mescladas antes; a aberta e a 856"
-node qualidade/ferramentas/comparacao.mjs listar UND-1638
+node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs listar UND-1638
 ```
 
 | Fonte | Quando | Base usada |
@@ -263,6 +281,9 @@ sabe disso.
 Uma comparação, um lugar: `lib/comparacao.mjs`. O diff, as checagens, a análise de AST e o lint pedem
 a base para ele. Cada um resolvendo a sua era o que fazia o cartão de cobertura discordar do diff
 desenhado logo abaixo dele.
+
+Onde a decisão para, e como olhar o que está gravado: [O estado fica num
+`qualidade.db`](#o-estado-fica-num-qualidadedb-não-mais-em-json).
 
 ### Branch já mesclada: topologia primeiro, merge-tree depois
 
@@ -378,25 +399,107 @@ configurado diz **"nenhum linter configurado"** em vez de fingir que passou.
   idênticas repetida no diff, e nome de método novo que já aparece em outro arquivo (`git grep`, não
   memória)
 
+## O estado fica num `qualidade.db`, não mais em JSON
+
+Quatro coisas que a tela e as ferramentas guardam vivem em tabelas de um SQLite em
+`qualidade/qualidade.db` (`lib/db.mjs`): as **decisões** de comparação (`decisoes`), os **pontos de
+atenção** (`pontos`), o **catálogo de repos** (`repos`) e o **histórico de corridas** do agente
+(`corridas`). Antes eram, na ordem, `comparacoes.json`, `pontos-atencao.json`, `repos.json` e um
+arquivo por chamado em `corridas/`.
+
+**Os quatro JSONs continuam no disco de propósito — são o backup de quem migrou. Mas são lidos UMA
+vez.** No primeiro boot depois da migração cada um é importado e a importação fica marcada numa
+tabela `importacoes`; daí em diante **editar o JSON à mão não muda mais nada na tela**, e nada avisa,
+porque é justamente a marca que impede reimportar por cima do que já está em uso. Quem mexeu num
+desses arquivos esperando efeito parou aqui.
+
+Por que trocou — três defeitos medidos, todos silenciosos:
+
+| Defeito | Como era | Como é |
+|---|---|---|
+| **perda de atualização** | o servidor e o `comparacao.mjs definir` liam o arquivo inteiro, alteravam e regravavam: o último a gravar levava o arquivo, e o que o outro acabou de escrever sumia sem erro | cada escrita é o upsert da **própria linha**, e o `busy_timeout` faz o segundo processo **esperar** em vez de gravar por cima |
+| **a lista inteira vindo do cliente** | `repos.salvar()` recebia os 51 repos da aba e substituía o arquivo — provado com duas abas: a aba B gravou a cópia velha e a edição da aba A desapareceu | escrita linha a linha; linha que não veio na lista fica como está |
+| **invariante do catálogo como código** | "linha `fonte:'manual'` a detecção não encosta" é predicado de linha, e sobre um blob foi implementado errado duas vezes no mesmo dia | `ON CONFLICT … DO UPDATE … WHERE repos.fonte = 'detectado'` — uma instrução que **não consegue** tocar linha manual, e o `changes: 0` prova que não tocou |
+
+As corridas ganharam a única pergunta que o formato antigo não respondia: "a corrida de ontem decidiu
+diferente?". Era um arquivo por chamado com a **última**; agora todas ficam, e
+`/api/agente-historico?chamado=<ID>` lista as de um chamado — a modal continua mostrando a última, e
+`/api/agente-log?id=N` abre uma antiga com os passos.
+
+O banco fica no diretório apontado por `QUALIDADE_ESTADO`, que por padrão é a raiz do projeto. Ele é
+resolvido **a cada abertura**, e é isso que deixa a suíte de teste rodar contra um diretório
+temporário sem tocar no seu estado.
+
+### Como olhar o que está lá dentro
+
+O argumento a favor de arquivo era `grep` e editor, e essa é uma capacidade real — então o banco
+tem que ter caminho de saída. `ferramentas/banco.mjs` é ele:
+
+```bash
+npm run banco -- resumo         # quantas linhas em cada tabela
+npm run banco -- importacoes    # o que entrou de cada JSON, e o que ficou fora
+npm run banco -- exportar       # dump em <estado>/exportado/
+npm run banco -- exportar /tmp/x
+```
+
+De outro diretório, ou de dentro de um prompt de agente, o mesmo sem o npm:
+
+```bash
+node --disable-warning=ExperimentalWarning qualidade/ferramentas/banco.mjs resumo
+```
+
+Cada subcomando aceita `--json`. O `importacoes` é o que responde "por que minha edição no
+`comparacoes.json` não fez efeito": ele mostra a data em que aquele arquivo foi lido, quantas linhas
+entraram e o que ficou de fora (pontos além do teto, por exemplo).
+
+O `exportar` grava **na mesma forma que a importação lê**: apontar `QUALIDADE_ESTADO` para a pasta
+exportada e abrir o banco lá reconstrói o conteúdo — o próprio comando imprime a linha que confere
+isso. É por aí que voltam o `grep` e o editor:
+
+```bash
+npm run banco -- exportar /tmp/dump
+grep -n UND-1638 /tmp/dump/comparacoes.json
+```
+
+Por domínio, quem já mostrava continua mostrando:
+
+```bash
+node --disable-warning=ExperimentalWarning ferramentas/comparacao.mjs listar            # todas as decisões
+node --disable-warning=ExperimentalWarning ferramentas/comparacao.mjs listar UND-1638   # de um chamado
+node --disable-warning=ExperimentalWarning ferramentas/pontos.mjs listar [--json]
+```
+
+> **Por que o `--disable-warning=ExperimentalWarning`:** `node:sqlite` é módulo experimental e o Node
+> imprime `ExperimentalWarning: SQLite is an experimental feature` no stderr uma vez por processo que
+> abre o banco. Sem a flag, cada chamada dessas polui a saída da rotina — que é lida por um agente.
+> O `npm start`, o `npm test` e o `npm run banco` já levam a flag. **Não trocar por
+> `--no-warnings`**, que calaria também aviso de verdade. Sem argumento nenhum, `comparacao.mjs` e `banco.mjs` só imprimem o `uso:`
+> e não chegam a abrir o banco — aí não há aviso, com flag ou sem. O `pontos.mjs` sem argumento já
+> lista, então abre o banco e avisa.
+
 ## Pontos de atenção da IA
 
-Ficam em `pontos-atencao.json` — arquivo, não banco. São no máximo 10 registros: assim ficam
-legíveis, editáveis à mão, greppáveis e versionáveis.
+Ficam na tabela `pontos` do `qualidade.db`, no máximo 10 registros — o teto é regra de produto, e
+está tanto na função quanto num **trigger** do banco, para que um `INSERT` cru não passe por fora.
 
 Cada ponto tem `chamado` e `projeto` — nulo significa "vale para o workspace". A aba mostra só os que
 casam com o que está na tela.
 
 ```bash
-node ferramentas/pontos.mjs listar
-node ferramentas/pontos.mjs add <id> <atencao|aviso|nota> <titulo> <detalhe> [chamado] [projeto]
-node ferramentas/pontos.mjs remover <id>
+node --disable-warning=ExperimentalWarning ferramentas/pontos.mjs listar
+node --disable-warning=ExperimentalWarning ferramentas/pontos.mjs remover <id>
+node --disable-warning=ExperimentalWarning ferramentas/pontos.mjs \
+  add <id> <atencao|aviso|nota> <titulo> <detalhe> [chamado] [projeto]
 ```
 
-O teto de 10 descarta o mais antigo quando entra o 11º. É o freio: ponto novo só entra empurrando um
-velho, então a lista não vira despejo. O `×` no cartão tira um ponto direto da tela, e a remoção fica
-registrada no `gate.log`.
+Com o teto cheio, o 11º entra empurrando um velho — e o descarte olha a **severidade antes da
+idade**: sai primeiro a `nota` mais antiga, depois o `aviso` mais antigo, e `atencao` **nunca** sai.
+Com dez `atencao` na lista, o `add` falha e diz quais são, para você tirar um à mão. É o freio: ponto
+novo custa um velho, então a lista não vira despejo. O `×` no cartão tira um ponto direto da tela, e
+a remoção fica registrada no `gate.log`.
 
-Comece de `pontos-atencao.example.json`.
+Num banco novo, `pontos-atencao.example.json` copiado para `pontos-atencao.json` serve de semente: é
+importado no primeiro boot. Depois disso, o arquivo não é mais lido — use os comandos.
 
 ## Realce de sintaxe
 
@@ -474,9 +577,14 @@ Duas armadilhas que apareceram construindo isso:
 | `ferramentas/diff-visao.mjs <projeto> [base] [dir]` | HTML estático, para quando não quiser subir a tela |
 | `ferramentas/indices.mjs <colecao> '<filtro>'` | Índices, plano de execução e tipo real dos campos no banco de stage |
 | `ferramentas/pontos.mjs` | Pontos de atenção |
+| `ferramentas/banco.mjs <resumo\|importacoes\|exportar> [--json]` (ou `npm run banco --`) | O `qualidade.db` por fora da tela: o que cada tabela tem, o que a importação leu, e o dump para JSON |
 
 Repo parado em outro checkout precisa do `--ref=<branch>` — sem ele a checagem olha o trabalho
 errado.
+
+`comparacao.mjs`, `pontos.mjs` e `banco.mjs` abrem o banco, e por isso vão com
+`node --disable-warning=ExperimentalWarning …`. São só esses três: medido, os outros scripts da
+tabela não tocam o SQLite e não imprimem aviso nenhum.
 
 Sob o capô, tudo é **uma chamada em vez de N**: `--numstat` para todos os arquivos de uma vez
 (206 → 65 ms), um `git diff -U0` único (220 → 84 ms), um `git grep` com todos os nomes (79 → 28 ms),
@@ -578,7 +686,17 @@ Banner que só diz "terminou" é o silêncio-lido-como-aprovação em outra form
 ## Testes
 
 ```bash
-npm test        # 25 casos: rotas, forma das respostas, cache, mesclagem, CLIs e a doutrina
+npm test        # rotas, forma das respostas, cache, mesclagem, o banco, as CLIs e a doutrina
+```
+
+**O `npm test` roda contra um diretório temporário**, por causa do `QUALIDADE_ESTADO=$(mktemp -d)`
+que está no script — sem ele a suíte escreveria no `qualidade.db` de verdade e apagaria a escolha de
+repos, o que já aconteceu. **Toda sonda avulsa (`node -e`, um script solto, um teste manual) tem que
+levar a mesma variável na frente.** Ela é lida a cada abertura do banco, então basta prefixar:
+
+```bash
+QUALIDADE_ESTADO=$(mktemp -d) \
+  node --disable-warning=ExperimentalWarning ferramentas/comparacao.mjs listar
 ```
 
 Existe porque, num único dia de desenvolvimento, **cinco quebras passaram em silêncio**: uma função

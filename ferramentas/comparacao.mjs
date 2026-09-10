@@ -4,6 +4,9 @@
 // Existe porque automatizar falhou: num chamado real, 7 PRs em 7 branches no mesmo repo, seis
 // mescladas e a aberta sendo outra. Nenhuma regra local distingue "a PR que importa" das outras.
 //
+// Roda em processo separado do servidor, e é essa a razão de a decisão viver no banco: aqui a
+// escrita é o upsert de UMA linha, então o que o servidor gravou no meio da corrida não é perdido.
+//
 // uso:
 //   node ferramentas/comparacao.mjs listar [CHAMADO]
 //   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --pr=856 [--resolvido|--aberto]
@@ -13,10 +16,10 @@
 
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { Comparacao } from '../lib/comparacao.mjs';
+import comparacao from '../lib/comparacao.mjs';
+import { fechar } from '../lib/db.mjs';
 import { WORKSPACE } from '../lib/diff.mjs';
 
-const c = new Comparacao();
 const args = process.argv.slice(2);
 const flag = nome => {
     const achado = args.find(a => a.startsWith(`--${nome}=`));
@@ -43,13 +46,13 @@ function morrer(msg) {
 }
 
 if (acao === 'listar') {
-    const lista = c.listar(chamado || null);
+    const lista = comparacao.listar(chamado || null);
     if (json) {
         console.log(JSON.stringify({ decisoes: lista }, null, 2));
     } else if (!lista.length) {
         console.log('nenhuma comparação definida — a tela vai usar o local e dizer isso');
     } else {
-        const orfas = new Set(c.orfas().map(d => `${d.chamado}|${d.projeto}`));
+        const orfas = new Set(comparacao.orfas().map(d => `${d.chamado}|${d.projeto}`));
         for (const d of lista) {
             const como = d.via === 'pr' ? `PR #${d.pr} → ${d.destino}` : `${d.branch} × ${d.base}`;
             const marca = orfas.has(`${d.chamado}|${d.projeto}`) ? ' [órfã: sem branch em lugar nenhum]' : '';
@@ -88,13 +91,13 @@ if (acao === 'listar') {
     if (nota) {
         decisao.nota = nota;
     }
-    const gravada = c.definir(chamado, projeto, decisao);
+    const gravada = comparacao.definir(chamado, projeto, decisao);
     console.log(json ? JSON.stringify(gravada, null, 2)
         : `gravado: ${chamado} ${projeto} → ${gravada.via === 'pr' ? `PR #${gravada.pr}` : `${gravada.branch} × ${gravada.base}`} · ${gravada.situacao}`);
 } else if (acao === 'remover' && args.includes('--orfas')) {
-    const orfas = c.orfas();
+    const orfas = comparacao.orfas();
     for (const d of orfas) {
-        c.remover(d.chamado, d.projeto);
+        comparacao.remover(d.chamado, d.projeto);
     }
     console.log(json ? JSON.stringify({ removidas: orfas }) : (orfas.length
         ? `${orfas.length} órfã(s) removida(s): ${orfas.map(d => `${d.chamado}/${d.projeto}`).join(', ')}`
@@ -103,7 +106,7 @@ if (acao === 'listar') {
     if (!chamado || !projeto) {
         morrer('uso: remover <CHAMADO> <projeto> | remover --orfas');
     }
-    console.log(c.remover(chamado, projeto) ? 'removido' : 'não havia decisão para esse par');
+    console.log(comparacao.remover(chamado, projeto) ? 'removido' : 'não havia decisão para esse par');
 } else {
     console.log(`uso:
   node ferramentas/comparacao.mjs listar [CHAMADO]
@@ -114,3 +117,7 @@ if (acao === 'listar') {
   node ferramentas/comparacao.mjs remover <CHAMADO> <projeto>
   node ferramentas/comparacao.mjs remover --orfas        # decisões sem branch em lugar nenhum`);
 }
+
+// Enquanto há conexão aberta o WAL deixa `qualidade.db-wal` e `-shm` ao lado do banco; fechar aqui
+// faz o checkpoint e apaga os dois, e o próximo processo abre um diretório limpo.
+fechar();
