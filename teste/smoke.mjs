@@ -10,10 +10,13 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { Diff } from '../lib/diff.mjs';
 import { Comparacao } from '../lib/comparacao.mjs';
+import { Implantacao } from '../lib/implantacao.mjs';
+import { ler, gravar, mesclar } from '../lib/estado.mjs';
+import { mdParaHtml } from '../web/markdown.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -544,7 +547,7 @@ test('registrar de fato escreve no gate.log', async () => {
 // Token protege o ACESSO; isto protege a CAPACIDADE. A corrida spawna `claude -p` com Bash na
 // máquina do servidor, então pela LAN ela não deve nem estar disponível — token vazado, máquina
 // emprestada ou aba esquecida não podem virar execução de comando.
-test('pela rede, a corrida do agente é negada mesmo com o token certo', async () => {
+test('pela rede, corrida e busca de refs são negadas mesmo com o token certo', async () => {
     const porta = PORTA + 4;
     const token = 'token-de-teste-lan';
     const ip = Object.values(networkInterfaces()).flat()
@@ -568,6 +571,10 @@ test('pela rede, a corrida do agente é negada mesmo com o token certo', async (
         const pelaLan = await (await fetch(`http://${ip}:${porta}/api/agente?chamado=UND-1&t=${token}`)).json();
         assert.equal(pelaLan.ok, false, 'a corrida NÃO pode ser aceita pela rede');
         assert.match(pelaLan.erro, /só roda na máquina/);
+        // `git fetch` mexe em ref dentro do `.git`: é escrita, e vale a mesma regra da corrida.
+        const atualizar = await (await fetch(`http://${ip}:${porta}/api/implantacao-atualizar?t=${token}`)).json();
+        assert.equal(atualizar.ok, false, 'buscar refs NÃO pode ser aceito pela rede');
+        assert.match(atualizar.erro, /máquina do servidor/);
         const html = await (await fetch(`http://${ip}:${porta}/?t=${token}`)).text();
         assert.match(html, /window\.LOCAL = false/, 'a página tem que dizer ao cliente que ele não é local');
     } finally {
@@ -686,3 +693,379 @@ test('cache expirado serve o velho e revalida atrás', async () => {
     assert.ok(levou < 1500, `serviu em ${levou} ms: expirado não pode esperar a varredura`);
     assert.equal(expirada.desde, segunda.desde, 'o dado servido tem que ser o mesmo de antes');
 });
+
+// O mesmo diretório que os módulos usam: com `QUALIDADE_ESTADO` apontando para um temporário, o
+// teste que escreve no catálogo tem de escrever LÁ, senão ele mexe no arquivo de produção de novo.
+const DIR_ESTADO = process.env.QUALIDADE_ESTADO || RAIZ;
+const ESTADO_IMPLANTACAO = join(DIR_ESTADO, 'implantacao.json');
+
+// A escolha de repos é estado de PRODUÇÃO, num arquivo só, no diretório do projeto. Quem mexe nele
+// guarda o texto e devolve o texto — inclusive a ausência do arquivo, que também é um estado.
+function leituraDoEstadoDaImplantacao() {
+    return existsSync(ESTADO_IMPLANTACAO) ? readFileSync(ESTADO_IMPLANTACAO, 'utf8') : null;
+}
+
+function restaurarEstadoDaImplantacao(bruto) {
+    if (bruto === null) {
+        rmSync(ESTADO_IMPLANTACAO, { force: true });
+        return;
+    }
+    writeFileSync(ESTADO_IMPLANTACAO, bruto);
+}
+
+// ── implantação: clicar num commit mostra o diff DELE ─────────────────────────
+// O diff de um commit é contra o pai, e o pai vem do `git log`, não de `hash~1`: commit raiz não
+// tem com quem comparar e merge tem dois. Sem o campo, a tela pediria `~1` e acertaria por sorte.
+test('cada commit da implantação traz os pais', async () => {
+    const impl = new Implantacao();
+    const fila = await impl.resumo();
+    if (!fila.length) {
+        return; // workspace sem nada à frente de main: não há o que conferir
+    }
+    const d = await impl.detalhe(fila[0].projeto);
+    assert.ok(d.listaDeCommits.length, 'detalhe sem commits');
+    for (const c of d.listaDeCommits) {
+        assert.ok(Array.isArray(c.pais), `${c.hash} sem a lista de pais`);
+        assert.ok(c.titulo, `${c.hash} sem título — o split por \\x01 saiu de ordem`);
+    }
+    const merges = d.listaDeCommits.filter(c => c.pais.length > 1);
+    const simples = d.listaDeCommits.filter(c => c.pais.length === 1);
+    assert.ok(simples.length, 'nenhum commit com um pai só: o formato do log mudou');
+    for (const m of merges) {
+        assert.equal(m.pais.length, 2, `merge ${m.hash} com ${m.pais.length} pais`);
+    }
+});
+
+// ── o markdown da análise ─────────────────────────────────────────────────────
+// Testado de perto porque erra em SILÊNCIO: marcação que não casa vira parágrafo, e parágrafo é
+// exatamente o que a pessoa esperava ver. Foi assim que a citação passou — `esc` já tinha trocado
+// `>` por `&gt;` antes de a regra procurar `>`, e nenhum blockquote saía da tela.
+test('o markdown da análise vira HTML', () => {
+    const html = mdParaHtml([
+        '## Ordem',
+        '',
+        '1. `migrate-mongo` primeiro',
+        '2. depois **o core**',
+        '',
+        '> se inverter, o hash diverge',
+        '',
+        '- risco em UND-1991',
+        '',
+        '| o quê | por quê |',
+        '|---|---|',
+        '| `pendenciaManual` | perde o espelho |'
+    ].join('\n'), id => `https://linear.app/x/issue/${id}`);
+
+    assert.match(html, /<h4>Ordem<\/h4>/, 'título não virou h4');
+    assert.match(html, /<ol>\s*<li><code>migrate-mongo<\/code> primeiro<\/li>/, 'lista numerada não saiu');
+    assert.match(html, /<b>o core<\/b>/, 'negrito não saiu');
+    assert.match(html, /<blockquote>se inverter, o hash diverge<\/blockquote>/,
+        'citação não saiu — `esc` roda antes, então a regra tem que procurar &gt;');
+    assert.match(html, /<a href="https:\/\/linear\.app\/x\/issue\/UND-1991"[^>]*>UND-1991<\/a>/,
+        'o ID do chamado não virou link');
+    assert.match(html, /<th>o quê<\/th>/, 'a tabela não ganhou cabeçalho');
+    assert.match(html, /<td><code>pendenciaManual<\/code><\/td>/, 'a célula não saiu');
+    assert.doesNotMatch(html, /\|---\|/, 'o separador da tabela vazou para o HTML');
+});
+
+test('o markdown da análise não deixa o texto virar tag', () => {
+    const html = mdParaHtml('<script>alert(1)</script> e <b onclick="x">isto</b> & cia');
+    // As únicas tags do resultado são as que o renderizador põe. `onclick` continua no HTML, mas
+    // como TEXTO escapado — o que não pode é sobrar um `<` que o navegador leia como abertura.
+    const tags = [...html.matchAll(/<\/?([a-z]+)/g)].map(m => m[1]);
+    assert.deepEqual([...new Set(tags)].sort(), ['p'], `saiu tag que não é minha: ${tags}`);
+    assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/, 'o texto tem que aparecer escapado, não sumir');
+    assert.match(html, /&amp; cia/, 'o & solto tem que virar entidade');
+});
+
+// Crase é literal: `**` dentro de um comando não é negrito, e ID dentro de caminho não é link.
+test('o markdown da análise respeita o que está entre crases', () => {
+    const html = mdParaHtml('rode `git log --format=**%s**` no repo do UND-1638 e veja `docs/UND-1638.md`',
+        id => `https://linear.app/x/issue/${id}`);
+    assert.match(html, /<code>git log --format=\*\*%s\*\*<\/code>/, '`**` dentro de código virou negrito');
+    assert.match(html, /<code>docs\/UND-1638\.md<\/code>/, 'o ID dentro de código virou link');
+    assert.equal((html.match(/<a /g) || []).length, 1, 'só o ID fora de código podia virar link');
+});
+
+test('cerca de código aberta e não fechada não vaza', () => {
+    const html = mdParaHtml('antes\n```\nnpm test\n');
+    assert.equal((html.match(/<pre/g) || []).length, 1);
+    assert.equal((html.match(/<\/code><\/pre>/g) || []).length, 1, 'o <pre> ficou aberto');
+});
+
+// Uma restauração de `estilo.css` levou junto o CSS não commitado da trilha e da sanfona: a tela
+// abriu inteira, sem erro nenhum, com os números do release virando texto solto e a barra virando
+// lista crua. Nenhum dos 40 testes viu — todos olhavam comportamento, e folha de estilo não tem
+// comportamento. Este olha a única coisa que dá para afirmar sem abrir navegador: toda classe que o
+// JS ESCREVE no HTML tem regra em algum lugar da folha.
+test('toda classe que a tela escreve tem regra no CSS', () => {
+    const css = readFileSync(join(RAIZ, 'web/estilo.css'), 'utf8');
+    const usadas = new Set();
+    for (const arquivo of ['web/app.js', 'web/pagina.mjs', 'web/markdown.js']) {
+        const fonte = readFileSync(join(RAIZ, arquivo), 'utf8');
+        // Só atributo literal: classe montada com ${} depende de dado e não dá para conferir aqui.
+        for (const m of fonte.matchAll(/class="([^"$]*)"/g)) {
+            for (const c of m[1].split(/\s+/).filter(Boolean)) {
+                usadas.add(c);
+            }
+        }
+    }
+    assert.ok(usadas.size > 100, `só ${usadas.size} classes encontradas — a varredura quebrou`);
+    const semRegra = [...usadas]
+        .filter(c => !new RegExp(`[.\\s,>:]${c.replace(/[-]/g, '\\-')}(?![\\w-])`).test(css));
+    assert.deepEqual(semRegra, [], `classes sem CSS: ${semRegra.join(', ')}`);
+});
+
+// ── o botão de recarregar os refs ─────────────────────────────────────────────
+// A fila é lida de `origin/main` e `origin/stage`, que são cópias LOCAIS. Medido em 10/09/2026: a
+// tela mostrava 36 commits a implantar no contas-service para uma release que já estava na main —
+// `stage` em dia, `main` atrasada nos 5 repos. Dado velho com cara de novo, e nada na tela dizia.
+test('a fila diz quando os refs foram buscados', async () => {
+    const r = (await pegar('/api/implantacao')).corpo;
+    assert.ok('buscadoEm' in r,
+        'sem este campo a tela não distingue "nada mudou" de "ninguém buscou" — os dois desenham a mesma fila');
+});
+
+// Sumir em silêncio é indistinguível de "a ferramenta perdeu minha seleção". Depois do primeiro
+// fetch os 5 escolhidos zeraram de uma vez, e a tela mostrou "0 de 9 repos — escolha os repos"
+// com o crachá ainda dizendo 5/9.
+test('repo escolhido que zerou fica na fila, marcado', async () => {
+    const impl = new Implantacao();
+    // O arquivo INTEIRO, em texto: devolver só `escolhidos` deixava o `buscadoEm` do teste em pé, e
+    // a tela do usuário passou a anunciar refs de 01/02/2026. Estado de produção se restaura por
+    // igual, não por campo.
+    const guardado = impl.escolhidos();
+    const bruto = leituraDoEstadoDaImplantacao();
+    try {
+        // Um repo que com certeza não está à frente: ele mesmo é o destino da comparação.
+        const parado = impl.repos().find(p => !guardado.includes(p));
+        assert.ok(parado, 'workspace sem repo de sobra para o teste');
+        impl.escolher([parado]);
+        const fila = await impl.resumo('origin/main', 'origin/main');
+        const linha = fila.find(f => f.projeto === parado);
+        assert.ok(linha, 'o escolhido saiu da fila ao zerar — é o bug');
+        assert.equal(linha.commits, 0);
+        assert.equal(linha.implantado, true, 'a linha precisa se declarar implantada');
+        for (const f of fila) {
+            assert.ok(f.commits > 0 || guardado.includes(f.projeto) || f.projeto === parado,
+                `${f.projeto} tem 0 commits e não é escolhido: não devia estar na fila`);
+        }
+    } finally {
+        restaurarEstadoDaImplantacao(bruto);
+    }
+});
+
+// `git` que falha e `git log` vazio são coisas diferentes: devolver null nos dois fazia o servidor
+// responder "sem origin/main ou origin/stage" — erro de configuração — para quem só tinha mesclado.
+test('detalhe de repo já implantado não é erro', async () => {
+    const impl = new Implantacao();
+    const projeto = impl.repos()[0];
+    const d = await impl.detalhe(projeto, 'origin/main', 'origin/main');
+    assert.ok(d, 'zero commits virou erro em vez de resposta');
+    assert.equal(d.commits, 0);
+    assert.deepEqual(d.listaDeCommits, []);
+    assert.equal(d.arquivos, 0);
+    assert.equal(d.primeiroCommit, null);
+});
+
+// Gravar o objeto inteiro apagava o campo do outro: `escolher` e `buscarRemoto` escrevem chaves
+// diferentes do mesmo JSON, e a escolha sumia a cada busca.
+test('escolha e data da busca convivem no mesmo arquivo', () => {
+    const impl = new Implantacao();
+    const bruto = leituraDoEstadoDaImplantacao();
+    try {
+        impl._gravar({ buscadoEm: '2026-01-01T00:00:00.000Z' });
+        impl.escolher(['um', 'dois']);
+        assert.equal(impl.buscadoEm(), '2026-01-01T00:00:00.000Z', 'escolher apagou a data da busca');
+        assert.deepEqual(impl.escolhidos(), ['um', 'dois']);
+        impl._gravar({ buscadoEm: '2026-02-02T00:00:00.000Z' });
+        assert.deepEqual(impl.escolhidos(), ['um', 'dois'], 'gravar a data apagou a escolha');
+    } finally {
+        restaurarEstadoDaImplantacao(bruto);
+    }
+});
+
+// ── estado em JSON, escrito sem deixar rastro pela metade ─────────────────────
+// Seis escritores, cada um com o seu `writeFileSync` por cima do arquivo vivo, e todo leitor com
+// `catch { return {} }`: arquivo truncado por crash lia como VAZIO, e o estado da pessoa sumia sem
+// erro. E `escolher` apagou o `buscadoEm` que `buscarRemoto` tinha acabado de gravar.
+test('estado quebrado não lê como vazio — ele grita e guarda o original', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'estado-'));
+    const arquivo = join(pasta, 'coisa.json');
+    try {
+        assert.deepEqual(ler(arquivo, { a: 1 }), { a: 1 }, 'ausente devolve o padrão');
+        writeFileSync(arquivo, '{"projetos": ["um"');   // truncado, como um crash deixaria
+        assert.throws(() => ler(arquivo), /não é JSON válido/,
+            'JSON quebrado tem que subir como erro; devolver {} apaga o estado por cima do defeito');
+        assert.ok(existsSync(`${arquivo}.ruim`), 'o conteúdo ruim tem que ser preservado');
+        assert.match(readFileSync(`${arquivo}.ruim`, 'utf8'), /^\{"projetos"/);
+    } finally {
+        rmSync(pasta, { recursive: true, force: true });
+    }
+});
+
+test('mesclar não apaga o campo que o outro escritor gravou', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'estado-'));
+    const arquivo = join(pasta, 'coisa.json');
+    try {
+        mesclar(arquivo, { projetos: ['a', 'b'] });
+        mesclar(arquivo, { buscadoEm: '2026-09-10T00:00:00.000Z' });
+        const d = ler(arquivo);
+        assert.deepEqual(d.projetos, ['a', 'b'], 'gravar a data apagou a escolha');
+        assert.equal(d.buscadoEm, '2026-09-10T00:00:00.000Z');
+    } finally {
+        rmSync(pasta, { recursive: true, force: true });
+    }
+});
+
+test('gravar não deixa temporário para trás', () => {
+    const pasta = mkdtempSync(join(tmpdir(), 'estado-'));
+    try {
+        gravar(join(pasta, 'coisa.json'), { a: 1 });
+        const sobrando = readdirSync(pasta).filter(n => n.includes('.tmp'));
+        assert.deepEqual(sobrando, [], `temporário não removido: ${sobrando}`);
+    } finally {
+        rmSync(pasta, { recursive: true, force: true });
+    }
+});
+
+// ── catálogo de repositórios ──────────────────────────────────────────────────
+// `origin/main...origin/stage` era nome chumbado no código: quem não tivesse os dois refs sumia da
+// fila em silêncio. Medido: 20 das 51 pastas caíam fora, e 5 delas tinham fluxo de deploy real.
+test('a detecção acha par de branches fora do stage→main', async () => {
+    const impl = new Implantacao();
+    const um = await impl.catalogo.detectarUm('drmarvin-core-js');
+    if (!um.origem && /git não respondeu/.test(um.motivo || '')) {
+        return; // repo ausente nesta máquina
+    }
+    assert.equal(um.destino, 'origin/main');
+    assert.equal(um.origem, 'origin/desenv', 'o par deste repo não é stage→main, e a detecção tem que ver isso');
+});
+
+// `origin/HEAD` é o padrão declarado pelo remoto, mas em 4 repos daqui ele aponta para `stage`.
+// Aceitar isso fazia a branch de integração virar DESTINO, e aí não sobrava origem: o repo sumia.
+test('branch de integração não vira destino, mesmo sendo a padrão do remoto', async () => {
+    const impl = new Implantacao();
+    const um = await impl.catalogo.detectarUm('jungle-monorepo');
+    if (!um.origem && /git não respondeu/.test(um.motivo || '')) {
+        return;
+    }
+    assert.equal(um.origem, 'origin/stage');
+    assert.equal(um.destino, 'origin/main', 'origin/HEAD aponta para stage neste repo — não pode ser o destino');
+});
+
+test('edição manual sobrevive à detecção; linha detectada é recalculada', async () => {
+    const impl = new Implantacao();
+    const bruto = existsSync(join(DIR_ESTADO, 'repos.json'))
+        ? readFileSync(join(DIR_ESTADO, 'repos.json'), 'utf8') : null;
+    try {
+        if (!impl.catalogo.listar().length) {
+            await impl.catalogo.detectar();
+        }
+        const antes = impl.catalogo.listar();
+        const alvo = antes.find(r => r.ativo)?.projeto;
+        assert.ok(alvo, 'catálogo sem repo ativo para o teste');
+        impl.catalogo.salvar(antes.map(r => (r.projeto === alvo
+            ? { ...r, origem: 'origin/inventada', destino: 'origin/tambem-inventada' } : r)));
+        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).fonte, 'manual',
+            'mexer na linha tem que marcá-la como manual');
+        await impl.catalogo.detectar();
+        const depois = impl.catalogo.listar().find(r => r.projeto === alvo);
+        assert.equal(depois.origem, 'origin/inventada', 'a detecção passou por cima da edição manual');
+        assert.equal(depois.fonte, 'manual');
+    } finally {
+        if (bruto === null) {
+            rmSync(join(DIR_ESTADO, 'repos.json'), { force: true });
+        } else {
+            writeFileSync(join(DIR_ESTADO, 'repos.json'), bruto);
+        }
+    }
+});
+
+// Desligar é decisão de gente e tem que colar; mas o `ativo:false` de uma detecção que FALHOU não
+// pode virar decisão — foi o que manteve 4 repos fora depois de eu corrigir a detecção deles.
+test('desligar um repo vira manual e sobrevive; falha de detecção não', async () => {
+    const impl = new Implantacao();
+    const bruto = existsSync(join(DIR_ESTADO, 'repos.json'))
+        ? readFileSync(join(DIR_ESTADO, 'repos.json'), 'utf8') : null;
+    try {
+        if (!impl.catalogo.listar().length) {
+            await impl.catalogo.detectar();
+        }
+        const antes = impl.catalogo.listar();
+        const alvo = antes.find(r => r.ativo)?.projeto;
+        assert.ok(alvo, 'catálogo sem repo ativo para o teste');
+        impl.catalogo.salvar(antes.map(r => (r.projeto === alvo ? { ...r, ativo: false } : r)));
+        const desligado = impl.catalogo.listar().find(r => r.projeto === alvo);
+        assert.equal(desligado.fonte, 'manual', 'desmarcar tem que contar como edição');
+        assert.equal(desligado.ativo, false);
+        await impl.catalogo.detectar();
+        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, false,
+            'a detecção religou um repo que a pessoa desligou');
+
+        // Agora o contrário: linha DETECTADA que ficou sem par numa rodada anterior tem que voltar
+        // a ligar quando o par aparece. O estado é gravado direto no catálogo porque é só assim que
+        // ele nasce — `salvar` marca toda mudança como manual, por desenho.
+        gravar(join(DIR_ESTADO, 'repos.json'), {
+            repos: antes.map(r => (r.projeto === alvo
+                ? { projeto: alvo, origem: null, destino: null, fonte: 'detectado', ativo: false } : r))
+        });
+        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, false, 'montagem do caso');
+        await impl.catalogo.detectar();
+        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo).ativo, true,
+            'linha detectada é derivada: com par encontrado, ela liga de novo');
+    } finally {
+        if (bruto === null) {
+            rmSync(join(DIR_ESTADO, 'repos.json'), { force: true });
+        } else {
+            writeFileSync(join(DIR_ESTADO, 'repos.json'), bruto);
+        }
+    }
+});
+
+test('a fila compara cada repo pelo par dele', async () => {
+    const impl = new Implantacao();
+    if (!impl.catalogo.listar().length) {
+        await impl.catalogo.detectar();
+    }
+    const fila = await impl.resumo();
+    const pares = new Map(impl.catalogo.listar().map(r => [r.projeto, r]));
+    for (const f of fila) {
+        const esperado = pares.get(f.projeto);
+        assert.ok(esperado, `${f.projeto} está na fila e não está no catálogo`);
+        assert.equal(f.origem, esperado.origem, `${f.projeto} comparado por origem errada`);
+        assert.equal(f.destino, esperado.destino, `${f.projeto} comparado por destino errado`);
+    }
+});
+
+// Marcar/desmarcar mandava o CONJUNTO inteiro de escolhidos. Um clique repetido pelo navegador
+// contra a lista que se redesenha apagou a escolha três vezes durante este desenvolvimento: cada
+// repetição acertava a primeira linha restante e ia comendo os repos um a um. Nomear o repo torna a
+// repetição inócua — e é a diferença entre um evento duplicado ser ruído e ser perda de dado.
+test('marcar/desmarcar um repo é idempotente', async () => {
+    const bruto = leituraDoEstadoDaImplantacao();
+    try {
+        const partida = (await pegar('/api/implantacao-escolher', { projetos: 'alfa,beta,gama' })).corpo;
+        assert.deepEqual(partida.escolhidos, ['alfa', 'beta', 'gama']);
+
+        let ultimo;
+        for (let i = 0; i < 5; i++) {
+            ultimo = (await pegar('/api/implantacao-escolher', { sai: 'alfa' })).corpo;
+        }
+        assert.deepEqual(ultimo.escolhidos, ['beta', 'gama'],
+            'repetir o pedido tirou mais que o repo nomeado');
+
+        for (let i = 0; i < 3; i++) {
+            ultimo = (await pegar('/api/implantacao-escolher', { entra: 'alfa' })).corpo;
+        }
+        assert.deepEqual([...ultimo.escolhidos].sort(), ['alfa', 'beta', 'gama'],
+            'repetir a entrada duplicou ou perdeu repo');
+
+        // e o conjunto inteiro continua funcionando, para quem de fato quer substituir a lista
+        const troca = (await pegar('/api/implantacao-escolher', { projetos: 'delta' })).corpo;
+        assert.deepEqual(troca.escolhidos, ['delta']);
+    } finally {
+        restaurarEstadoDaImplantacao(bruto);
+    }
+});
+

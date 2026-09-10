@@ -23,3 +23,6 @@ token.local
 
 # repos escolhidos para a implantação: estado local
 implantacao.json
+
+# catálogo de repos e pares de branches: nomes de repo do workspace de quem roda
+repos.json

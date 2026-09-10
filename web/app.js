@@ -1,4 +1,5 @@
 import { realcar, novoEstado, linguagemDe } from './realce.js';
+import { mdParaHtml } from './markdown.js';
 
 // Cliente da tela. Arquivo próprio de propósito: quando isto vivia dentro de um template literal,
 // qualquer backtick ou ${} em comentário quebrava a página inteira — aconteceu duas vezes.
@@ -94,6 +95,15 @@ let geracao = 0;
 // se resolvia saindo e voltando, porque a segunda ida re-renderizava com a resposta certa.
 let geracaoChamado = 0;
 let visao = 'chamados';
+// De onde a pessoa veio, para o "voltar" das Configurações devolvê-la ao mesmo lugar.
+let visaoAnterior = 'chamados';
+const SECOES_SANFONA = [['sanfona-chamados', 'chamados'], ['sanfona-implantacao', 'implantacao']];
+// `trocarVisao` e o `toggle` da sanfona se chamam um ao outro. A trava faz a ida e a volta
+// terminarem na primeira passada, em vez de depender de a recursão convergir sozinha.
+// Declarados AQUI, com o resto do estado do módulo: `const` tem zona morta, e lá embaixo eles
+// estouravam no `ligarSanfona()` do início — "Cannot access 'SECOES_SANFONA' before initialization",
+// que derrubava a montagem da lista de chamados inteira.
+let sincronizandoSanfona = false;
 let chamados = [];
 let estadoAgente = { rodando: null, passos: 0 };
 let prsDoChamado = [];
@@ -588,7 +598,7 @@ function escreverVeredito(itens) {
   alvo.innerHTML = partes.join(' · ') + detalhe;
 }
 
-function marcarCarimbo(d) {
+function marcarCarimbo(d, fonteForcada) {
   const c = document.getElementById('carimbo');
   if (!c) { return; }
   const quando = d.desde ? new Date(d.desde).toLocaleTimeString('pt-BR') : '';
@@ -596,12 +606,13 @@ function marcarCarimbo(d) {
   // arquivo em 8 repos onde as PRs mostravam de 1 a 65. Aqui ele é anunciado.
   // Base informada é a comparação de release: não há decisão nem mesclagem a declarar aqui, e
   // dizer "null (branch) · aberto" era ruído sobre um diff que não é de chamado nenhum.
-  const fonte = d.via === 'informada'
+  const fonte = fonteForcada
+    || (d.via === 'informada'
     ? `${esc(atual?.ref || '')} contra a base de ${esc(atual?.projeto || '')}`
     : d.via !== 'local'
       ? `${d.baseNome}${d.decisao?.pr ? '' : ' (branch)'}`
       : `base ${d.baseNome || (d.base || '').slice(0, 8)} · ⚠ ${d.erroDaDecisao
-        ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`;
+        ? `decisão ignorada: ${d.erroDaDecisao}` : 'comparação não definida'}`);
   // `??` não entra em diff nenhum: sem esta frase, "12 ✎" no chip ao lado de um diff de 5 parecia
   // bug do diff — era o diff sendo fiel ao git. O passo 1.0 da rotina de fim é quem resolve.
   const novos = (d.naoRastreados || []).length;
@@ -835,11 +846,11 @@ function escutarEventos() {
       if (dados.fase === 'fim' && dados.chamado === 'implantação') {
         estadoAgente = { rodando: null, passos: 0 };
         redesenharAgenteNoTopo(dados);
-        const alvo = document.getElementById('analise-implantacao');
-        if (alvo && dados.texto) {
-          alvo.innerHTML = `<div class="impl-analise"><h3 class="secao">Análise do agente</h3>
-            <pre>${esc(dados.texto)}</pre></div>`;
-        }
+        // Quem mandou analisar ficou esperando: a modal abre sozinha no fim. O botão da trilha
+        // fica para reabrir depois — e é ele que sobrevive ao reload.
+        marcarAnaliseDisponivel().then(() => {
+          if (document.getElementById('btn-analise')) { abrirModalAnalise(); }
+        });
         return;
       }
       if (dados.fase === 'fim') {
@@ -1249,6 +1260,7 @@ function ligarArrasto() {
 
 aplicarSplit(lerSplit());
 ligarArrasto();
+ligarSanfona();
 carregarChamados();
 escutarEventos();
 // A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
@@ -1264,6 +1276,13 @@ const urlDoLinear = id => (window.LINEAR ? `https://linear.app/${window.LINEAR}/
 
 let filaImplantacao = [];
 let escolhidosImplantacao = new Set();
+// O release aberto no centro, e qual commit dele está sendo olhado sozinho (`null` = o release
+// inteiro). `geracaoDiffImpl` descarta resposta de clique velho: clicar em três commits seguidos
+// dispara três buscas e a que chega por último é que pinta, não a que foi pedida por último.
+let buscadoEmImplantacao = null;
+let implAtual = null;
+let commitAberto = null;
+let geracaoDiffImpl = 0;
 
 async function carregarImplantacao() {
   const alvo = document.getElementById('painel-implantacao');
@@ -1271,6 +1290,7 @@ async function carregarImplantacao() {
   const r = await api('/api/implantacao', {});
   filaImplantacao = r.fila || [];
   escolhidosImplantacao = new Set(r.escolhidos || []);
+  buscadoEmImplantacao = r.buscadoEm || null;
   desenharFilaImplantacao();
   marcarContaImplantacao();
   // Só os escolhidos ganham detalhe: são 22 repos à frente, um deles com 563 commits, e calcular
@@ -1280,10 +1300,64 @@ async function carregarImplantacao() {
   }
 }
 
+// A fila inteira sai de `origin/main` e `origin/stage`, que são cópias locais. Enquanto ninguém
+// buscar, ela é fiel ao `.git` e mentirosa sobre o GitHub — e as duas coisas têm exatamente a mesma
+// aparência. Este carimbo é a única diferença visível entre elas.
+function carimboDaBusca() {
+  if (!buscadoEmImplantacao) {
+    return 'refs nunca buscados nesta sessão';
+  }
+  const d = new Date(buscadoEmImplantacao);
+  const minutos = Math.round((Date.now() - d.getTime()) / 60000);
+  if (minutos < 1) {
+    return 'refs buscados agora';
+  }
+  return `refs de ${minutos < 60 ? `${minutos} min atrás` : d.toLocaleString('pt-BR')}`;
+}
+
+// `git fetch` nos 51 repos, em paralelo — 2,4 s medidos. Busca TODOS e não só os escolhidos porque
+// repo com 0 commits à frente não aparece na fila, e é justamente ele que vira candidato novo ao
+// receber o primeiro: um botão que o escondesse repetiria o problema que ele existe para resolver.
+async function atualizarImplantacao(evento) {
+  // O controle mora dentro do <summary>: sem isto, clicar nele abre e fecha a sanfona junto.
+  evento?.stopPropagation();
+  evento?.preventDefault();
+  const b = document.getElementById('btn-atualizar-impl');
+  if (!b || b.classList.contains('girando')) {
+    return;
+  }
+  b.classList.add('girando');
+  const r = await api('/api/implantacao-atualizar', {});
+  b.classList.remove('girando');
+  if (!r.ok) {
+    return avisarNaTela(r.erro || 'não consegui buscar');
+  }
+  filaImplantacao = r.fila || [];
+  escolhidosImplantacao = new Set(r.escolhidos || []);
+  buscadoEmImplantacao = r.buscadoEm || null;
+  desenharFilaImplantacao();
+  marcarContaImplantacao();
+  // O detalhe de cada escolhido também saiu de refs velhos; o cache do servidor já caiu, então
+  // isto relê. Se um deles está aberto no centro, o diff dele é refeito junto.
+  for (const projeto of escolhidosImplantacao) {
+    detalharRepo(projeto);
+  }
+  if (atual?.implantacao && atual.projeto) {
+    abrirImplantacao(atual.projeto);
+  }
+  avisarNaTela(`${r.repos} repos buscados em ${r.segundos}s`
+    + (r.semRefs?.length ? ` · ${r.semRefs.length} sem main/stage no remoto` : ''));
+}
+
 function marcarContaImplantacao() {
   const c = document.getElementById('conta-impl');
   if (c) {
-    c.textContent = escolhidosImplantacao.size || '';
+    c.textContent = escolhidosImplantacao.size
+      ? `${escolhidosImplantacao.size}/${filaImplantacao.length}` : filaImplantacao.length || '';
+  }
+  const cc = document.getElementById('conta-chamados');
+  if (cc) {
+    cc.textContent = chamados.length || '';
   }
 }
 
@@ -1291,10 +1365,12 @@ function desenharFilaImplantacao() {
   const alvo = document.getElementById('painel-implantacao');
   const escolhidos = filaImplantacao.filter(f => escolhidosImplantacao.has(f.projeto));
   const resto = filaImplantacao.filter(f => !escolhidosImplantacao.has(f.projeto));
+  const prontos = escolhidos.filter(f => f.implantado).length;
   alvo.innerHTML = `
     <div class="impl-topo">
-      <span>${escolhidos.length} de ${filaImplantacao.length} repos</span>
-      ${escolhidos.length ? `<button class="impl-acao" onclick="analisarImplantacao()">🧙 analisar</button>` : ''}
+      <span>${escolhidos.length} de ${filaImplantacao.length} repos${
+        prontos ? ` · ${prontos} já na main` : ''}</span>
+      <span class="impl-buscado ${buscadoEmImplantacao ? '' : 'nunca'}">${carimboDaBusca()}</span>
     </div>
     ${escolhidos.map(linhaImplantacao).join('') || '<p class="vazio">escolha os repos desta implantação abaixo</p>'}
     ${resto.length ? `<details class="impl-resto" ${escolhidos.length ? '' : 'open'}>
@@ -1306,29 +1382,49 @@ function desenharFilaImplantacao() {
 function linhaImplantacao(f) {
   const marcado = escolhidosImplantacao.has(f.projeto);
   const d = f.detalhe;
-  return `<div class="impl-linha ${marcado ? 'escolhido' : ''}" data-p="${f.projeto}">
+  // Implantado é ESTADO, não ausência: a linha fica, com ✓ e o motivo. É a mesma regra que já
+  // vale para a branch mesclada na tela de chamado — o fim do trabalho tem que aparecer como fim,
+  // não como lista vazia.
+  const sub = f.implantado
+    ? `✓ já está na main${f.atras ? ` · main ${f.atras} à frente` : ''} — nada a enviar`
+    : `${f.commits} commit(s)${f.atras ? ` · main ${f.atras} à frente` : ''}${
+      d ? ` · ${d.arquivos} arq · ${d.ids.length} chamado(s)` : ''}`;
+  return `<div class="impl-linha ${marcado ? 'escolhido' : ''} ${f.implantado ? 'implantado' : ''}"
+        data-p="${f.projeto}">
       <label class="impl-marca" title="entra nesta implantação">
         <input type="checkbox" ${marcado ? 'checked' : ''} onchange="alternarRepo('${f.projeto}')">
       </label>
       <button class="impl-corpo" onclick="abrirImplantacao('${f.projeto}')">
         <span class="impl-nome">${esc(f.projeto)}</span>
-        <span class="impl-sub">${f.commits} commit(s)${f.atras ? ` · main ${f.atras} à frente` : ''}${
-          d ? ` · ${d.arquivos} arq · ${d.ids.length} chamado(s)` : ''}</span>
+        <span class="impl-sub">${sub}</span>
         ${d?.migrates.length ? `<span class="impl-selo" title="${d.migrates.length} migrate(s) neste release">migrate</span>` : ''}
       </button>
     </div>`;
 }
 
+// Não redesenhar DENTRO do handler: `desenharFilaImplantacao` troca o innerHTML da lista, o que
+// destrói o próprio checkbox que está despachando o `change`. Trocar o nó que emite um evento no
+// meio do despacho é receita de evento espúrio, e uma rodada de teste aqui viu os 5 repos
+// escolhidos saírem um a um, sozinhos, em menos de um segundo. Grava primeiro, redesenha depois.
 async function alternarRepo(projeto) {
-  if (escolhidosImplantacao.has(projeto)) {
-    escolhidosImplantacao.delete(projeto);
-  } else {
+  const entrou = !escolhidosImplantacao.has(projeto);
+  if (entrou) {
     escolhidosImplantacao.add(projeto);
+  } else {
+    escolhidosImplantacao.delete(projeto);
+  }
+  marcarContaImplantacao();
+  // Manda QUAL repo mudou, não o conjunto: assim um evento repetido é inócuo. Ver o comentário da
+  // rota — o conjunto inteiro transformava repetição de clique em remoção em cascata.
+  const r = await api('/api/implantacao-escolher', entrou ? { entra: projeto } : { sai: projeto });
+  // A resposta é a verdade do disco, e não o que a tela achava: se dois toggles se cruzaram, é ela
+  // que desempata.
+  escolhidosImplantacao = new Set(r.escolhidos || []);
+  marcarContaImplantacao();
+  desenharFilaImplantacao();
+  if (entrou) {
     detalharRepo(projeto);
   }
-  desenharFilaImplantacao();
-  marcarContaImplantacao();
-  await api('/api/implantacao-escolher', { projetos: [...escolhidosImplantacao].join(',') });
 }
 
 async function detalharRepo(projeto) {
@@ -1342,6 +1438,146 @@ async function detalharRepo(projeto) {
 
 // Reusa o visualizador de diff inteiro: ele já aceita base e alvo arbitrários, então o release é
 // só outra comparação — merge-base(main, stage) contra stage.
+// O resumo do release vai para a trilha, como o metadado do chamado vai na outra visão: o centro
+// fica com os commits e o diff, que é o que precisa de largura.
+function desenharTrilhaImplantacao(d) {
+  document.getElementById('trilha-corpo').innerHTML = `
+    <div class="tr-secao">
+      <div class="tr-titulo">Release</div>
+      <div class="impl-tr-repo">${esc(d.projeto)}</div>
+      <div class="impl-tr-depara"><code>${esc(d.origem)}</code> → <code>${esc(d.destino)}</code></div>
+    </div>
+    <div class="tr-secao">
+      <div class="tr-titulo">O que entra</div>
+      <div class="impl-tr-nums">
+        <div><b>${d.commits}</b><span>commits</span></div>
+        <div><b>${d.arquivos}</b><span>arquivos</span></div>
+        <div><b class="mais">+${d.adicionadas}</b><span>linhas</span></div>
+        <div><b class="menos">-${d.removidas}</b><span>linhas</span></div>
+      </div>
+      ${d.migrates.length ? `<div class="impl-tr-alerta" title="${esc(d.migrates.join(' · '))}">
+          ${d.migrates.length} migrate(s) — rodar antes do serviço</div>` : ''}
+      ${d.pacote ? '<div class="impl-tr-alerta">mexe em package.json</div>' : ''}
+    </div>
+    <div class="tr-secao">
+      <div class="tr-titulo">Chamados <span class="tr-conta">${d.ids.length}</span></div>
+      <div class="impl-tr-ids">${d.ids.map(id =>
+    `<a class="impl-id" href="${urlDoLinear(id)}" target="_blank" rel="noopener">${id} ↗</a>`).join('')
+    || '<div class="tr-nota">nenhum ID nos títulos dos commits</div>'}</div>
+    </div>
+    <div class="tr-secao">
+      <div class="tr-titulo">Autores <span class="tr-conta">${d.autores.length}</span></div>
+      <div class="impl-tr-autores">${d.autores.map(a => `<span>${esc(a)}</span>`).join('')}</div>
+    </div>
+    <div class="tr-pe">
+      <button class="tr-agente" onclick="analisarImplantacao()"
+              title="analisa os ${escolhidosImplantacao.size} repos escolhidos — leva minutos">
+        <span class="tr-cog" aria-hidden="true">🧙</span><span>analisar a implantação</span>
+      </button>
+      <button class="tr-ver-analise" id="btn-analise" hidden onclick="abrirModalAnalise()"
+              title="abre a última análise do agente">
+        <span aria-hidden="true">📄</span><span id="analise-rotulo">ver a análise</span>
+      </button>
+      <button class="tr-pr-abrir" id="btn-pr" onclick="abrirPrDeRelease('${d.projeto}')"
+              title="abre a PR de ${esc(d.origem)} para ${esc(d.destino)} neste repo">
+        <span aria-hidden="true">⇧</span><span>abrir PR de release</span>
+      </button>
+      <div class="tr-pr-nota" id="pr-nota"></div>
+    </div>`;
+  marcarAnaliseDisponivel();
+}
+
+// O botão só aparece quando existe análise para abrir. A corrida fica em disco (`corridas/`), então
+// ela sobrevive ao reload e ao reinício — e um botão que abre modal vazia é pior que botão nenhum.
+async function marcarAnaliseDisponivel() {
+  const c = await api('/api/agente-log', { chamado: 'implantação' });
+  analiseAberta = c?.resumo ? c : null;
+  const b = document.getElementById('btn-analise');
+  if (!b) { return; }
+  b.hidden = !analiseAberta;
+  if (analiseAberta) {
+    document.getElementById('analise-rotulo').textContent = `ver a análise${quando(analiseAberta.fim || analiseAberta.inicio)}`;
+  }
+}
+
+let analiseAberta = null;
+
+async function abrirModalAnalise() {
+  document.getElementById('modal-analise')?.remove();
+  const m = document.createElement('dialog');
+  m.id = 'modal-analise';
+  m.innerHTML = renderModalAnalise(analiseAberta, !analiseAberta);
+  m.addEventListener('click', e => { if (e.target === m) { m.close(); } });
+  m.addEventListener('close', () => m.remove());
+  document.body.appendChild(m);
+  m.showModal();
+  // Relê sempre: a corrida pode ter terminado com a tela aberta, e o que está em memória é do
+  // momento em que a trilha foi desenhada.
+  analiseAberta = await api('/api/agente-log', { chamado: 'implantação' });
+  m.innerHTML = renderModalAnalise(analiseAberta?.resumo ? analiseAberta : null, false);
+}
+
+function renderModalAnalise(c, carregando) {
+  const corpo = carregando ? girando(120)
+    : c?.resumo ? `<div class="ma-texto">${mdParaHtml(c.resumo, id => (window.LINEAR ? urlDoLinear(id) : null))}</div>`
+      : `<p class="vazio">Nenhuma análise ainda. O botão <b>analisar a implantação</b>, aqui ao lado,
+         roda o agente sobre os repos escolhidos.</p>`;
+  const meta = c && !carregando ? [
+    c.ok === false ? '⚠ terminou com erro' : null,
+    c.eventos?.length ? `${c.eventos.length} passo(s)` : null,
+    c.segundos ? `${c.segundos}s` : null,
+    c.modelo ? `${esc(c.modelo)} esforço ${esc(c.esforco || '?')}` : null,
+    c.fim ? new Date(c.fim).toLocaleString('pt-BR') : null
+  ].filter(Boolean).join(' · ') : '';
+  return `<div class="me-cabeca">
+      <div><div class="me-titulo">🧙 Análise da implantação</div>
+        <div class="me-sub">${meta || 'o que o agente achou que eu preciso saber antes de mesclar'}</div></div>
+      <button class="pa-fechar" onclick="document.getElementById('modal-analise').close()" title="fechar (Esc)">×</button>
+    </div>
+    <div class="ma-corpo">${corpo}</div>
+    <div class="ma-pe">
+      <span>O texto é do agente — confira o que ele afirma antes de mesclar.</span>
+      ${c?.resumo ? '<button class="me-copiar" onclick="copiarAnalise()">copiar</button>' : ''}
+    </div>`;
+}
+
+async function copiarAnalise() {
+  await navigator.clipboard.writeText(analiseAberta?.resumo || '');
+  avisarNaTela('análise copiada');
+}
+
+// Abrir PR é ação para fora e exige confirmação explícita — a mesma regra do commit e do push. O
+// título e o corpo saem do detalhe, no servidor: texto montado no navegador seria conteúdo não
+// conferido indo para o repositório.
+async function abrirPrDeRelease(projeto) {
+  const d = filaImplantacao.find(f => f.projeto === projeto)?.detalhe;
+  const resumo = d ? `${d.commits} commits, ${d.arquivos} arquivos, ${d.ids.length} chamado(s)` : '';
+  if (!confirm(`Abrir a PR de release em ${projeto}?\n\nstage → main\n${resumo}\n\n`
+      + 'Isto cria uma pull request de verdade no GitHub.')) {
+    return;
+  }
+  const nota = document.getElementById('pr-nota');
+  const botao = document.getElementById('btn-pr');
+  if (botao) {
+    botao.disabled = true;
+  }
+  if (nota) {
+    nota.className = 'tr-pr-nota';
+    nota.textContent = 'abrindo…';
+  }
+  const r = await api('/api/implantacao-pr', { projeto });
+  if (botao) {
+    botao.disabled = false;
+  }
+  if (!nota) {
+    return;
+  }
+  nota.className = `tr-pr-nota ${r.ok ? 'ok' : 'erro'}`;
+  nota.innerHTML = r.url
+    ? `<a href="${r.url}" target="_blank" rel="noopener">${r.ok ? 'PR aberta' : esc(r.erro)} ↗</a>`
+    : esc(r.erro || 'não consegui abrir');
+}
+
 async function abrirImplantacao(projeto) {
   const d = await api('/api/implantacao-detalhe', { projeto });
   if (d.erro) {
@@ -1351,10 +1587,12 @@ async function abrirImplantacao(projeto) {
     l.classList.toggle('ativo', l.dataset.p === projeto);
   }
   atual = { projeto, chamado: null, ref: d.origem, base: d.base, implantacao: true, botao: null };
-  // Cabeçalho e trilha são do chamado: aqui não há chamado, e deixá-los visíveis mostrava o
-  // UND-1991 em cima de um release de outro assunto.
+  implAtual = d;
+  // O cabeçalho é do chamado e some; a trilha FICA, com o conteúdo desta visão — é onde o metadado
+  // vive na tela de chamados, e o centro continua sendo o diff.
   document.getElementById('cabecalho').hidden = true;
-  document.getElementById('trilha').hidden = true;
+  document.getElementById('trilha').hidden = false;
+  desenharTrilhaImplantacao(d);
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
   document.querySelector('main').scrollTop = 0;
@@ -1363,29 +1601,66 @@ async function abrirImplantacao(projeto) {
       <h2>${esc(projeto)}</h2>
       <span class="impl-de-para">${esc(d.origem)} → ${esc(d.destino)}</span>
     </div>
-    <div class="impl-numeros">
-      <span><b>${d.commits}</b> commits</span>
-      <span><b>${d.arquivos}</b> arquivos</span>
-      <span class="mais">+${d.adicionadas}</span><span class="menos">-${d.removidas}</span>
-      <span><b>${d.autores.length}</b> autor(es)</span>
-      ${d.migrates.length ? `<span class="impl-alerta">${d.migrates.length} migrate(s)</span>` : ''}
-      ${d.pacote ? '<span class="impl-alerta">package.json</span>' : ''}
-    </div>
-    <div class="impl-chamados">${d.ids.map(id =>
-    `<a class="impl-id" href="${urlDoLinear(id)}" target="_blank" rel="noopener">${id}</a>`).join('') || '<i>nenhum ID nos títulos</i>'}</div>
-    <div id="analise-implantacao"></div>
     <h3 class="secao">Commits <span class="carimbo">${(d.primeiroCommit || '').slice(0, 10)} a ${(d.ultimoCommit || '').slice(0, 10)}</span></h3>
-    <div class="impl-commits">${d.listaDeCommits.map(c => `
-      <div class="impl-commit"><code>${c.hash}</code>
-        <span class="impl-titulo">${esc(c.titulo)}</span>
-        <span class="impl-autor">${esc(c.autor)}</span>
-        <span class="impl-data">${c.data.slice(0, 10)}</span></div>`).join('')}</div>
-    <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
+    <div class="impl-commits">${d.listaDeCommits.map(linhaDeCommit).join('')}</div>
+    <h3 class="secao" id="titulo-diff-impl"></h3>
     <div id="arquivos" aria-busy="true">${esqCodigo(6)}</div>`;
-  const arq = await api('/api/arquivos', { projeto, ref: d.origem, base: d.base });
+  await verRelease();
+}
+
+// A linha do commit é um botão porque ela ABRE algo — e sem parecer botão ninguém descobriria que
+// dá para clicar. Commit raiz (sem pai) fica inerte: não existe "o diff dele" contra nada.
+function linhaDeCommit(c) {
+  const merge = c.pais.length > 1;
+  const dica = c.pais.length
+    ? `${merge ? 'merge: o que ele trouxe, contra o 1º pai' : 'ver só o diff deste commit'} (${c.pais[0]})`
+    : 'commit raiz — não há pai com que comparar';
+  return `<button class="impl-commit${merge ? ' merge' : ''}" data-h="${c.hash}"
+      ${c.pais.length ? `onclick="verCommit('${c.hash}')"` : 'disabled'} title="${esc(dica)}">
+      <code>${c.hash}</code>
+      <span class="impl-titulo">${esc(c.titulo)}</span>
+      <span class="impl-autor">${esc(c.autor)}</span>
+      <span class="impl-data">${c.data.slice(0, 10)}</span></button>`;
+}
+
+// Clicar de novo no commit aberto volta para o release: é o mesmo gesto de fechar, e sem isso o
+// único caminho de volta seria um botão que some junto com o diff que ele desfaz.
+async function verCommit(hash) {
+  const c = implAtual?.listaDeCommits.find(x => x.hash === hash);
+  if (!c || !c.pais.length) { return; }
+  if (commitAberto === hash) { return verRelease(); }
+  commitAberto = hash;
+  await trocarDiffDaImplantacao(c.pais[0], hash,
+    `Diff do commit <code>${hash}</code> <span class="impl-assunto">${esc(c.titulo)}</span>
+     <button class="impl-voltar" onclick="verRelease()">↩ voltar ao release</button>`,
+    `${hash} contra o pai ${c.pais[0]}`);
+}
+
+async function verRelease() {
+  commitAberto = null;
+  await trocarDiffDaImplantacao(implAtual.base, implAtual.origem, 'Diff — antes | depois', null);
+}
+
+async function trocarDiffDaImplantacao(base, ref, titulo, fonte) {
+  const cabeca = document.getElementById('titulo-diff-impl');
+  const caixa = document.getElementById('arquivos');
+  if (!cabeca || !caixa) { return; }
+  for (const l of document.querySelectorAll('.impl-commit')) {
+    l.classList.toggle('aberto', l.dataset.h === commitAberto);
+  }
+  cabeca.innerHTML = `${titulo} <span class="carimbo" id="carimbo"></span>`;
+  caixa.className = '';
+  caixa.innerHTML = esqCodigo(6);
+  // `atual` é o que /api/arquivo lê ao abrir cada arquivo. Sem trocar base e ref aqui, o cabeçalho
+  // diria "commit X" e o corpo de cada arquivo viria do release inteiro.
+  atual.base = base;
+  atual.ref = ref;
+  const geracao = ++geracaoDiffImpl;
+  const arq = await api('/api/arquivos', { projeto: implAtual.projeto, ref, base });
+  if (geracao !== geracaoDiffImpl) { return; }
   atual.dados = arq;
   montarArquivos(arq);
-  marcarCarimbo(arq);
+  marcarCarimbo(arq, fonte);
 }
 
 async function analisarImplantacao() {
@@ -1412,50 +1687,362 @@ const TITULOS = {
   config: ['⚙', 'Configurações', 'as rotinas que eu sigo']
 };
 
+// Trocar de seção esvazia a outra. Recolher só escondia: a lista de chamados continuava montada
+// com o chamado anterior marcado como ativo, e ao voltar a seção reabria mostrando a seleção velha
+// enquanto o centro já era de outra coisa. Duas verdades ao mesmo tempo na mesma tela.
+function limparSecao(tipo) {
+  if (tipo === 'implantacao') {
+    const painel = document.getElementById('painel-implantacao');
+    if (painel) {
+      painel.innerHTML = '';
+    }
+    // A escolha de repos NÃO é limpa: ela vive em disco e é a sessão de trabalho da pessoa. O que
+    // se limpa é o desenho e o repo aberto, não a decisão.
+    implAtual = null;
+    commitAberto = null;
+    return;
+  }
+  for (const l of document.querySelectorAll('.linha-chamado.ativo')) {
+    l.classList.remove('ativo');
+  }
+}
+
 function trocarVisao(qual) {
+  if (qual === 'config' && visao !== 'config') {
+    visaoAnterior = visao;
+  }
   visao = qual;
+  // A sanfona reflete a visão. Ela chamava `trocarVisao` e nunca era chamada por ele: sair da
+  // Implantação para as Configurações e voltar deixava o título e o centro em "Chamados" com a
+  // seção de Implantação aberta na barra, listando 11 repos. Duas seções, duas respostas.
+  sincronizarSanfona(qual);
   const emConfig = qual === 'config';
-  const emImplantacao = qual === 'implantacao';
-  document.getElementById('painel-chamados').hidden = emConfig || emImplantacao;
-  document.getElementById('painel-config').hidden = !emConfig;
-  document.getElementById('painel-implantacao').hidden = !emImplantacao;
   const [icone, nome, sub] = TITULOS[qual] || TITULOS.chamados;
   document.getElementById('titulo-barra').innerHTML =
     `<span class="mago" aria-hidden="true">${icone}</span>
      <span><span class="nome">${nome}</span><span class="sub">${sub}</span></span>`;
+  document.getElementById('painel-config').hidden = !emConfig;
+  document.getElementById('sanfona-chamados').hidden = emConfig;
+  document.getElementById('sanfona-implantacao').hidden = emConfig;
   document.getElementById('btn-config').classList.toggle('ativa', emConfig);
-  document.getElementById('btn-implantacao').classList.toggle('ativa', emImplantacao);
-  document.getElementById('cabecalho').hidden = emConfig || emImplantacao;
-  document.getElementById('trilha').hidden = emConfig || emImplantacao;
-  if (emImplantacao) {
+  document.getElementById('cabecalho').hidden = emConfig || qual === 'implantacao';
+  document.getElementById('trilha').hidden = emConfig;
+  if (emConfig) {
+    carregarConfigs();
+    return;
+  }
+  if (qual === 'implantacao') {
+    // Limpar o CENTRO e a TRILHA também, não só a barra. Sem isto a tela mostrava o título
+    // "Implantação" à esquerda, os cartões e o diff do chamado no meio, e a trilha do chamado à
+    // direita — três verdades diferentes ao mesmo tempo, e a do meio era a mais convincente.
+    limparCentro('Escolha um repositório à esquerda para ver o que vai para a <code>main</code>.');
     carregarImplantacao();
     return;
   }
-  if (emConfig) {
-    carregarConfigs();
-  } else {
-    const alvo = document.getElementById('conteudo');
-    alvo.className = 'aviso';
-    alvo.innerHTML = 'Escolha um chamado à esquerda.';
-    atual = null;
-    if (chamados.length) {
-      abrirChamado(chamados[0].chamado);
-    }
+  limparCentro('Escolha um chamado à esquerda.');
+  if (chamados.length) {
+    abrirChamado(chamados[0].chamado);
   }
 }
 
+// O centro, a trilha e o endereço voltam ao neutro juntos. O endereço entra na conta porque ele é
+// estado de verdade aqui: a URL guarda `chamado` e `projeto` e é ela que restaura a tela no
+// recarregamento — deixá-la apontando para um chamado depois de trocar de seção significava que
+// recarregar desfazia a troca em silêncio.
+function limparCentro(aviso) {
+  // Invalida o que está EM VOO. As buscas do chamado (`/api/qualidade-remoto` e companhia) são
+  // guardadas por geração, e sem incrementá-la aqui a resposta atrasada passava pela guarda e
+  // escrevia num `atual` que já era nulo: "Cannot set properties of null (setting 'pr')".
+  geracao++;
+  atual = null;
+  implAtual = null;
+  commitAberto = null;
+  itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
+  const trilha = document.getElementById('trilha');
+  trilha.hidden = true;
+  document.getElementById('trilha-corpo').innerHTML = '';
+  document.getElementById('cabecalho').innerHTML = '';
+  const alvo = document.getElementById('conteudo');
+  alvo.className = 'aviso';
+  alvo.innerHTML = aviso;
+  const q = new URLSearchParams(location.search);
+  q.delete('chamado');
+  q.delete('projeto');
+  history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);
+}
+
+// Sanfona: abrir uma seção fecha a outra. Duas listas longas abertas ao mesmo tempo numa barra de
+// 300 px dariam rolagem dupla — e elas respondem perguntas diferentes, raramente ao mesmo tempo.
+function sincronizarSanfona(qual) {
+  if (sincronizandoSanfona || qual === 'config') {
+    return;
+  }
+  sincronizandoSanfona = true;
+  for (const [id, tipo] of SECOES_SANFONA) {
+    const el = document.getElementById(id);
+    const deveAbrir = tipo === qual;
+    if (!deveAbrir && el.open) {
+      limparSecao(tipo);
+    }
+    el.open = deveAbrir;
+  }
+  sincronizandoSanfona = false;
+  // Lembra a seção aqui e não só no clique: quem sai pelas Configurações e volta pelo botão trocou
+  // de seção sem tocar na sanfona, e sem isto o próximo carregamento reabria a seção errada.
+  try { localStorage.setItem('sanfona', qual); } catch { /* aba privada */ }
+}
+
+function ligarSanfona() {
+  for (const [id, qual] of SECOES_SANFONA) {
+    const el = document.getElementById(id);
+    el.addEventListener('toggle', () => {
+      if (!el.open || sincronizandoSanfona) {
+        return;
+      }
+      trocarVisao(qual);
+      try { localStorage.setItem('sanfona', qual); } catch { /* aba privada */ }
+    });
+  }
+  if (localStorage.getItem('sanfona') === 'implantacao') {
+    document.getElementById('sanfona-chamados').open = false;
+    document.getElementById('sanfona-implantacao').open = true;
+  }
+}
+
+// Ícone por chave, no cliente: o servidor manda o que o arquivo É (rótulo, resumo, caminho), e
+// como ele se desenha é assunto da tela.
+const ICONE_CONFIG = { inicio: '🌱', fim: '🏁', regras: '📏', repos: '🗂' };
+
 async function carregarConfigs() {
   const r = await api('/api/configs', {});
-  document.getElementById('painel-config').innerHTML = (r.configs || []).map(c => `
-    <button class="item-config" data-k="${c.chave}" onclick="abrirConfig('${c.chave}')">
-      <span class="rot">${esc(c.rotulo)}</span>
-      <span class="res">${esc(c.resumo)}</span>
-      <span class="cam">${esc(c.caminho)}</span>
-    </button>`).join('');
+  // Dois grupos, porque são duas naturezas: o que eu LEIO como instrução (markdown, texto livre) e
+  // o que eu CONSULTO como dado (catálogo, campos fixos). Juntar tudo numa lista fazia o
+  // "Repositórios" parecer mais uma rotina.
+  const item = (chave, rotulo, resumo, caminho, aberta) => `
+    <button class="item-config" data-k="${chave}" onclick="${aberta}">
+      <span class="ic-config" aria-hidden="true">${ICONE_CONFIG[chave] || '📄'}</span>
+      <span class="ic-texto">
+        <span class="rot">${esc(rotulo)}</span>
+        <span class="res">${esc(resumo)}</span>
+        <span class="cam">${esc(caminho)}</span>
+      </span>
+    </button>`;
+  document.getElementById('painel-config').innerHTML = `
+    <button class="voltar-config" onclick="trocarVisao(visaoAnterior)">
+      <span aria-hidden="true">←</span><span>voltar ${
+    visaoAnterior === 'implantacao' ? 'à implantação' : 'aos chamados'}</span>
+    </button>
+    <div class="grupo-config">O que eu sigo</div>
+    ${(r.configs || []).map(c => item(c.chave, c.rotulo, c.resumo, c.caminho,
+    `abrirConfig('${c.chave}')`)).join('')}
+    <div class="grupo-config">Catálogo</div>
+    ${item('repos', 'Repositórios', 'Quais entram na comparação de implantação, e com qual par de branches',
+    'qualidade/repos.json', 'abrirRepos()')}`;
   const primeiro = document.querySelector('.item-config');
   if (primeiro && !document.querySelector('.item-config.ativo')) {
     abrirConfig(primeiro.dataset.k);
   }
+}
+
+let catalogoRepos = [];
+
+// Tabela e não markdown: aqui os campos SÃO previsíveis (repo, origem, destino, entra ou não), e
+// digitar JSON à mão para ligar um repo seria pior que o problema que isto resolve.
+async function abrirRepos() {
+  document.querySelectorAll('.item-config').forEach(b => b.classList.toggle('ativo', b.dataset.k === 'repos'));
+  const alvo = document.getElementById('conteudo');
+  alvo.className = '';
+  alvo.innerHTML = girando(240);
+  const r = await api('/api/repos', {});
+  catalogoRepos = r.repos || [];
+  if (!catalogoRepos.length) {
+    // Primeira abertura, catálogo vazio: detectar sozinho é o certo — a alternativa é uma tabela
+    // vazia com um botão, e ninguém quer configurar 51 repos à mão para começar.
+    const d = await api('/api/repos-detectar', {});
+    catalogoRepos = d.repos || [];
+  }
+  desenharRepos(r.detectadoEm);
+}
+
+function desenharRepos(detectadoEm) {
+  if (detectadoEm !== undefined) {
+    detectadoEmRepos = detectadoEm;
+  }
+  // O índice original viaja junto: as linhas são partidas em duas seções, e `mexerNoRepo` endereça
+  // pela posição no array. Reindexar por seção trocaria a linha editada pela vizinha.
+  const comIndice = catalogoRepos.map((r, i) => ({ r, i }));
+  const comPar = comIndice.filter(({ r }) => r.origem && r.destino);
+  const semPar = comIndice.filter(({ r }) => !r.origem || !r.destino);
+  const ativos = catalogoRepos.filter(r => r.ativo).length;
+  document.getElementById('conteudo').innerHTML = `
+    <header class="cab-repos">
+      <div class="cab-titulo-bloco">
+        <h2>Repositórios</h2>
+        <span class="carimbo">${ativos} entram na comparação · ${catalogoRepos.length} pastas com
+          <code>.git</code>${detectadoEmRepos
+      ? ` · detectado ${new Date(detectadoEmRepos).toLocaleString('pt-BR')}` : ''}</span>
+      </div>
+      <button class="bt-secundario" onclick="detectarRepos()"
+              title="relê as branches do .git de cada pasta">⟳ detectar de novo</button>
+      <button class="bt-primario" onclick="salvarRepos()">salvar</button>
+      <span class="selo pr-carregando" id="estado-repos">sem alteração</span>
+    </header>
+    <p class="dica">A fila de implantação percorre só o que está <b>marcado</b>, comparando
+      <b>origem → destino</b> de cada linha. <b>Detectar de novo</b> relê as branches do
+      <code>.git</code> e reescreve as linhas automáticas — o que você editar à mão vira
+      <b class="fonte-manual">manual</b> e a detecção não encosta.</p>
+
+    <div class="repos-filtro">
+      <input id="filtro-repos" placeholder="filtrar por nome…" spellcheck="false"
+             oninput="filtrarRepos(this.value)">
+      <span class="repos-conta" id="conta-filtro"></span>
+    </div>
+
+    <table class="tab-repos">
+      <thead><tr>
+        <th class="c-entra">entra</th><th class="c-nome">repositório</th>
+        <th class="c-par">compara</th><th class="c-fonte"></th><th class="c-tirar"></th>
+      </tr></thead>
+      <tbody id="corpo-repos">${comPar.map(({ r, i }) => linhaDeRepo(r, i)).join('')}</tbody>
+    </table>
+
+    ${semPar.length ? `<details class="repos-sem-par">
+      <summary>${semPar.length} pasta(s) sem par de branches — não entram na comparação</summary>
+      <table class="tab-repos">
+        <tbody>${semPar.map(({ r, i }) => linhaDeRepo(r, i)).join('')}</tbody>
+      </table>
+    </details>` : ''}
+
+    <div class="repos-novo">
+      <span class="rn-rot">Adicionar à mão</span>
+      <input id="novo-repo" placeholder="pasta do repositório" spellcheck="false">
+      <input id="novo-origem" placeholder="origin/stage" spellcheck="false">
+      <span class="rn-seta" aria-hidden="true">→</span>
+      <input id="novo-destino" placeholder="origin/main" spellcheck="false">
+      <button onclick="adicionarRepo()">adicionar</button>
+    </div>`;
+  filtrarRepos(filtroRepos);
+}
+
+function linhaDeRepo(r, i) {
+  const sem = !r.origem || !r.destino;
+  // Origem e destino num campo só, com a seta no meio: é UM par de branches, e duas colunas soltas
+  // faziam ler como dois dados independentes. E nada de selo "detectado" — ele apareceria em 36 das
+  // 51 linhas, e selo que está em quase tudo não informa nada. Só o manual é exceção.
+  return `<tr class="${r.ativo ? '' : 'apagada'}${sem ? ' sem-par' : ''}" data-p="${esc(r.projeto)}">
+    <td class="c-entra">${sem
+    ? `<span class="c-vazio" title="${esc(r.motivo || 'sem par de branches')}">—</span>`
+    : `<input type="checkbox" ${r.ativo ? 'checked' : ''}
+        onchange="mexerNoRepo(${i}, 'ativo', this.checked)">`}</td>
+    <td class="c-nome">${esc(r.projeto)}</td>
+    <td class="c-par">
+      <span class="par-campos">
+        <input value="${esc(r.origem || '')}" placeholder="origin/stage" spellcheck="false"
+          onchange="mexerNoRepo(${i}, 'origem', this.value)">
+        <span class="par-seta" aria-hidden="true">→</span>
+        <input value="${esc(r.destino || '')}" placeholder="origin/main" spellcheck="false"
+          onchange="mexerNoRepo(${i}, 'destino', this.value)">
+      </span>
+      ${sem ? `<span class="c-motivo">${esc(r.motivo || '')}</span>` : ''}</td>
+    <td class="c-fonte">${r.fonte === 'manual' ? '<span class="selo-fonte">manual</span>' : ''}</td>
+    <td class="c-tirar"><button class="tr-tirar" onclick="removerRepo(${i})"
+        title="tira ${esc(r.projeto)} do catálogo">×</button></td>
+  </tr>`;
+}
+
+let filtroRepos = '';
+let detectadoEmRepos = null;
+
+// Esconde linha em vez de redesenhar a tabela: redesenhar a cada tecla tiraria o foco do campo de
+// filtro no meio da digitação.
+function filtrarRepos(texto) {
+  filtroRepos = texto || '';
+  const busca = filtroRepos.trim().toLowerCase();
+  let vendo = 0;
+  for (const linha of document.querySelectorAll('.tab-repos tbody tr')) {
+    const casa = !busca || linha.dataset.p.toLowerCase().includes(busca);
+    linha.hidden = !casa;
+    if (casa) {
+      vendo++;
+    }
+  }
+  const conta = document.getElementById('conta-filtro');
+  if (conta) {
+    conta.textContent = busca ? `${vendo} de ${catalogoRepos.length}` : '';
+  }
+  // Com filtro ativo, a seção recolhida abre: esconder o que casou com a busca dentro de um
+  // `<details>` fechado é o mesmo que dizer que não existe.
+  const dobra = document.querySelector('.repos-sem-par');
+  if (dobra && busca) {
+    dobra.open = true;
+  }
+}
+
+function mexerNoRepo(i, campo, valor) {
+  catalogoRepos[i][campo] = typeof valor === 'string' ? valor.trim() || null : valor;
+  reposSujos();
+}
+
+function removerRepo(i) {
+  catalogoRepos.splice(i, 1);
+  desenharRepos();
+  reposSujos();
+}
+
+function adicionarRepo() {
+  const projeto = document.getElementById('novo-repo').value.trim();
+  if (!projeto) {
+    return;
+  }
+  if (catalogoRepos.some(r => r.projeto === projeto)) {
+    return avisarNaTela(`${projeto} já está na lista`);
+  }
+  const origem = document.getElementById('novo-origem').value.trim() || 'origin/stage';
+  const destino = document.getElementById('novo-destino').value.trim() || 'origin/main';
+  catalogoRepos.push({ projeto, origem, destino, fonte: 'manual', ativo: true, motivo: null });
+  catalogoRepos.sort((a, b) => a.projeto.localeCompare(b.projeto));
+  desenharRepos();
+  reposSujos();
+}
+
+function reposSujos() {
+  const e = document.getElementById('estado-repos');
+  if (e) {
+    e.className = 'selo pr-sem-pr';
+    e.textContent = 'não salvo';
+  }
+}
+
+async function salvarRepos() {
+  const e = document.getElementById('estado-repos');
+  e.className = 'selo pr-carregando';
+  e.textContent = 'salvando…';
+  const r = await fetch(`/api/repos-salvar${window.TOKEN ? `?t=${window.TOKEN}` : ''}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ repos: catalogoRepos })
+  }).then(x => x.json()).catch(x => ({ erro: x.message }));
+  if (r.erro) {
+    e.className = 'selo pr-sem-pr';
+    e.textContent = `erro: ${r.erro}`;
+    return;
+  }
+  catalogoRepos = r.repos;
+  desenharRepos();
+  // A fila do menu vem do catálogo: salvar sem recarregá-la deixava a barra mostrando repos que
+  // acabaram de sair da comparação.
+  carregarImplantacao();
+  avisarNaTela(`${r.repos.filter(x => x.ativo).length} repos na comparação`);
+}
+
+async function detectarRepos() {
+  const alvo = document.getElementById('conteudo');
+  alvo.innerHTML = girando(240);
+  const r = await api('/api/repos-detectar', {});
+  catalogoRepos = r.repos || [];
+  desenharRepos(r.detectadoEm);
+  carregarImplantacao();
+  avisarNaTela(`${catalogoRepos.filter(x => x.ativo).length} de ${catalogoRepos.length} com par de branches`);
 }
 
 // Edição do markdown cru, não de um formulário: o arquivo é a instrução que eu leio, e um formulário
@@ -1520,9 +2107,12 @@ async function salvarConfig(chave) {
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
-  alternarRepo, abrirImplantacao, analisarImplantacao,
+  alternarRepo, abrirImplantacao, analisarImplantacao, abrirPrDeRelease, verCommit, verRelease,
+  abrirModalAnalise, copiarAnalise, atualizarImplantacao,
   copiarLink,
-  trocarVisao, abrirConfig, salvarConfig
+  trocarVisao, abrirConfig, salvarConfig,
+  abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos
 });
-// `visao` é lida pelo onclick da engrenagem.
+// Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });
+Object.defineProperty(window, 'visaoAnterior', { get: () => visaoAnterior });

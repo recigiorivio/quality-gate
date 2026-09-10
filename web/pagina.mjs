@@ -21,23 +21,27 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
 <aside>
   <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span>
     <span><span class="nome">Magias do Mago</span><span class="sub">conferência por chamado</span></span></h1>
-  <div id="painel-chamados">
-    <div id="lista" aria-busy="true">
-      <div class="carregando" style="min-height:78px"><span class="giro"></span></div>
+  <details class="sanfona" id="sanfona-chamados" open>
+    <summary><span class="sf-icone" aria-hidden="true">🧙</span><span>Chamados</span>
+      <span class="sf-conta" id="conta-chamados"></span></summary>
+    <div id="painel-chamados">
+      <div id="lista" aria-busy="true">
+        <div class="carregando" style="min-height:78px"><span class="giro"></span></div>
+      </div>
+      <div id="ocultos"></div>
     </div>
-    <div id="ocultos"></div>
-  </div>
+  </details>
+  <details class="sanfona" id="sanfona-implantacao">
+    <summary><span class="sf-icone" aria-hidden="true">🚀</span><span>Implantação</span>
+      <span class="sf-conta" id="conta-impl"></span>
+      <span class="sf-recarregar" id="btn-atualizar-impl" role="button" tabindex="0"
+            onclick="atualizarImplantacao(event)" onkeydown="if(event.key==='Enter'){atualizarImplantacao(event)}"
+            title="buscar origin/main e origin/stage de novo — a fila é lida desses dois refs">⟳</span></summary>
+    <div id="painel-implantacao"></div>
+  </details>
   <div id="painel-config" hidden></div>
-  <div id="painel-implantacao" hidden></div>
-  <div id="acao-barra">
-    <button id="btn-implantacao" onclick="trocarVisao(visao === 'implantacao' ? 'chamados' : 'implantacao')"
-            title="Implantação — o que está em stage e ainda não foi para main">
-      <span class="foguete" aria-hidden="true">🚀</span><span>Implantação</span>
-      <span class="conta-impl" id="conta-impl"></span>
-    </button>
-  </div>
   <footer id="pe-barra">
-    <button id="btn-config" onclick="trocarVisao(visao === 'config' ? 'chamados' : 'config')"
+    <button id="btn-config" onclick="trocarVisao(visao === 'config' ? visaoAnterior : 'config')"
             title="Configurações — as rotinas que eu sigo">
       <span class="engrenagem" aria-hidden="true">⚙</span><span>Configurações</span>
     </button>

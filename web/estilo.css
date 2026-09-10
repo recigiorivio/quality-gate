@@ -9,6 +9,11 @@
   --fraco:#8e8e95;--linha:#2e2e34;--ok:#3fb950;--aviso:#d29922;--erro:#f85149;--neutro:#8e8e95;
   --add:#123420;--rem:#3d1a1a;--vazio:#1b1b1f}}
 *{box-sizing:border-box}html,body{height:100%}
+/* `hidden` é atributo, e a regra do navegador para ele é só `display:none` — qualquer `display`
+   declarado aqui ganha dela por especificidade. O JS esconde cabeçalho, trilha e as sanfonas por
+   `.hidden = true`, e os três têm `display:flex`: na tela de Configurações a barra mostrava
+   Chamados e Implantação junto das configs, e o cabeçalho do chamado vazava por cima. */
+[hidden]{display:none !important}
 body{margin:0;display:grid;grid-template-columns:300px minmax(0,1fr) 264px;background:var(--bg);
   color:var(--fg);font:13px/1.55 -apple-system,system-ui,sans-serif;
   transition:grid-template-columns .16s ease}
@@ -93,14 +98,6 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 .vazio{color:var(--fraco);font-size:12px;padding:8px 4px;margin:0}
 
 #painel-config{padding:10px}
-.item-config{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;background:none;
-  border:1px solid transparent;border-radius:9px;cursor:pointer;padding:9px 10px;margin-bottom:4px;
-  color:var(--fg);transition:background .12s,border-color .12s}
-.item-config:hover{background:var(--bg)}
-.item-config.ativo{background:var(--bg);border-color:var(--acento)}
-.item-config .rot{font-weight:600;font-size:13px;line-height:1.2}
-.item-config .res{font-weight:400;font-size:11px;line-height:1.35;color:var(--fraco)}
-.item-config .cam{font:10px/1.3 ui-monospace,monospace;color:var(--fraco);opacity:.7;overflow-wrap:anywhere}
 
 /* cabeçalho fino no topo do conteúdo: só identidade e a ação */
 #cabecalho{position:sticky;top:0;z-index:3;background:var(--bg);display:flex;align-items:center;
@@ -594,9 +591,6 @@ body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:
 /* ── implantação: a fila de stage para main ───────────────────────────────── */
 .impl-topo{display:flex;align-items:center;gap:8px;padding:2px 4px 10px;font-size:10.5px;
   color:var(--fraco);border-bottom:1px solid var(--linha);margin-bottom:8px}
-.impl-acao{margin-left:auto;background:var(--acento);border:0;color:#fff;border-radius:6px;
-  padding:4px 9px;font-weight:600;font-size:10px;cursor:pointer;font-family:inherit}
-.impl-acao:hover{filter:brightness(1.08)}
 .impl-linha{display:flex;align-items:center;gap:4px;border-radius:7px}
 .impl-linha:hover{background:var(--bg)}
 .impl-linha.ativo{background:var(--acento)}
@@ -629,16 +623,28 @@ body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:
 .impl-id:hover{border-color:var(--acento)}
 .impl-commits{max-height:230px;overflow-y:auto;scrollbar-gutter:stable;border:1px solid var(--linha);
   border-radius:8px;background:var(--cartao)}
+/* A linha vira botão: clicar num commit troca o diff de baixo pelo diff dele. Herda font e cor
+   porque `button` traz as do sistema, e a linha tinha de continuar sendo a mesma linha. */
 .impl-commit{display:grid;grid-template-columns:64px 1fr auto auto;gap:10px;align-items:baseline;
-  padding:5px 11px;border-bottom:1px solid var(--linha);font-size:11.5px}
+  padding:5px 11px;border:0;border-bottom:1px solid var(--linha);font-size:11.5px;
+  width:100%;text-align:left;background:none;color:inherit;font-family:inherit;cursor:pointer}
 .impl-commit:last-child{border-bottom:0}
+.impl-commit:hover:not(:disabled){background:var(--painel)}
+.impl-commit:disabled{cursor:default;opacity:.55}
+/* O aberto fica marcado na barra da esquerda, não com fundo cheio: a lista rola e o realce precisa
+   ser achável de canto de olho sem gritar mais que o diff, que é o conteúdo. */
+.impl-commit.aberto{background:var(--painel);box-shadow:inset 3px 0 0 var(--acento)}
+.impl-commit.aberto .impl-titulo{font-weight:600}
+.impl-commit.merge code{color:var(--acento)}
 .impl-commit code{font-size:10px;color:var(--fraco)}
+/* O título da seção é caixa alta; o assunto do commit não pode ser — é frase escrita por gente. */
+.impl-assunto{text-transform:none;letter-spacing:0;font-weight:400;color:var(--fg);
+  max-width:52ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impl-voltar{margin-left:10px;font-size:11px;padding:2px 9px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--linha);background:var(--cartao);color:var(--fraco);font-family:inherit}
+.impl-voltar:hover{border-color:var(--acento);color:var(--acento)}
 .impl-titulo{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .impl-autor,.impl-data{font-size:10px;color:var(--fraco);white-space:nowrap}
-.impl-analise{margin:14px 0 4px;background:var(--cartao);border:1px solid var(--linha);
-  border-radius:9px;padding:4px 16px 14px}
-.impl-analise pre{margin:0;white-space:pre-wrap;font-size:12px;line-height:1.55;
-  font-family:-apple-system,system-ui,sans-serif}
 
 /* Implantação é AÇÃO, não navegação de rodapé: fica acima do separador, com peso de botão. O
    Configurações continua abaixo da linha, que é onde vive o que quase nunca se abre. */
@@ -654,3 +660,244 @@ body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:
   color:var(--fraco);border-radius:20px;padding:2px 7px;min-width:18px;text-align:center}
 #btn-implantacao.ativa .conta-impl{background:rgba(255,255,255,.24);color:#fff}
 .conta-impl:empty{display:none}
+
+/* ── análise da implantação: botão na trilha e a modal ──────────────────────
+   O botão fica ABAIXO do analisar porque é o par dele: um roda, o outro relê o que rodou. Só
+   aparece quando existe corrida gravada — botão que abre modal vazia é pior que botão nenhum. */
+.tr-ver-analise{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;
+  background:var(--cartao);border:1px dashed var(--linha);border-radius:7px;padding:7px 9px;
+  font-weight:600;font-size:11px;cursor:pointer;color:var(--fraco);font-family:inherit;margin-top:5px}
+.tr-ver-analise:hover{border-style:solid;border-color:var(--acento);color:var(--acento)}
+
+#modal-analise{border:1px solid var(--linha);border-radius:12px;padding:0;
+  width:min(820px,calc(100vw - 40px));max-height:calc(100vh - 60px);background:var(--cartao);
+  color:var(--fg);box-shadow:0 18px 50px rgba(0,0,0,.22);
+  display:flex;flex-direction:column;overflow:hidden}
+#modal-analise::backdrop{background:rgba(20,18,40,.38);backdrop-filter:blur(2px)}
+/* O corpo é quem rola, não a modal: o cabeçalho diz de que corrida é o texto e o rodapé lembra que
+   quem escreveu foi o agente — as duas coisas precisam ficar à vista durante a leitura. */
+.ma-corpo{flex:1 1 auto;overflow-y:auto;padding:4px 22px 8px;scrollbar-gutter:stable}
+.ma-pe{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 18px 11px;
+  border-top:1px solid var(--linha);font-size:10.5px;color:var(--fraco)}
+
+/* Texto para LER: medida limitada, entrelinha larga e hierarquia por peso, não por tamanho — é
+   parecer de umas 40 linhas que a pessoa lê antes de decidir mesclar, não saída de terminal. */
+.ma-texto{font-size:13.5px;line-height:1.62;max-width:74ch}
+.ma-texto h3,.ma-texto h4,.ma-texto h5,.ma-texto h6{margin:20px 0 7px;line-height:1.3;
+  letter-spacing:-.01em}
+.ma-texto h3{font-size:15px;padding-bottom:5px;border-bottom:1px solid var(--linha)}
+.ma-texto h4{font-size:13.5px}
+.ma-texto h5,.ma-texto h6{font-size:12px;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--fraco)}
+.ma-texto>*:first-child{margin-top:8px}
+.ma-texto p{margin:9px 0}
+.ma-texto ul,.ma-texto ol{margin:9px 0;padding-left:22px}
+.ma-texto li{margin:4px 0}
+.ma-texto li::marker{color:var(--fraco)}
+.ma-texto b{font-weight:650}
+.ma-texto code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;
+  padding:.5px 4px;font:500 11.5px/1.4 ui-monospace,monospace;overflow-wrap:anywhere}
+.ma-texto a{color:var(--acento);text-decoration-color:color-mix(in srgb,var(--acento) 40%,transparent)}
+.ma-texto blockquote{margin:10px 0;padding:2px 0 2px 13px;border-left:3px solid var(--linha);
+  color:var(--fraco)}
+.ma-texto hr{border:0;border-top:1px solid var(--linha);margin:18px 0}
+.md-cod{margin:10px 0;padding:10px 12px;background:var(--painel);border:1px solid var(--linha);
+  border-radius:8px;overflow-x:auto}
+.md-cod code{background:none;border:0;padding:0;font-size:11.5px;line-height:1.5}
+.md-rolo{overflow-x:auto;margin:11px 0;scrollbar-gutter:stable}
+.md-tab{border-collapse:collapse;font-size:12.5px;min-width:100%}
+.md-tab th,.md-tab td{border:1px solid var(--linha);padding:6px 10px;text-align:left;
+  vertical-align:top}
+.md-tab th{background:var(--painel);font-weight:650;font-size:11px;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--fraco)}
+
+/* ── sanfona da barra: Chamados ou Implantação, um de cada vez ──────────────
+   As duas listas competiam pela mesma coluna e a de repos empurrava a de chamados para fora da
+   tela. Sanfona porque a escolha é excludente: quem está implantando não está conferindo chamado.
+   O `aside` é flex-column, então a aberta cresce (`flex:1`) e a fechada fica só com o cabeçalho. */
+.sanfona{flex:0 0 auto;display:flex;flex-direction:column;min-height:0;
+  border-bottom:1px solid var(--linha)}
+.sanfona[open]{flex:1 1 auto}
+.sanfona>summary{flex:0 0 auto;list-style:none;cursor:pointer;display:flex;align-items:center;
+  gap:9px;padding:11px 14px;font-weight:700;font-size:11px;line-height:1;text-transform:uppercase;
+  letter-spacing:.09em;color:var(--fraco);user-select:none;transition:background .12s,color .12s}
+.sanfona>summary::-webkit-details-marker{display:none}
+.sanfona>summary:hover{background:var(--bg);color:var(--fg)}
+.sanfona[open]>summary{color:var(--fg)}
+/* A seta é do CSS, não do texto: `details` esconde o marcador nativo e ele não gira sozinho. */
+.sanfona>summary::before{content:'';flex:0 0 auto;width:0;height:0;border:4px solid transparent;
+  border-left-color:currentColor;transition:transform .15s;transform-origin:2px 50%;opacity:.65}
+.sanfona[open]>summary::before{transform:rotate(90deg)}
+.sf-icone{font-size:14px;line-height:1}
+.sf-conta{margin-left:auto;font-weight:700;font-size:10px;letter-spacing:0;color:var(--fraco);
+  background:var(--linha);border-radius:20px;padding:3px 8px;min-width:22px;text-align:center}
+.sanfona[open] .sf-conta{background:var(--acento);color:#fff}
+#painel-chamados,#painel-implantacao{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0;
+  scrollbar-gutter:stable}
+
+/* ── trilha do release: o resumo do que entra ───────────────────────────────
+   Mesmo conteúdo que estava no centro, movido para cá pelo motivo de sempre: o centro é do diff,
+   que é a coisa mais larga do app. Aqui o resumo fica à vista enquanto se lê o diff. */
+.impl-tr-repo{font-weight:700;font-size:15px;line-height:1.25;letter-spacing:-.02em;
+  overflow-wrap:anywhere}
+.impl-tr-depara{margin-top:5px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+  font-size:10px;color:var(--fraco)}
+.impl-tr-depara code{background:var(--painel);border:1px solid var(--linha);border-radius:5px;
+  padding:1px 5px;font-size:9.5px;color:var(--fg)}
+/* Dois por linha, em cartão: são quatro números que só significam alguma coisa comparados entre si. */
+.impl-tr-nums{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.impl-tr-nums>div{background:var(--cartao);border:1px solid var(--linha);border-radius:8px;
+  padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.impl-tr-nums b{font-weight:700;font-size:18px;line-height:1.1;letter-spacing:-.03em}
+.impl-tr-nums b.mais{color:var(--ok)}
+.impl-tr-nums b.menos{color:var(--erro)}
+.impl-tr-nums span{font-weight:600;font-size:9px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--fraco)}
+/* Migrate e package.json mudam a ORDEM do deploy: por isso gritam, e não viram mais um número. */
+.impl-tr-alerta{margin-top:6px;background:var(--aviso);color:#fff;border-radius:7px;
+  padding:7px 10px;font-weight:600;font-size:10.5px;line-height:1.35}
+.impl-tr-ids{display:flex;flex-direction:column;gap:4px}
+.impl-id{display:block;background:var(--cartao);border:1px solid var(--linha);border-radius:7px;
+  padding:6px 9px;font-weight:600;font-size:11px;color:var(--acento);text-decoration:none}
+.impl-id:hover{border-color:var(--acento)}
+.impl-tr-autores{display:flex;flex-wrap:wrap;gap:4px}
+.impl-tr-autores span{background:var(--cartao);border:1px solid var(--linha);border-radius:20px;
+  padding:3px 9px;font-size:10.5px;color:var(--fg)}
+
+/* Abrir PR é ação para fora: fica ao lado do analisar, mas sem o peso de cor dele. */
+.tr-pr-abrir{width:100%;display:flex;align-items:center;justify-content:center;gap:6px;
+  background:var(--cartao);border:1px solid var(--linha);border-radius:7px;padding:8px 9px;
+  font-weight:600;font-size:11.5px;cursor:pointer;color:var(--fg);font-family:inherit;margin-top:5px}
+.tr-pr-abrir:hover:not(:disabled){border-color:var(--ok);color:var(--ok)}
+.tr-pr-abrir:disabled{opacity:.55;cursor:default}
+.tr-pr-nota{margin-top:6px;font-size:10px;line-height:1.4;color:var(--fraco);overflow-wrap:anywhere}
+.tr-pr-nota.ok{color:var(--ok);font-weight:600}
+.tr-pr-nota.erro{color:var(--erro)}
+.tr-pr-nota a{color:inherit}
+
+/* O ⟳ mora dentro do <summary> da sanfona: some junto com a seção, que é onde ele faz sentido. */
+.sf-recarregar{flex:0 0 auto;cursor:pointer;font-size:13px;line-height:1;color:var(--fraco);
+  padding:2px 5px;border-radius:6px;transition:background .12s,color .12s;display:inline-block}
+.sf-recarregar:hover{background:var(--bg);color:var(--acento)}
+.sf-recarregar.girando{color:var(--acento);animation:girar .8s linear infinite;pointer-events:none}
+/* Sem carimbo, "nada mudou" e "ninguém buscou" desenham a mesma fila — e só um dos dois é notícia. */
+.impl-buscado{margin-left:auto;font-size:9.5px;letter-spacing:0;text-transform:none;opacity:.85}
+.impl-buscado.nunca{color:var(--aviso);font-weight:600;opacity:1}
+/* Implantado não é erro nem ausência: fica na lista, apagado, com o ✓ dizendo por quê. */
+.impl-linha.implantado .impl-nome{opacity:.62}
+.impl-linha.implantado .impl-sub{color:var(--ok);font-weight:600}
+/* Na linha ativa o fundo é o acento: o verde do ✓ cai para contraste ilegível, e a regra do
+   implantado vem depois da do ativo na folha, então ganhava por ordem. Aqui o ativo volta a mandar. */
+.impl-linha.ativo.implantado .impl-sub{color:#fff}
+.impl-linha.ativo.implantado .impl-nome{opacity:1}
+
+
+
+/* ── tela de Configurações: o menu da esquerda ──────────────────────────────
+   Cada item é ícone + bloco de texto, com o estado ativo marcado por barra e fundo, não por caixa
+   inteira contornada: com quatro caixas contornadas empilhadas, nenhuma se destacava. */
+.voltar-config{width:100%;display:flex;align-items:center;gap:8px;background:none;
+  border:1px solid var(--linha);border-radius:8px;cursor:pointer;color:var(--fraco);
+  padding:7px 10px;margin-bottom:14px;font:600 11.5px/1.2 -apple-system,system-ui,sans-serif}
+.voltar-config:hover{border-color:var(--acento);color:var(--acento);background:var(--bg)}
+.grupo-config{font-weight:700;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--fraco);opacity:.75;padding:0 4px 6px;margin-top:14px}
+.grupo-config:first-of-type{margin-top:0}
+.item-config{display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;background:none;
+  border:0;border-radius:9px;cursor:pointer;padding:9px 10px;margin-bottom:2px;color:var(--fg);
+  position:relative;transition:background .12s}
+.item-config:hover{background:var(--bg)}
+.item-config.ativo{background:var(--bg)}
+/* A barra é `::before` e não `border-left`: borda mexeria no espaçamento e a linha inteira pularia
+   3px ao ficar ativa. */
+.item-config.ativo::before{content:'';position:absolute;left:0;top:7px;bottom:7px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--acento)}
+.ic-config{flex:0 0 auto;font-size:15px;line-height:1.25;width:19px;text-align:center}
+.ic-texto{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.item-config .rot{font-weight:600;font-size:12.5px;line-height:1.25}
+.item-config.ativo .rot{color:var(--acento)}
+.item-config .res{font-weight:400;font-size:10.5px;line-height:1.4;color:var(--fraco)}
+/* O caminho só no item aberto: ele é referência para editar fora da tela, não identidade do item. */
+.item-config .cam{display:none;font:10px/1.3 ui-monospace,monospace;color:var(--fraco);opacity:.75;
+  overflow-wrap:anywhere;margin-top:2px}
+.item-config.ativo .cam{display:block}
+
+/* ── tela de Configurações: catálogo de repositórios ────────────────────────
+   Tabela e não markdown: aqui os campos são previsíveis. O editor de markdown continua ao lado,
+   para as rotinas, onde o formato é texto livre. */
+.cab-repos{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:14px 0 10px;border-bottom:1px solid var(--linha);margin-bottom:14px}
+.cab-titulo-bloco{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:3px}
+.cab-repos h2{margin:0;font-size:19px;line-height:1.2;letter-spacing:-.02em}
+.bt-primario,.bt-secundario{flex:0 0 auto;border-radius:7px;padding:7px 13px;cursor:pointer;
+  font:600 11.5px/1 -apple-system,system-ui,sans-serif}
+.bt-primario{background:var(--acento);border:1px solid var(--acento);color:#fff}
+.bt-primario:hover{filter:brightness(1.07)}
+.bt-secundario{background:var(--cartao);border:1px solid var(--linha);color:var(--fg)}
+.bt-secundario:hover{border-color:var(--acento);color:var(--acento)}
+.fonte-manual{color:var(--acento)}
+
+.repos-filtro{display:flex;align-items:center;gap:10px;margin:0 0 8px}
+.repos-filtro input{flex:0 1 260px;font:400 12px/1.5 -apple-system,system-ui,sans-serif;
+  color:var(--fg);background:var(--cartao);border:1px solid var(--linha);border-radius:7px;
+  padding:6px 11px}
+.repos-filtro input:focus{border-color:var(--acento);outline:none}
+.repos-conta{font-size:10.5px;color:var(--fraco)}
+
+.tab-repos{width:100%;border-collapse:collapse;font-size:12.5px}
+/* Cabeçalho preso: a lista passa de 30 linhas e sem isto some o significado das colunas ao rolar. */
+.tab-repos thead th{position:sticky;top:0;z-index:2;background:var(--bg);text-align:left;
+  font-weight:700;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fraco);
+  padding:8px 10px;border-bottom:1px solid var(--linha)}
+.tab-repos td{padding:4px 10px;border-bottom:1px solid var(--linha);vertical-align:middle}
+.tab-repos tbody tr:hover td{background:var(--painel)}
+.c-entra{width:56px;text-align:center}
+.c-nome{width:230px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-fonte{width:78px}
+.c-tirar{width:34px;text-align:right}
+.c-vazio{color:var(--linha);font-weight:700;cursor:help}
+
+/* Origem e destino num campo só, com a seta no meio: é UM par de branches. */
+.c-par{padding-left:4px}
+.par-campos{display:flex;align-items:center;gap:2px;max-width:380px}
+.par-campos input{flex:0 1 148px;min-width:80px;font:400 11.5px/1.5 ui-monospace,monospace;
+  color:var(--fg);background:none;border:1px solid transparent;border-radius:5px;padding:3px 6px}
+.par-campos input:hover{border-color:var(--linha);background:var(--cartao)}
+.par-campos input:focus{border-color:var(--acento);background:var(--cartao);outline:none}
+.par-campos input::placeholder{color:var(--linha)}
+.par-seta{flex:0 0 auto;color:var(--fraco);font-size:11px;opacity:.7;padding:0 3px}
+.c-motivo{display:block;padding:0 7px 3px;font-size:9.5px;line-height:1.3;color:var(--aviso)}
+
+/* Desmarcada continua legível, só recuada: é a resposta "este repo NÃO entra", não sujeira. */
+.tab-repos tr.apagada .c-nome{opacity:.5}
+.tab-repos tr.apagada .par-campos input{opacity:.5}
+.tab-repos tr.sem-par .c-nome{color:var(--fraco);font-weight:500}
+/* Só o manual tem selo: "detectado" apareceria em 36 das 51 linhas, e selo que está em quase tudo
+   não informa nada — informa a exceção. */
+.selo-fonte{font-weight:700;font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;
+  border-radius:20px;padding:2px 8px;background:var(--acento);color:#fff;white-space:nowrap}
+.tr-tirar{background:none;border:0;color:var(--linha);cursor:pointer;font-size:15px;line-height:1;
+  padding:0 4px;border-radius:5px;transition:color .12s,background .12s}
+.tab-repos tr:hover .tr-tirar{color:var(--fraco)}
+.tr-tirar:hover{background:var(--rem);color:var(--erro)}
+
+.repos-sem-par{margin-top:16px}
+.repos-sem-par>summary{cursor:pointer;font-size:11px;color:var(--fraco);padding:8px 10px;
+  border-radius:7px;list-style:none;display:flex;align-items:center;gap:7px}
+.repos-sem-par>summary::-webkit-details-marker{display:none}
+.repos-sem-par>summary::before{content:'';width:0;height:0;border:4px solid transparent;
+  border-left-color:currentColor;transition:transform .15s;transform-origin:2px 50%;opacity:.7}
+.repos-sem-par[open]>summary::before{transform:rotate(90deg)}
+.repos-sem-par>summary:hover{background:var(--painel);color:var(--fg)}
+
+.repos-novo{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:12px 13px;margin:20px 0 28px;
+  background:var(--painel);border:1px solid var(--linha);border-radius:9px}
+.rn-rot{flex:0 0 auto;font-weight:700;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--fraco);margin-right:3px}
+.rn-seta{flex:0 0 auto;color:var(--fraco);opacity:.7}
+.repos-novo input{font:400 11.5px/1.5 ui-monospace,monospace;color:var(--fg);background:var(--cartao);
+  border:1px solid var(--linha);border-radius:6px;padding:6px 9px;flex:1 1 130px;min-width:110px}
+.repos-novo input:focus{border-color:var(--acento);outline:none}
+.repos-novo button{background:var(--acento);border:1px solid var(--acento);color:#fff;
+  border-radius:6px;padding:6px 14px;font-weight:600;font-size:11.5px;cursor:pointer;flex:0 0 auto}
+.repos-novo button:hover{filter:brightness(1.07)}

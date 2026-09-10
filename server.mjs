@@ -258,6 +258,40 @@ class Servidor {
 
     // Grava só o conteúdo, no caminho que a allowlist define. Backup ao lado antes de sobrescrever:
     // é arquivo de instrução editado à mão, e um salvamento errado apaga regra que custou caro.
+    salvarRepos(req, res) {
+        let corpo = '';
+        req.on('data', d => {
+            corpo += d;
+            if (corpo.length > 512 * 1024) {
+                req.destroy();
+            }
+        });
+        req.on('end', () => {
+            try {
+                const { repos: entradas } = JSON.parse(corpo || '{}');
+                if (!Array.isArray(entradas)) {
+                    return this.json(res, { erro: 'esperava uma lista de repos' }, 400);
+                }
+                const lista = implantacao.catalogo.salvar(entradas);
+                this.registrar('repos', 'salvar', `${lista.filter(r => r.ativo).length} ativos de ${lista.length}`);
+                this.invalidarImplantacao();
+                return this.json(res, { ok: true, repos: lista });
+            } catch (e) {
+                return this.json(res, { erro: e.message }, 500);
+            }
+        });
+    }
+
+    // Toda leitura da implantação sai do par de branches do catálogo: mexeu no catálogo, o que
+    // estava em cache respondeu por uma comparação que não é mais a que vale.
+    invalidarImplantacao() {
+        for (const chave of [...this.cache.keys()]) {
+            if (chave === 'implantacao' || chave.startsWith('impl|')) {
+                this.cache.delete(chave);
+            }
+        }
+    }
+
     salvarConfig(req, res) {
         let corpo = '';
         req.on('data', d => {
@@ -436,6 +470,71 @@ class Servidor {
     // Roda o agente de verdade (`claude -p`) para a única coisa que não dá para automatizar: decidir
     // qual PR/branch é a comparação certa de cada repo. O prompt é FIXO aqui — o cliente só manda o
     // ID, validado contra o padrão de chamado. Página local montando prompt seria injeção.
+    // `git fetch` mexe em ref de remoto — não toca branch local nem árvore de trabalho — mas ainda
+    // é escrita no `.git`, e por isso vale a mesma regra da corrida e da PR: só da máquina do
+    // servidor. Pela LAN a tela é para VER.
+    //
+    // Serializado: dois cliques concorrentes seriam 204 `git fetch` disputando a mesma rede e o
+    // mesmo `.git`, e o segundo não traria nada que o primeiro já não fosse trazer.
+    async atualizarImplantacao(res, remoto) {
+        if (!ehLocal(remoto)) {
+            this.registrar('implantacao', 'negado-lan', `${remoto} pediu atualizar`);
+            return this.json(res, { ok: false, erro: 'atualizar os repos só da máquina do servidor' });
+        }
+        if (this.buscandoRemoto) {
+            return this.json(res, { ok: false, erro: 'já estou buscando' });
+        }
+        this.buscandoRemoto = true;
+        const inicio = Date.now();
+        try {
+            const r = await implantacao.buscarRemoto();
+            // Com os refs novos, tudo que estava em cache virou resposta de um git que não existe mais.
+            this.invalidarImplantacao();
+            const falhos = r.achados.filter(a => !a.ok);
+            this.registrar('implantacao', 'atualizar',
+                `${r.repos} repos em ${Date.now() - inicio}ms, ${falhos.length} sem nenhum ref`);
+            return this.json(res, {
+                ok: true, buscadoEm: r.buscadoEm, repos: r.repos,
+                segundos: Math.round((Date.now() - inicio) / 100) / 10,
+                semRefs: falhos.map(a => a.projeto),
+                fila: await implantacao.resumo(),
+                escolhidos: implantacao.escolhidos()
+            });
+        } catch (e) {
+            return this.json(res, { ok: false, erro: e.message });
+        } finally {
+            this.buscandoRemoto = false;
+        }
+    }
+
+    async abrirPrDeRelease(projeto, res) {
+        const d = await implantacao.detalhe(projeto);
+        if (!d) {
+            return this.json(res, { ok: false, erro: 'sem origin/main ou origin/stage neste repo' });
+        }
+        const jaTem = await implantacao.prAberta(projeto);
+        if (jaTem) {
+            return this.json(res, { ok: false, erro: `já existe a PR #${jaTem.number}`, url: jaTem.url });
+        }
+        const titulo = `Release ${new Date().toISOString().slice(0, 10)} — ${d.ids.join(', ') || `${d.commits} commits`}`;
+        const corpo = [
+            `${d.commits} commits · ${d.arquivos} arquivos · +${d.adicionadas} -${d.removidas}`,
+            '',
+            d.ids.length ? `## Chamados\n${d.ids.map(i => `- ${i}`).join('\n')}` : '',
+            d.migrates.length ? `## Migrates — rodar antes do serviço\n${d.migrates.map(m => `- \`${m}\``).join('\n')}` : '',
+            d.pacote ? '> Mexe em `package.json`.' : '',
+            '## Commits',
+            d.listaDeCommits.map(c => `- \`${c.hash}\` ${c.titulo}`).join('\n'),
+            '',
+            '🤖 Generated with [Claude Code](https://claude.com/claude-code)',
+            '',
+            'https://claude.ai/code/session_01DT4ir9PryhV3UDBxCrzdJG'
+        ].filter(Boolean).join('\n');
+        const r = await implantacao.abrirPr(projeto, { titulo, corpo });
+        this.registrar('implantacao', r.ok ? 'pr-aberta' : 'pr-falhou', `${projeto} ${r.url || r.erro}`);
+        return this.json(res, { ...r, projeto, titulo });
+    }
+
     // A mesma corrida do agente, outro prompt e outro inventário. Só de localhost, pelo mesmo
     // motivo: spawna `claude -p` com Bash nesta máquina.
     async agenteImplantacao(projetos, res, remoto) {
@@ -743,7 +842,7 @@ class Servidor {
     // O maior mtime entre os assets: muda quando qualquer um deles muda, e o navegador rebusca.
     versaoDosAssets() {
         let maior = 0;
-        for (const nome of ['app.js', 'estilo.css', 'realce.js', 'pagina.mjs', 'favicon.svg']) {
+        for (const nome of ['app.js', 'markdown.js', 'estilo.css', 'realce.js', 'pagina.mjs', 'favicon.svg']) {
             try {
                 maior = Math.max(maior, statSync(join(import.meta.dirname, 'web', nome)).mtimeMs);
             } catch {
@@ -822,7 +921,10 @@ class Servidor {
             // Só a contagem: quem está à frente. O TTL é curto porque a fila muda a cada merge.
             return this.emCacheAsync('implantacao', async () => ({
                 fila: await implantacao.resumo(),
-                escolhidos: implantacao.escolhidos()
+                escolhidos: implantacao.escolhidos(),
+                // Sem isto o painel não tinha como distinguir "nada mudou" de "ninguém buscou": os
+                // dois desenham a mesma fila, e só um deles é notícia.
+                buscadoEm: implantacao.buscadoEm()
             }), 60000).then(v => this.json(res, v));
         }
         if (url.pathname === '/api/implantacao-detalhe') {
@@ -831,12 +933,66 @@ class Servidor {
                 () => implantacao.detalhe(projeto).then(d => d || { projeto, erro: 'sem origin/main ou origin/stage' }),
                 60000).then(v => this.json(res, v));
         }
+        if (url.pathname === '/api/repos') {
+            return this.json(res, { repos: implantacao.catalogo.listar(), detectadoEm: implantacao.catalogo.detectadoEm() });
+        }
+        if (url.pathname === '/api/repos-detectar') {
+            // Detectar é leitura do `.git` local — não vai à rede e não escreve em repo nenhum,
+            // só no catálogo daqui. Por isso não tem a trava de localhost do fetch e da corrida.
+            return implantacao.catalogo.detectar()
+                .then(lista => {
+                    this.registrar('repos', 'detectar', `${lista.filter(r => r.ativo).length} de ${lista.length} com par`);
+                    this.invalidarImplantacao();
+                    return this.json(res, { repos: lista, detectadoEm: implantacao.catalogo.detectadoEm() });
+                })
+                .catch(e => this.json(res, { erro: e.message }, 500));
+        }
+        if (url.pathname === '/api/repos-salvar' && req.method === 'POST') {
+            return this.salvarRepos(req, res);
+        }
+        if (url.pathname === '/api/implantacao-atualizar') {
+            return this.atualizarImplantacao(res, req.socket.remoteAddress);
+        }
         if (url.pathname === '/api/implantacao-escolher') {
-            const projetos = (q.get('projetos') || '').split(',').filter(Boolean);
+            // Duas formas, de propósito. `entra`/`sai` nomeiam UM repo e são idempotentes: repetir o
+            // pedido não muda mais nada. `projetos` manda o conjunto inteiro e é destrutivo por
+            // natureza — quem repete um pedido velho apaga o que veio depois.
+            //
+            // A lista de marcar/desmarcar usa a primeira. Um clique repetido pelo navegador contra a
+            // lista que se redesenha já apagou a escolha três vezes aqui: mandando o conjunto, cada
+            // repetição acertava a PRIMEIRA linha restante e ia comendo os repos um a um; mandando o
+            // nome, a repetição não faz nada.
+            const entra = q.get('entra');
+            const sai = q.get('sai');
+            const escolhidos = new Set(implantacao.escolhidos());
+            if (entra || sai) {
+                if (entra) {
+                    escolhidos.add(entra);
+                }
+                if (sai) {
+                    escolhidos.delete(sai);
+                }
+            } else {
+                escolhidos.clear();
+                for (const p of (q.get('projetos') || '').split(',').filter(Boolean)) {
+                    escolhidos.add(p);
+                }
+            }
+            const projetos = [...escolhidos];
             implantacao.escolher(projetos);
-            this.registrar('implantacao', 'escolha', projetos.join(',') || '(nenhum)');
+            this.registrar('implantacao', 'escolha',
+                `${entra ? `+${entra}` : ''}${sai ? `-${sai}` : ''}${entra || sai ? ' → ' : ''}${projetos.join(',') || '(nenhum)'}`);
             this.cache.delete('implantacao');
             return this.json(res, { escolhidos: projetos });
+        }
+        if (url.pathname === '/api/implantacao-pr') {
+            // Só de localhost, como a corrida: abrir PR é ação para fora, e a confirmação está na
+            // tela. O corpo vem do detalhe, não do cliente — texto de PR montado pelo navegador
+            // seria conteúdo não conferido indo para o repositório.
+            if (!ehLocal(req.socket.remoteAddress)) {
+                return this.json(res, { ok: false, erro: 'abrir PR só da máquina do servidor' });
+            }
+            return this.abrirPrDeRelease(q.get('projeto'), res);
         }
         if (url.pathname === '/api/agente-implantacao') {
             return this.agenteImplantacao((q.get('projetos') || '').split(',').filter(Boolean),

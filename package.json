@@ -11,7 +11,7 @@
     "contexto": "node ferramentas/contexto.mjs",
     "indices": "node ferramentas/indices.mjs",
     "log": "node ferramentas/log.mjs",
-    "test": "node --test teste/*.mjs"
+    "test": "QUALIDADE_ESTADO=$(mktemp -d) node --test teste/*.mjs"
   },
   "engines": {
     "node": ">=20.11"
