@@ -21,30 +21,38 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
 <aside>
   <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span>
     <span><span class="nome">Magias do Mago</span><span class="sub">conferência por chamado</span></span></h1>
-  <details class="sanfona" id="sanfona-chamados" open>
-    <summary><span class="sf-icone" aria-hidden="true">🧙</span><span>Chamados</span>
-      <span class="sf-conta" id="conta-chamados"></span></summary>
-    <div id="painel-chamados">
-      <div id="lista" aria-busy="true">
-        <div class="carregando" style="min-height:78px"><span class="giro"></span></div>
-      </div>
-      <div id="ocultos"></div>
+  <nav id="abas" role="tablist" aria-label="visões da barra">
+    <button class="aba ativa" id="aba-chamados" role="tab" onclick="trocarVisao('chamados')">
+      <span class="ab-i" aria-hidden="true">🧙</span><span class="ab-n">Chamados</span>
+      <span class="ab-c" id="conta-chamados"></span>
+    </button>
+    <button class="aba" id="aba-implantacao" role="tab" onclick="trocarVisao('implantacao')">
+      <span class="ab-i" aria-hidden="true">🚀</span><span class="ab-n">Implantação</span>
+      <span class="ab-c" id="conta-impl"></span>
+    </button>
+    <button class="aba" id="aba-config" role="tab" onclick="trocarVisao('config')">
+      <span class="ab-i" aria-hidden="true">⚙</span><span class="ab-n">Configurações</span>
+    </button>
+  </nav>
+  <div class="painel" id="painel-chamados">
+    <div id="lista" aria-busy="true">
+      <div class="carregando" style="min-height:78px"><span class="giro"></span></div>
     </div>
-  </details>
-  <details class="sanfona" id="sanfona-implantacao">
-    <summary><span class="sf-icone" aria-hidden="true">🚀</span><span>Implantação</span>
-      <span class="sf-conta" id="conta-impl"></span>
+    <div id="ocultos"></div>
+  </div>
+  <div class="painel" id="visao-implantacao" hidden>
+    <div class="pn-acoes">
       <span class="sf-recarregar" id="btn-atualizar-impl" role="button" tabindex="0"
             onclick="atualizarImplantacao(event)" onkeydown="if(event.key==='Enter'){atualizarImplantacao(event)}"
-            title="buscar origin/main e origin/stage de novo — a fila é lida desses dois refs">⟳</span></summary>
+            title="buscar origin/main e origin/stage de novo — a fila é lida desses dois refs">⟳</span>
+    </div>
     <div id="painel-implantacao"></div>
-  </details>
-  <div id="painel-config" hidden></div>
+  </div>
+  <div class="painel" id="painel-config" hidden></div>
+  <!-- O pé é o que NÃO é visão: estado da máquina, que vale nas três. Estava dentro de Chamados e
+       sumia nas outras duas — justamente quando saber que há agente rodando mais importa. -->
   <footer id="pe-barra">
-    <button id="btn-config" onclick="trocarVisao(visao === 'config' ? visaoAnterior : 'config')"
-            title="Configurações — as rotinas que eu sigo">
-      <span class="engrenagem" aria-hidden="true">⚙</span><span>Configurações</span>
-    </button>
+    <div id="sessoes"></div>
   </footer>
 </aside>
 <div id="carga" aria-hidden="true"><div class="carga-fio"></div></div>

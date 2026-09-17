@@ -10,11 +10,12 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir, networkInterfaces } from 'node:os';
 import { Diff, CatFile, WORKSPACE } from '../lib/diff.mjs';
 import { Comparacao } from '../lib/comparacao.mjs';
 import { Implantacao } from '../lib/implantacao.mjs';
+import { Sessoes } from '../lib/sessoes.mjs';
 import { repos as catalogoDoBanco } from '../lib/db.mjs';
 import { recusarEstadoDeProducao } from './anteparo.mjs';
 import { ler, gravar, mesclar } from '../lib/estado.mjs';
@@ -1212,5 +1213,96 @@ test('canais cat-file respeitam o teto e somem quando param de ser usados', asyn
         assert.equal(CatFile.faxina, null, 'faxina continuou agendada com o mapa vazio');
     } finally {
         CatFile.fecharTodos();
+    }
+});
+
+
+// ── agentes do Claude Code abertos na máquina ────────────────────────────────
+// Protegem o que a tela faz quando o registro interno da CLI falta ou o transcript é grande.
+
+function registroFalso() {
+    const raiz = mkdtempSync(join(tmpdir(), 'sessoes-'));
+    const registro = join(raiz, 'sessions');
+    const projetos = join(raiz, 'projects', 'proj');
+    execFileSync('mkdir', ['-p', registro, projetos]);
+    return { raiz, registro, projetos };
+}
+
+test('processo morto sai da lista, vivo fica', () => {
+    const { registro, projetos } = registroFalso();
+    // O próprio processo de teste é o "vivo" que não pode sumir da lista enquanto ele roda.
+    writeFileSync(join(registro, `${process.pid}.json`), JSON.stringify({
+        pid: process.pid, sessionId: 'viva', cwd: WORKSPACE, kind: 'interactive', status: 'busy'
+    }));
+    writeFileSync(join(registro, '2147483646.json'), JSON.stringify({
+        pid: 2147483646, sessionId: 'morta', cwd: WORKSPACE, kind: 'interactive', status: 'busy'
+    }));
+    writeFileSync(join(registro, 'lixo.json'), '{ isto não é json');
+
+    const r = new Sessoes(registro, projetos).resumo();
+    const ids = r.sessoes.map(x => x.sessionId);
+    assert.deepEqual(ids, ['viva'], 'a lista tinha que ter só a sessão viva');
+    assert.equal(r.total, 1);
+    assert.equal(r.ocupadas, 1);
+});
+
+// Regressão: a primeira versão lia uma janela fixa do fim e o pedido ficava fora dela numa sessão
+// que trabalhou muito — a tela mostrava "—", indistinguível de "não pediu nada".
+function transcriptGrande(projetos, sessionId, pedido) {
+    const linhas = [JSON.stringify({ type: 'user', timestamp: '2026-09-17T10:00:00.000Z', message: { content: pedido } })];
+    const recheio = 'x'.repeat(900);
+    for (let i = 0; i < 700; i++) {
+        linhas.push(JSON.stringify({
+            type: 'assistant', timestamp: '2026-09-17T10:00:01.000Z',
+            message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: recheio } }] }
+        }));
+    }
+    const arquivo = join(projetos, `${sessionId}.jsonl`);
+    writeFileSync(arquivo, linhas.join('\n'));
+    return arquivo;
+}
+
+test('o pedido é achado mesmo longe do fim do transcript', () => {
+    const { registro, projetos } = registroFalso();
+    const arquivo = transcriptGrande(projetos, 'longa', 'arrumar o contador da barra');
+    const s = new Sessoes(registro, projetos);
+    assert.ok(statSync(arquivo).size > s.tetoBytes,
+        'o transcript de teste precisa passar de um pedaço, senão o teste não testa nada');
+
+    const a = s.atividade(arquivo);
+    assert.equal(a.pedido, 'arrumar o contador da barra');
+    assert.equal(a.truncado, false);
+    // O que está acontecendo AGORA vem do fim, não do pedaço antigo onde o pedido foi achado.
+    assert.equal(a.ferramenta.nome, 'Bash');
+});
+
+test('pedido fora do orçamento se declara em vez de sumir', () => {
+    const { registro, projetos } = registroFalso();
+    const s = new Sessoes(registro, projetos);
+    const arquivo = transcriptGrande(projetos, 'curta', 'este pedido está longe demais');
+    s.tetoTotal = s.tetoBytes;
+
+    const a = s.atividade(arquivo);
+    assert.equal(a.pedido, null);
+    assert.equal(a.truncado, true, 'sem isto a tela mostra ausência de pedido como se não houvesse pedido');
+    assert.equal(a.ferramenta.nome, 'Bash', 'o trecho lido ainda tem que dizer o que está rodando');
+});
+
+test('/api/sessoes responde resumo e detalhe com a forma esperada', async () => {
+    const { status, corpo } = await pegar('/api/sessoes');
+    assert.equal(status, 200);
+    assert.equal(typeof corpo.total, 'number');
+    assert.equal(typeof corpo.ocupadas, 'number');
+    assert.ok(Array.isArray(corpo.sessoes));
+    assert.equal(corpo.total, corpo.sessoes.length);
+    for (const s of corpo.sessoes) {
+        assert.equal(typeof s.pid, 'number');
+        assert.equal(typeof s.sessionId, 'string');
+        assert.equal(typeof s.daqui, 'boolean');
+        assert.ok(!('pedido' in s), 'o resumo não pode pagar a leitura de transcript');
+    }
+    const det = await pegar('/api/sessoes', { detalhe: '1' });
+    for (const s of det.corpo.sessoes) {
+        assert.ok('pedido' in s && 'truncado' in s, 'o detalhe precisa dizer se o pedido foi achado');
     }
 });

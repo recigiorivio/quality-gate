@@ -1,5 +1,9 @@
 .env
 node_modules/
+
+# saída dos testes de tela: screenshot e trace de caso que falhou
+test-results/
+playwright-report/
 relatorios/
 gate.log
 *.local

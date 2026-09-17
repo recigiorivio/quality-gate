@@ -39,15 +39,49 @@ function marcarCarga() {
   }
 }
 
-const api = (r, p) => {
-  const id = Symbol(r);
-  emVoo.set(id, r in NOME_DA_ROTA ? NOME_DA_ROTA[r] : r.replace('/api/', ''));
-  marcarCarga();
-  // Exposto na rede, toda chamada leva o token; local, `window.TOKEN` é vazio e nada muda.
-  return fetch(r + '?' + new URLSearchParams(window.TOKEN ? { ...p, t: window.TOKEN } : p))
-    .then(x => x.json())
-    .finally(() => { emVoo.delete(id); marcarCarga(); });
-};
+// Teto de pedidos ao mesmo tempo, com fila. O navegador já limita a 6 conexões por origem, e o
+// problema nunca foi o número: é QUAIS 6. Medido ao abrir a Implantação — 29 pedidos disparados
+// juntos, com `implantacao-detalhe` levando 11,8 s cada. Nessa janela, clicar em Configurações não
+// fazia nada: o pedido saía e ficava preso atrás dos pesados, sem resposta e sem erro.
+//
+// A fila é FIFO com uma exceção: o que a pessoa acabou de pedir fura, porque esperar o segundo
+// plano terminar para atender um clique é a definição de tela travada.
+const TETO_EM_VOO = 4;
+const fila = [];
+let rodando = 0;
+
+function bombear() {
+  while (rodando < TETO_EM_VOO && fila.length) {
+    const proximo = fila.shift();
+    rodando++;
+    proximo.correr().finally(() => {
+      rodando--;
+      bombear();
+    });
+  }
+}
+
+// `urgente` = disparado por um clique. Vai para a frente da fila, nunca para o fim.
+const api = (r, p, { urgente = false } = {}) => new Promise((resolver, rejeitar) => {
+  const tarefa = {
+    correr() {
+      const id = Symbol(r);
+      emVoo.set(id, r in NOME_DA_ROTA ? NOME_DA_ROTA[r] : r.replace('/api/', ''));
+      marcarCarga();
+      // Exposto na rede, toda chamada leva o token; local, `window.TOKEN` é vazio e nada muda.
+      return fetch(r + '?' + new URLSearchParams(window.TOKEN ? { ...p, t: window.TOKEN } : p))
+        .then(x => x.json())
+        .then(resolver, rejeitar)
+        .finally(() => { emVoo.delete(id); marcarCarga(); });
+    }
+  };
+  if (urgente) {
+    fila.unshift(tarefa);
+  } else {
+    fila.push(tarefa);
+  }
+  bombear();
+});
 // `ignorado` = a checagem não se aplica aqui. `indisponível` = ela deveria ter rodado e não rodou.
 const ROTULO = {ok:'ok', aviso:'aviso', atencao:'atenção', manual:'julgar',
   ignorado:'ignorado', indisponivel:'indisponível',
@@ -97,13 +131,9 @@ let geracaoChamado = 0;
 let visao = 'chamados';
 // De onde a pessoa veio, para o "voltar" das Configurações devolvê-la ao mesmo lugar.
 let visaoAnterior = 'chamados';
-const SECOES_SANFONA = [['sanfona-chamados', 'chamados'], ['sanfona-implantacao', 'implantacao']];
-// `trocarVisao` e o `toggle` da sanfona se chamam um ao outro. A trava faz a ida e a volta
-// terminarem na primeira passada, em vez de depender de a recursão convergir sozinha.
-// Declarados AQUI, com o resto do estado do módulo: `const` tem zona morta, e lá embaixo eles
-// estouravam no `ligarSanfona()` do início — "Cannot access 'SECOES_SANFONA' before initialization",
-// que derrubava a montagem da lista de chamados inteira.
-let sincronizandoSanfona = false;
+// As três visões são exclusivas, e agora a interface diz isso: aba clica, `trocarVisao` decide, e
+// ninguém mais chama ninguém de volta — era daí que vinha a trava de recursão que existia aqui.
+const VISOES = [['painel-chamados', 'chamados'], ['visao-implantacao', 'implantacao'], ['painel-config', 'config']];
 let chamados = [];
 let estadoAgente = { rodando: null, passos: 0 };
 let prsDoChamado = [];
@@ -242,6 +272,7 @@ async function carregarChamados() {
            ${o.titulo ? `<span class="oc-sub">${esc(o.titulo)}</span>` : ''}
          </button>`).join('')}</div>`
     : '';
+  marcarContaImplantacao();
   marcarPinosDaBarra(chamados);
   // `?chamado=UND-1638` (e `&projeto=`) na URL: é o que faz o link ser passável — abrir a tela já
   // no chamado certo, de outra máquina, sem procurar na barra.
@@ -254,6 +285,137 @@ async function carregarChamados() {
   if (!atual && chamados.length) {
     abrirChamado(chamados[0].chamado);
   }
+}
+
+let sessoesAbertas = null;
+let relogioSessoes = null;
+
+// A contagem fica fora do `api()`: a barra do topo diz que a TELA trabalha a SEU pedido, e uma
+// sondagem de fundo a cada 30 s a faria piscar sem ninguém ter pedido nada.
+async function contarSessoes() {
+  const params = new URLSearchParams(window.TOKEN ? { t: window.TOKEN } : {});
+  try {
+    return await (await fetch(`/api/sessoes?${params}`)).json();
+  } catch {
+    return null;
+  }
+}
+
+// A modal é clique, e clique fura a fila. Medido: com `fetch` cru ela levava 3 s para desenhar
+// enquanto o servidor respondia em 7 ms — o pedido esperava atrás da carga inicial da barra.
+const detalharSessoes = () => api('/api/sessoes', { detalhe: '1' }, { urgente: true });
+
+// Zero sessão não desenha botão: é a mesma regra do "ver análise" na trilha — botão que abre modal
+// vazia é pior que botão nenhum.
+async function carregarSessoes() {
+  const r = await contarSessoes();
+  const el = document.getElementById('sessoes');
+  if (!el) { return; }
+  if (!r?.total) {
+    el.innerHTML = '';
+    return;
+  }
+  // Uma barrinha por agente, do estado de cada um. É o que o número sozinho não responde: três
+  // pulsando é uma tarde de trabalho, três apagadas são três sessões esquecidas abertas.
+  const pinos = r.sessoes
+    .map(s => `<i class="cs-pino ${s.status === 'busy' ? 'viva' : s.status ? 'parada' : 'muda'}"></i>`)
+    .join('');
+  el.innerHTML = `<button class="conta-sessoes ${r.ocupadas ? 'viva' : ''}" onclick="abrirModalSessoes()"
+      title="${quebraDeSessoes(r)} — clique para ver o que cada uma está fazendo">
+      <span class="cs-topo">
+        <span class="bolinha ${r.ocupadas ? 'b-ocupada' : 'b-parada'}"></span>
+        <span class="cs-num">${r.total}</span>
+        <span class="cs-txt">
+          <span class="cs-rot">agente${r.total > 1 ? 's' : ''} aberto${r.total > 1 ? 's' : ''}</span>
+          <span class="cs-sub">${r.ocupadas ? `${r.ocupadas} trabalhando agora` : 'nenhum trabalhando'}</span>
+        </span>
+        <span class="cs-seta">›</span>
+      </span>
+      <span class="cs-pinos">${pinos}</span>
+    </button>`;
+}
+
+// Enumera em vez de subtrair: CLI antiga não grava `status`, e chamar isso de "parado" seria
+// afirmar o que não se sabe. Cabe no tooltip, não na linha — as barrinhas já mostram os três.
+function quebraDeSessoes(r) {
+  const partes = [];
+  if (r.ocupadas) { partes.push(`${r.ocupadas} trabalhando`); }
+  if (r.paradas) { partes.push(`${r.paradas} esperando`); }
+  if (r.mudas) { partes.push(`${r.mudas} sem estado informado`); }
+  return partes.join(', ');
+}
+
+async function abrirModalSessoes() {
+  document.getElementById('modal-sessoes')?.remove();
+  const m = document.createElement('dialog');
+  m.id = 'modal-sessoes';
+  m.innerHTML = renderModalSessoes(sessoesAbertas, !sessoesAbertas);
+  m.addEventListener('click', e => { if (e.target === m) { m.close(); } });
+  m.addEventListener('close', () => {
+    m.remove();
+    clearInterval(relogioSessoes);
+    relogioSessoes = null;
+  });
+  document.body.appendChild(m);
+  m.showModal();
+  await atualizarModalSessoes();
+  // O ritmo rápido vive enquanto a modal vive: quem está olhando quer ver o passo mudar.
+  relogioSessoes = setInterval(atualizarModalSessoes, 3000);
+}
+
+async function atualizarModalSessoes() {
+  const m = document.getElementById('modal-sessoes');
+  if (!m?.open) { return; }
+  sessoesAbertas = await detalharSessoes();
+  if (document.getElementById('modal-sessoes')?.open) {
+    m.innerHTML = renderModalSessoes(sessoesAbertas, false);
+  }
+  carregarSessoes();
+}
+
+function renderModalSessoes(r, carregando) {
+  const linhas = (r?.sessoes || []).map(s => {
+    const st = s.status === 'busy' ? 'ocupada' : s.status ? 'parada' : 'muda';
+    const marca = { ocupada: 'trabalhando', parada: 'esperando', muda: 'não informa' }[st];
+    const idade = s.inicio ? `aberta ${duracao(Date.now() - s.inicio)}` : '';
+    const fazendo = s.ferramenta
+      ? `<code class="se-ferr">${esc(s.ferramenta.nome)}</code> <span class="se-entrada">${esc(s.ferramenta.entrada)}</span>`
+      : '<i class="se-sem">nenhuma ferramenta no trecho lido</i>';
+    const pedido = s.pedido ? esc(s.pedido)
+      : s.transcript === null ? '<i class="se-sem">sem transcript em disco — sessão de IDE/SDK</i>'
+        : s.truncado ? '<i class="se-sem">pedido além do trecho lido</i>'
+          : '<i class="se-sem">—</i>';
+    return `<tr class="se-${st}">
+      <td class="se-marca"><span class="bolinha b-${st}"></span></td>
+      <td class="se-quem">${esc(s.nome)}
+        <div class="se-meta">pid ${s.pid} · ${marca}${idade ? ` · ${idade}` : ''}</div>
+        <div class="se-meta">${s.daqui ? 'neste workspace' : esc(s.cwd || 'sem pasta')}</div></td>
+      <td class="se-oque">
+        <div class="se-pedido">${pedido}</div>
+        <div class="se-fazendo">${fazendo}</div>
+        ${s.fala ? `<div class="se-fala">${esc(s.fala)}</div>` : ''}</td>
+      <td class="se-quando">${s.quando ? new Date(s.quando).toLocaleTimeString('pt-BR') : ''}</td>
+    </tr>`;
+  }).join('');
+  const cabeca = carregando ? 'lendo…'
+    : `${r?.total || 0} aberta(s) · ${r?.ocupadas || 0} trabalhando agora`;
+  return `<div class="me-cabeca">
+      <div><div class="me-titulo">Agentes do Claude Code nesta máquina</div>
+        <div class="me-sub">${cabeca}</div></div>
+      <button class="pa-fechar" onclick="document.getElementById('modal-sessoes').close()" title="fechar (Esc)">×</button>
+    </div>
+    ${linhas ? `<table class="me-tabela se-tabela"><tbody>${linhas}</tbody></table>`
+    : '<div class="me-log-titulo">nenhuma sessão aberta</div>'}
+    <div class="me-pe">Lido de <code>~/.claude/sessions/&lt;pid&gt;.json</code> — o mesmo registro que
+      <code>claude agents --json</code> usa — e do fim do transcript de cada sessão. Só leitura: a tela
+      não fala com essas sessões nem as encerra. Processo morto sai da lista sozinho.</div>`;
+}
+
+function duracao(ms) {
+  const min = Math.round(ms / 60000);
+  if (min < 60) { return `há ${min}min`; }
+  const h = Math.floor(min / 60);
+  return h < 24 ? `há ${h}h${String(min % 60).padStart(2, '0')}` : `há ${Math.floor(h / 24)}d`;
 }
 
 // O pino da linha do chamado é o PIOR dos repos dele: a barra tem que dizer onde olhar antes de
@@ -1262,9 +1424,11 @@ function ligarArrasto() {
 
 aplicarSplit(lerSplit());
 ligarArrasto();
-ligarSanfona();
 carregarChamados();
 escutarEventos();
+carregarSessoes();
+// Sessão abre e fecha sem avisar ninguém: sem esta releitura o contador vira number velho.
+setInterval(() => { if (!document.hidden) { carregarSessoes(); } }, 30000);
 // A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
 api('/api/implantacao', {}).then(r => {
   filaImplantacao = r.fila || [];
@@ -1289,7 +1453,7 @@ let geracaoDiffImpl = 0;
 async function carregarImplantacao() {
   const alvo = document.getElementById('painel-implantacao');
   alvo.innerHTML = girando(120);
-  const r = await api('/api/implantacao', {});
+  const r = await api('/api/implantacao', {}, { urgente: true });
   filaImplantacao = r.fila || [];
   escolhidosImplantacao = new Set(r.escolhidos || []);
   buscadoEmImplantacao = r.buscadoEm || null;
@@ -1321,7 +1485,8 @@ function carimboDaBusca() {
 // repo com 0 commits à frente não aparece na fila, e é justamente ele que vira candidato novo ao
 // receber o primeiro: um botão que o escondesse repetiria o problema que ele existe para resolver.
 async function atualizarImplantacao(evento) {
-  // O controle mora dentro do <summary>: sem isto, clicar nele abre e fecha a sanfona junto.
+  // Sobrou de quando o controle morava no <summary> da sanfona. Continua porque o `role=button`
+  // num <span> dispara o clique e a tecla, e deixar os dois passarem rola a barra no Espaço.
   evento?.stopPropagation();
   evento?.preventDefault();
   const b = document.getElementById('btn-atualizar-impl');
@@ -1581,7 +1746,7 @@ async function abrirPrDeRelease(projeto) {
 }
 
 async function abrirImplantacao(projeto) {
-  const d = await api('/api/implantacao-detalhe', { projeto });
+  const d = await api('/api/implantacao-detalhe', { projeto }, { urgente: true });
   if (d.erro) {
     return;
   }
@@ -1714,19 +1879,26 @@ function trocarVisao(qual) {
     visaoAnterior = visao;
   }
   visao = qual;
-  // A sanfona reflete a visão. Ela chamava `trocarVisao` e nunca era chamada por ele: sair da
-  // Implantação para as Configurações e voltar deixava o título e o centro em "Chamados" com a
-  // seção de Implantação aberta na barra, listando 11 repos. Duas seções, duas respostas.
-  sincronizarSanfona(qual);
+  // Trocar de visão ESVAZIA as outras: escondida, a lista voltava com a seleção velha enquanto o
+  // centro já era de outra coisa. Entrar nas Configurações não limpa — de lá se volta ao mesmo lugar.
+  if (qual !== 'config') {
+    for (const [, tipo] of VISOES) {
+      if (tipo !== qual && tipo !== 'config') {
+        limparSecao(tipo);
+      }
+    }
+  }
   const emConfig = qual === 'config';
   const [icone, nome, sub] = TITULOS[qual] || TITULOS.chamados;
   document.getElementById('titulo-barra').innerHTML =
     `<span class="mago" aria-hidden="true">${icone}</span>
      <span><span class="nome">${nome}</span><span class="sub">${sub}</span></span>`;
-  document.getElementById('painel-config').hidden = !emConfig;
-  document.getElementById('sanfona-chamados').hidden = emConfig;
-  document.getElementById('sanfona-implantacao').hidden = emConfig;
-  document.getElementById('btn-config').classList.toggle('ativa', emConfig);
+  for (const [id, tipo] of VISOES) {
+    document.getElementById(id).hidden = tipo !== qual;
+    document.getElementById(`aba-${tipo}`).classList.toggle('ativa', tipo === qual);
+    document.getElementById(`aba-${tipo}`).setAttribute('aria-selected', String(tipo === qual));
+  }
+  lembrarVisao(qual);
   document.getElementById('cabecalho').hidden = emConfig || qual === 'implantacao';
   document.getElementById('trilha').hidden = emConfig;
   if (emConfig) {
@@ -1773,42 +1945,26 @@ function limparCentro(aviso) {
   history.replaceState(null, '', `${location.pathname}${q.size ? `?${q}` : ''}`);
 }
 
-// Sanfona: abrir uma seção fecha a outra. Duas listas longas abertas ao mesmo tempo numa barra de
-// 300 px dariam rolagem dupla — e elas respondem perguntas diferentes, raramente ao mesmo tempo.
-function sincronizarSanfona(qual) {
-  if (sincronizandoSanfona || qual === 'config') {
-    return;
+// A visão escolhida sobrevive ao reload: quem trabalha em implantação a semana toda não quer
+// recomeçar em Chamados todo dia. Lê a chave antiga uma vez para não perder a preferência de quem
+// já usava as sanfonas.
+function lembrarVisao(qual) {
+  try {
+    localStorage.setItem('visao', qual);
+  } catch {
+    // aba privada
   }
-  sincronizandoSanfona = true;
-  for (const [id, tipo] of SECOES_SANFONA) {
-    const el = document.getElementById(id);
-    const deveAbrir = tipo === qual;
-    if (!deveAbrir && el.open) {
-      limparSecao(tipo);
-    }
-    el.open = deveAbrir;
-  }
-  sincronizandoSanfona = false;
-  // Lembra a seção aqui e não só no clique: quem sai pelas Configurações e volta pelo botão trocou
-  // de seção sem tocar na sanfona, e sem isto o próximo carregamento reabria a seção errada.
-  try { localStorage.setItem('sanfona', qual); } catch { /* aba privada */ }
 }
 
-function ligarSanfona() {
-  for (const [id, qual] of SECOES_SANFONA) {
-    const el = document.getElementById(id);
-    el.addEventListener('toggle', () => {
-      if (!el.open || sincronizandoSanfona) {
-        return;
-      }
-      trocarVisao(qual);
-      try { localStorage.setItem('sanfona', qual); } catch { /* aba privada */ }
-    });
+function restaurarVisao() {
+  let guardada = null;
+  try {
+    guardada = localStorage.getItem('visao') || localStorage.getItem('sanfona');
+  } catch {
+    // aba privada
   }
-  if (localStorage.getItem('sanfona') === 'implantacao') {
-    document.getElementById('sanfona-chamados').open = false;
-    document.getElementById('sanfona-implantacao').open = true;
-  }
+  // `config` não se restaura: é um desvio do trabalho, não um lugar onde se mora.
+  trocarVisao(guardada === 'implantacao' ? 'implantacao' : 'chamados');
 }
 
 // Ícone por chave, no cliente: o servidor manda o que o arquivo É (rótulo, resumo, caminho), e
@@ -1816,7 +1972,9 @@ function ligarSanfona() {
 const ICONE_CONFIG = { inicio: '🌱', fim: '🏁', regras: '📏', repos: '🗂' };
 
 async function carregarConfigs() {
-  const r = await api('/api/configs', {});
+  // Anota quem mandava no centro ANTES do await, sem tomar posse: o dono legítimo é quem clicar.
+  const meu = geracaoConteudo;
+  const r = await api('/api/configs', {}, { urgente: true });
   // Dois grupos, porque são duas naturezas: o que eu LEIO como instrução (markdown, texto livre) e
   // o que eu CONSULTO como dado (catálogo, campos fixos). Juntar tudo numa lista fazia o
   // "Repositórios" parecer mais uma rotina.
@@ -1840,8 +1998,12 @@ async function carregarConfigs() {
     <div class="grupo-config">Catálogo</div>
     ${item('repos', 'Repositórios', 'Quais entram na comparação de implantação, e com qual par de branches',
     'qualidade.db · tabela repos', 'abrirRepos()')}`;
+  // Abre o primeiro item só se NINGUÉM tiver pedido outra coisa enquanto isto carregava. A guarda
+  // de geração impede que a resposta atrasada pinte por cima; esta impede o inverso, que é o auto
+  // abrir TOMAR a vez de um clique já feito e deixar a tela vazia — o clique volta cedo por não ser
+  // mais o dono, e o item automático nunca chega a desenhar o que a pessoa pediu.
   const primeiro = document.querySelector('.item-config');
-  if (primeiro && !document.querySelector('.item-config.ativo')) {
+  if (primeiro && meu === geracaoConteudo && !document.querySelector('.item-config.ativo')) {
     abrirConfig(primeiro.dataset.k);
   }
 }
@@ -1851,16 +2013,23 @@ let catalogoRepos = [];
 // Tabela e não markdown: aqui os campos SÃO previsíveis (repo, origem, destino, entra ou não), e
 // digitar JSON à mão para ligar um repo seria pior que o problema que isto resolve.
 async function abrirRepos() {
+  const meu = tomarConteudo();
   document.querySelectorAll('.item-config').forEach(b => b.classList.toggle('ativo', b.dataset.k === 'repos'));
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
   alvo.innerHTML = girando(240);
-  const r = await api('/api/repos', {});
+  const r = await api('/api/repos', {}, { urgente: true });
+  if (!aindaMeu(meu)) {
+    return;
+  }
   catalogoRepos = r.repos || [];
   if (!catalogoRepos.length) {
     // Primeira abertura, catálogo vazio: detectar sozinho é o certo — a alternativa é uma tabela
     // vazia com um botão, e ninguém quer configurar 51 repos à mão para começar.
     const d = await api('/api/repos-detectar', {});
+    if (!aindaMeu(meu)) {
+      return;
+    }
     catalogoRepos = d.repos || [];
   }
   desenharRepos(r.detectadoEm);
@@ -1954,6 +2123,13 @@ function linhaDeRepo(r, i) {
 
 let filtroRepos = '';
 let detectadoEmRepos = null;
+// Quem manda no `#conteudo`. Cada abertura toma um número; ao voltar do `await`, só escreve quem
+// ainda for o dono. Sem isso, `carregarConfigs()` — que abre o primeiro item sozinho — corria com
+// o clique da pessoa em outro item, e quem RESPONDESSE por último pintava a tela: clicar rápido em
+// Configurações → Repositórios deixava você no editor de markdown, com a tabela apagada.
+let geracaoConteudo = 0;
+const tomarConteudo = () => ++geracaoConteudo;
+const aindaMeu = n => n === geracaoConteudo;
 
 // Esconde linha em vez de redesenhar a tabela: redesenhar a cada tecla tiraria o foco do campo de
 // filtro no meio da digitação.
@@ -1992,6 +2168,12 @@ function mexerNoRepo(i, campo, valor) {
   reposSujos();
 }
 
+// Redesenhar DEPOIS que o evento termina. `desenharRepos()` troca o innerHTML de `#conteudo`, o
+// que destrói o próprio botão que está despachando o clique — e o navegador, ao reencontrar o nó
+// no lugar, clica de novo. Foi assim que um clique em "adicionar" virou dois, e antes disso que um
+// clique num checkbox virou quatro remoções em cascata na lista de repos.
+const redesenharDepois = () => setTimeout(desenharRepos, 0);
+
 function removerRepo(i) {
   const [fora] = catalogoRepos.splice(i, 1);
   if (!fora) {
@@ -2002,7 +2184,7 @@ function removerRepo(i) {
   if (fora.jaSalvo !== false) {
     reposRemovidos.add(fora.projeto);
   }
-  desenharRepos();
+  redesenharDepois();
   reposSujos();
 }
 
@@ -2019,7 +2201,8 @@ function adicionarRepo() {
   catalogoRepos.push({ projeto, origem, destino, fonte: 'manual', ativo: true, motivo: null, jaSalvo: false });
   reposEditados.add(projeto);
   catalogoRepos.sort((a, b) => a.projeto.localeCompare(b.projeto));
-  desenharRepos();
+  document.getElementById('novo-repo').value = '';
+  redesenharDepois();
   reposSujos();
 }
 
@@ -2071,7 +2254,9 @@ async function salvarRepos() {
   reposRemovidos.clear();
   // Relê do servidor em vez de confiar na cópia local: outra aba pode ter mexido em linhas que
   // não são minhas, e é justamente isso que agora sobrevive.
-  const atualizado = await api('/api/repos', {});
+  // `urgente` também aqui: isto é a segunda metade de um clique, e sem furar a fila ele esperava
+  // atrás dos pedidos de segundo plano — o botão salvar gravava e a tabela só voltava 30 s depois.
+  const atualizado = await api('/api/repos', {}, { urgente: true });
   catalogoRepos = atualizado.repos || [];
   desenharRepos(atualizado.detectadoEm);
   // A fila do menu vem do catálogo: salvar sem recarregá-la deixava a barra mostrando repos que
@@ -2097,11 +2282,15 @@ async function detectarRepos() {
 // Edição do markdown cru, não de um formulário: o arquivo é a instrução que eu leio, e um formulário
 // só saberia representar os campos que alguém previu.
 async function abrirConfig(chave) {
+  const meu = tomarConteudo();
   document.querySelectorAll('.item-config').forEach(b => b.classList.toggle('ativo', b.dataset.k === chave));
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
   alvo.innerHTML = `<div style="padding:6px 0">${esq('esq-titulo')}${esqLinhas('l1','l3','l2','l4')}</div>`;
   const c = await api('/api/config', { chave });
+  if (!aindaMeu(meu)) {
+    return;
+  }
   if (c.erro) {
     alvo.innerHTML = `<p class="aviso">erro: ${esc(c.erro)}</p>`;
     return;
@@ -2158,10 +2347,15 @@ Object.assign(window, {
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
   alternarRepo, abrirImplantacao, analisarImplantacao, abrirPrDeRelease, verCommit, verRelease,
   abrirModalAnalise, copiarAnalise, atualizarImplantacao,
-  copiarLink,
+  copiarLink, abrirModalSessoes,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos
 });
 // Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });
 Object.defineProperty(window, 'visaoAnterior', { get: () => visaoAnterior });
+
+// A visão só se restaura DEPOIS de todo o módulo: `trocarVisao` limpa a implantação, e `implAtual`
+// é declarado lá pelo meio — chamar antes dava "Cannot access 'implAtual' before initialization",
+// que derrubava a barra inteira sem desenhar nada.
+restaurarVisao();

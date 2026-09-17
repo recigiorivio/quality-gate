@@ -19,6 +19,7 @@ import lint from './lib/lint.mjs';
 import { corridas, caminhoEstado } from './lib/db.mjs';
 import comparacao from './lib/comparacao.mjs';
 import implantacao from './lib/implantacao.mjs';
+import sessoes from './lib/sessoes.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
@@ -1066,6 +1067,11 @@ class Servidor {
                 return { lista };
             }, 30000).then(dados => this.responderChamados(res, dados));
         }
+        // Sem cache: a pergunta é "o que está acontecendo AGORA", e a leitura do registro é
+        // barata o bastante para não valer o risco de responder um estado velho.
+        if (url.pathname === '/api/sessoes') {
+            return this.json(res, q.get('detalhe') === '1' ? sessoes.detalhe() : sessoes.resumo());
+        }
         if (url.pathname === '/api/ocultar') {
             // Deixa rastro: um chamado que sai do menu sem registro é impossível de explicar depois.
             this.registrar('ocultar', 'oculto', q.get('chamado'));
@@ -1197,7 +1203,11 @@ class Servidor {
         }
         servidor.listen(PORTA, HOST, () => {
             const alvo = SO_LOCAL ? 'localhost' : (this.ipDaRede() || HOST);
-            console.log(`qualidade → http://${alvo}:${PORTA}/${TOKEN ? `?t=${TOKEN}` : ''}`
+            // A porta ANUNCIADA é a que o SO deu, não a que se pediu: com `PORT=0` — que é como o
+            // teste de tela sobe o seu próprio servidor sem colidir com outra suíte na mesma
+            // máquina — `PORTA` vale 0, e imprimir isso é imprimir um endereço que não existe.
+            const porta = servidor.address().port;
+            console.log(`qualidade → http://${alvo}:${porta}/${TOKEN ? `?t=${TOKEN}` : ''}`
                 + `   (workspace: ${WORKSPACE})`
                 + (SO_LOCAL ? '' : `\n⚠  exposto na rede${sorteado ? ', token sorteado agora' : ''} —`
                     + ` /api/agente executa comando nesta máquina. Sem o ?t= a resposta é 401.`));

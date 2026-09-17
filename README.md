@@ -50,7 +50,26 @@ literal onde cabe enum saem da tela e vão para `checar-diff.mjs --corrigir`.
 **Barra da esquerda — só navegação.** Uma linha por chamado: o ID, o título do chamado como
 subtítulo (sem ele, `UND-1638` não diz nada), o pino com o pior estado, quantos repos, e um `×` para
 tirar da lista. Antes ela fazia três trabalhos em 340 px — navegar, resumir e detalhar — e nenhum
-refinamento resolvia isso. **Configurações** é o último item, no pé, com engrenagem.
+refinamento resolvia isso.
+
+Ela tem **três abas** e um pé:
+
+```
+┌──────────┬────────────┬──────────────┐
+│ CHAMADOS │ IMPLANTAÇÃO│ CONFIGURAÇÕES│   ← as três visões, exclusivas
+└──────────┴────────────┴──────────────┘
+   (o painel da aba ativa)
+──────────────────────────────────────
+ ● 3 agentes abertos                ›    ← o pé: estado, vale nas três
+```
+
+As três já eram exclusivas — `trocarVisao()` esvazia as outras — mas eram expressas de três jeitos:
+duas sanfonas e um botão de rodapé. Abrir uma sanfona fechava a outra, o que é justamente o que uma
+sanfona **não** promete. A aba diz a verdade de cara.
+
+**O pé é o que não é visão.** Estado da máquina não pertence a nenhuma delas: enquanto o contador de
+agentes morava dentro de Chamados, ele sumia na Implantação e nas Configurações — exatamente quando
+saber que há agente rodando mais importa.
 
 **Centro — o veredito e o diff.** Uma linha de contagens, os cartões recolhidos, e o diff abaixo.
 
@@ -652,6 +671,75 @@ O Linear é a fonte **autoritativa** de quais PRs são do chamado: num caso real
 contra 10 da varredura local somada à busca na organização, incluindo PRs em repos que não existem
 naquele workspace. Por isso ele entra como terceira fonte, e a rotina manda buscá-lo **num subagente
 em paralelo** — é I/O de rede, não tem por que bloquear a conferência.
+
+## Os agentes abertos na máquina
+
+No pé da barra — visível nas três abas — um cartão diz quantas sessões do **Claude Code** estão
+abertas nesta máquina:
+
+```
+┌────────────────────────────────────┐
+│  ●  3  agentes abertos           › │
+│        2 trabalhando agora · 1 não │
+│        informa                     │
+│  ▬▬▬▬▬▬▬▬   ▬▬▬▬▬▬▬▬   ┄┄┄┄┄┄┄┄    │
+└────────────────────────────────────┘
+```
+
+Clicar abre uma modal com uma linha por sessão: o que foi pedido, a ferramenta que está rodando
+agora, a última coisa que ela disse, e há quanto tempo está aberta.
+
+Para que serve: sessão esquecida aberta há um dia é indistinguível de sessão trabalhando, e as duas
+custam a mesma janela de contexto e o mesmo dinheiro.
+
+**A fileira de barrinhas é o que o número sozinho não diz** — uma por agente: acesa e pulsando é
+quem trabalha, apagada é quem espera, tracejada é quem não informa estado. Três pulsando é uma
+tarde de trabalho; três apagadas são três sessões esquecidas abertas. Acima de seis elas quebram
+linha em vez de virar fiapo de 1px.
+
+O **tooltip enumera em vez de subtrair**: CLI antiga não grava `status`, e chamar isso de "parado"
+seria afirmar o que não se sabe. Por isso `/api/sessoes` devolve `ocupadas`, `paradas` e `mudas`
+separados. A enumeração fica no tooltip e não na linha porque os três estados não cabem em 300px —
+e as barrinhas já mostram os três.
+
+> ⚠️ **"agente" aqui não é o agente da tela.** `/api/agente`, `estadoAgente` e a modal de estado são
+> o agente que a própria ferramenta dispara para decidir comparação e implantação. Isto é outra
+> coisa, e por isso o código chama de **sessão**: `lib/sessoes.mjs`, `/api/sessoes`, `#sessoes`.
+> `/api/agentes` e `/api/agente` seriam a mesma rota para quem lê rápido.
+
+### De onde vem o dado
+
+De `~/.claude/sessions/<pid>.json`, o mesmo registro que `claude agents --json` lê, mais o fim do
+transcript de cada sessão em `~/.claude/projects/`. O comando oficial custa **170 ms** por chamada
+e a leitura direta **0,05 ms** — 3.200× mais barata, e o contador reconsulta sozinho a cada 30 s.
+
+O preço é acoplar a um formato interno da CLI. Por isso **todo campo é opcional**: o que sumir vira
+ausência na tela, nunca exceção. Sessão cujo processo morreu sai da lista sozinha, porque a
+liberação é por `kill(pid, 0)` — que não mata, pergunta.
+
+Duas rotas de custo diferente, como em `implantacao.mjs`:
+
+| Chamada | O que faz | Quem usa |
+|---|---|---|
+| `/api/sessoes` | conta e diz quem está ocupado; não abre transcript | o contador da barra |
+| `/api/sessoes?detalhe=1` | acrescenta pedido, ferramenta e última fala | a modal, enquanto aberta |
+
+### Três ausências que a tela distingue
+
+Ausência calada é o defeito que este projeto persegue, e aqui havia três jeitos de somer com o
+pedido. A modal diz qual é qual:
+
+| O que aparece | O que aconteceu |
+|---|---|
+| `sem transcript em disco` | sessão de IDE/SDK — ela não grava transcript |
+| `pedido além do trecho lido` | o orçamento de leitura (4 MB) acabou antes de achar |
+| `—` | achou o transcript, e não havia pedido nele |
+
+A leitura **anda para trás em pedaços** de 256 KB até achar o pedido, porque numa sessão que
+trabalhou muito ele fica longe do fim: medido, 502 KB atrás num transcript de 881 KB. A primeira
+versão lia uma janela fixa e mostrava `—` — indistinguível de "não pediu nada".
+
+**Só leitura.** A tela não fala com essas sessões, não manda mensagem e não encerra nenhuma.
 
 ## As duas linhas que a rotina escreve
 

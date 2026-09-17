@@ -38,7 +38,6 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 #titulo-barra .nome{font-weight:700;font-size:19px;letter-spacing:-.025em;color:var(--fg)}
 #titulo-barra .sub{font-weight:600;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--fraco)}
-#painel-chamados,#painel-config{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0;scrollbar-gutter:stable}
 
 /* uma linha por chamado: a barra só navega */
 .linha-chamado{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:3px;
@@ -71,12 +70,7 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 
 /* engrenagem no pé */
 #pe-barra{flex:0 0 auto;border-top:1px solid var(--linha);padding:8px 10px;background:var(--painel)}
-#btn-config{width:100%;display:flex;align-items:center;gap:9px;background:none;border:0;
-  color:var(--fraco);cursor:pointer;padding:8px 10px;border-radius:8px;font-weight:600;font-size:12px;line-height:1.2;
-  transition:background .12s,color .12s}
-#btn-config:hover{background:var(--bg);color:var(--fg)}
-#btn-config.ativa{background:var(--bg);color:var(--fg)}
-#btn-config .engrenagem{font-size:14px;line-height:1}
+/* o antigo botão de Configurações do rodapé virou a terceira aba */
 
 #ocultos{margin:4px 0 0;padding-top:8px;border-top:1px solid var(--linha)}
 .conta-ocultos{background:none;border:0;color:var(--fraco);cursor:pointer;font-size:11px;
@@ -95,6 +89,38 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
   white-space:nowrap;max-width:100%}
 .lista-ocultos button:hover{background:var(--bg);color:var(--acento)}
 .lista-ocultos button .oc-id::after{content:' ↩';opacity:.5}
+
+/* ── contador de agentes: o cartão de destaque abaixo do "N ocultos" ───────
+   A fileira de barrinhas é o que o número sozinho não diz — 3 pulsando é trabalho, 3 apagadas são
+   3 sessões esquecidas abertas. Uma barrinha por agente, sem teto: acima de 6 elas quebram linha
+   em vez de virar fiapo de 1px. */
+#sessoes:empty{display:none}
+#sessoes{margin:0}
+.conta-sessoes{width:100%;cursor:pointer;text-align:left;background:var(--cartao);font-family:inherit;
+  border:1px solid var(--linha);border-radius:10px;padding:11px 12px;color:var(--fg);
+  transition:border-color .12s,box-shadow .12s}
+.conta-sessoes.viva{border-color:color-mix(in srgb,var(--acento) 40%,var(--linha))}
+.conta-sessoes:hover{border-color:var(--acento);box-shadow:0 2px 10px rgba(125,112,228,.18)}
+.cs-topo{display:flex;align-items:center;gap:9px}
+.cs-num{font-size:22px;font-weight:700;line-height:1;letter-spacing:-.04em;flex:0 0 auto}
+.cs-txt{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 auto}
+.cs-rot{font-size:12px;font-weight:600;line-height:1.15}
+.cs-sub{font-size:10.5px;color:var(--fraco);line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cs-seta{flex:0 0 auto;color:var(--fraco);font-size:15px;line-height:1}
+.conta-sessoes:hover .cs-seta{color:var(--acento)}
+.cs-pinos{display:flex;flex-wrap:wrap;gap:4px;margin-top:10px}
+.cs-pino{flex:1 1 auto;min-width:16px;height:5px;border-radius:3px;background:var(--neutro);opacity:.35}
+.cs-pino.viva{background:var(--acento);opacity:1;animation:pulsar 1.6s ease-in-out infinite}
+.cs-pino.muda{opacity:1;background:repeating-linear-gradient(90deg,var(--linha) 0 3px,transparent 3px 6px)}
+
+.bolinha{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--neutro)}
+.bolinha.b-ocupada{background:var(--acento);animation:pulsar 1.6s ease-in-out infinite}
+.bolinha.b-parada{background:var(--neutro);opacity:.55}
+.bolinha.b-muda{background:transparent;border:1px solid var(--linha)}
+@keyframes pulsar{0%,100%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--acento) 55%,transparent)}
+  50%{opacity:.65;box-shadow:0 0 0 4px transparent}}
+@media(prefers-reduced-motion:reduce){.bolinha.b-ocupada,.cs-pino.viva{animation:none}}
 .vazio{color:var(--fraco);font-size:12px;padding:8px 4px;margin:0}
 
 #painel-config{padding:10px}
@@ -526,6 +552,32 @@ body.arrastando{user-select:none;cursor:col-resize}
 .me-confere{background:var(--painel);color:var(--ok);font-weight:600}
 .me-pe{padding:10px 18px 14px;font-size:10.5px;color:var(--fraco);border-top:1px solid var(--linha)}
 .me-pe code{background:var(--painel);border:1px solid var(--linha);border-radius:4px;padding:0 4px;font-size:10px}
+
+/* ── modal dos agentes: uma linha por sessão do Claude Code ────────────────
+   Reaproveita a casca da modal de estado (.me-*); só o miolo da tabela é próprio. */
+#modal-sessoes{border:1px solid var(--linha);border-radius:12px;padding:0;
+  width:min(880px,calc(100vw - 40px));max-height:calc(100vh - 60px);background:var(--cartao);
+  color:var(--fg);box-shadow:0 18px 50px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden}
+#modal-sessoes::backdrop{background:rgba(20,18,40,.38);backdrop-filter:blur(2px)}
+#modal-sessoes .me-tabela{display:block;overflow-y:auto;flex:1 1 auto}
+.se-tabela tr{cursor:default}
+.se-tabela tr:hover{background:transparent}
+.se-marca{width:22px;text-align:center;vertical-align:top;padding-top:13px!important}
+.se-quem{width:190px;font-weight:600;font-size:12px}
+.se-meta{font-weight:400;font-size:10px;color:var(--fraco);margin-top:2px;
+  font-family:ui-monospace,monospace;overflow-wrap:anywhere}
+.se-oque{min-width:0}
+.se-pedido{font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.se-fazendo{margin-top:4px;font-size:11px;color:var(--fraco);overflow-wrap:anywhere}
+.se-ferr{background:var(--painel);border:1px solid var(--linha);border-radius:4px;padding:1px 4px;
+  color:var(--acento);font-weight:600;font-size:9.5px}
+.se-entrada{font-family:ui-monospace,monospace;font-size:10px}
+.se-fala{margin-top:4px;font-size:11px;color:var(--fraco);font-style:italic;
+  border-left:2px solid var(--linha);padding-left:7px;overflow-wrap:anywhere}
+.se-sem{color:var(--fraco);font-style:italic;opacity:.8}
+.se-quando{white-space:nowrap;color:var(--fraco);font-size:11px;text-align:right;vertical-align:top}
+.se-ocupada .se-quem{color:var(--fg)}
+.se-parada,.se-muda{opacity:.72}
 /* Pasta de teste: vai para o fim, nasce recolhida e se anuncia — quase nunca é o que se confere. */
 .pasta.de-teste > summary{opacity:.72}
 .pasta.de-teste > summary:hover{opacity:1}
@@ -573,20 +625,20 @@ main{position:relative}
 /* Barra de rolagem discreta e que SURGE. A canaleta já está reservada (`scrollbar-gutter`), então
    mostrar o polegar depois não empurra nada: é só aparência. Sem isso ela aparecia de estalo no
    instante em que o diff entra, no meio de tudo o mais que estava acontecendo. */
-main::-webkit-scrollbar,#painel-chamados::-webkit-scrollbar,.me-log::-webkit-scrollbar,
+main::-webkit-scrollbar,.painel::-webkit-scrollbar,.me-log::-webkit-scrollbar,
 .pa-linhas::-webkit-scrollbar{width:11px;height:11px}
-main::-webkit-scrollbar-track,#painel-chamados::-webkit-scrollbar-track,
+main::-webkit-scrollbar-track,.painel::-webkit-scrollbar-track,
 .me-log::-webkit-scrollbar-track,.pa-linhas::-webkit-scrollbar-track{background:transparent}
-main::-webkit-scrollbar-thumb,#painel-chamados::-webkit-scrollbar-thumb,
+main::-webkit-scrollbar-thumb,.painel::-webkit-scrollbar-thumb,
 .me-log::-webkit-scrollbar-thumb,.pa-linhas::-webkit-scrollbar-thumb{
   background:transparent;border-radius:20px;border:3px solid transparent;background-clip:content-box;
   transition:background-color .45s ease-out}
 body.com-barra main::-webkit-scrollbar-thumb,
-body.com-barra #painel-chamados::-webkit-scrollbar-thumb,
+body.com-barra .painel::-webkit-scrollbar-thumb,
 body.com-barra .me-log::-webkit-scrollbar-thumb,
 body.com-barra .pa-linhas::-webkit-scrollbar-thumb{background-color:var(--linha)}
 body.com-barra main:hover::-webkit-scrollbar-thumb,
-body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:var(--fraco)}
+body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fraco)}
 
 /* ── implantação: a fila de stage para main ───────────────────────────────── */
 .impl-topo{display:flex;align-items:center;gap:8px;padding:2px 4px 10px;font-size:10.5px;
@@ -715,25 +767,29 @@ body.com-barra #painel-chamados:hover::-webkit-scrollbar-thumb{background-color:
    As duas listas competiam pela mesma coluna e a de repos empurrava a de chamados para fora da
    tela. Sanfona porque a escolha é excludente: quem está implantando não está conferindo chamado.
    O `aside` é flex-column, então a aberta cresce (`flex:1`) e a fechada fica só com o cabeçalho. */
-.sanfona{flex:0 0 auto;display:flex;flex-direction:column;min-height:0;
-  border-bottom:1px solid var(--linha)}
-.sanfona[open]{flex:1 1 auto}
-.sanfona>summary{flex:0 0 auto;list-style:none;cursor:pointer;display:flex;align-items:center;
-  gap:9px;padding:11px 14px;font-weight:700;font-size:11px;line-height:1;text-transform:uppercase;
-  letter-spacing:.09em;color:var(--fraco);user-select:none;transition:background .12s,color .12s}
-.sanfona>summary::-webkit-details-marker{display:none}
-.sanfona>summary:hover{background:var(--bg);color:var(--fg)}
-.sanfona[open]>summary{color:var(--fg)}
-/* A seta é do CSS, não do texto: `details` esconde o marcador nativo e ele não gira sozinho. */
-.sanfona>summary::before{content:'';flex:0 0 auto;width:0;height:0;border:4px solid transparent;
-  border-left-color:currentColor;transition:transform .15s;transform-origin:2px 50%;opacity:.65}
-.sanfona[open]>summary::before{transform:rotate(90deg)}
-.sf-icone{font-size:14px;line-height:1}
-.sf-conta{margin-left:auto;font-weight:700;font-size:10px;letter-spacing:0;color:var(--fraco);
-  background:var(--linha);border-radius:20px;padding:3px 8px;min-width:22px;text-align:center}
-.sanfona[open] .sf-conta{background:var(--acento);color:#fff}
-#painel-chamados,#painel-implantacao{overflow-y:auto;flex:1 1 auto;padding:10px;min-height:0;
-  scrollbar-gutter:stable}
+/* ── abas de visão: Chamados · Implantação · Configurações ──────────────────
+   Eram duas sanfonas mais um botão de rodapé para três coisas que sempre foram exclusivas — abrir
+   uma já fechava a outra no código. A aba diz isso de cara, e o pé fica livre para o estado. */
+#abas{flex:0 0 auto;display:flex;gap:3px;padding:8px 8px 0;background:var(--painel)}
+.aba{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:7px 3px 8px;border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;
+  background:none;color:var(--fraco);cursor:pointer;font-family:inherit;font-weight:700;
+  font-size:8.5px;text-transform:uppercase;letter-spacing:.01em;line-height:1.1;
+  transition:background .12s,color .12s}
+.aba:hover{background:var(--bg);color:var(--fg)}
+.aba .ab-i{font-size:15px;line-height:1}
+.aba .ab-n{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aba.ativa{background:var(--cartao);border-color:var(--linha);color:var(--fg)}
+.aba .ab-c{font-weight:700;font-size:8.5px;letter-spacing:0;background:var(--linha);
+  color:var(--fraco);border-radius:20px;padding:1px 6px}
+.aba .ab-c:empty{display:none}
+.aba.ativa .ab-c{background:var(--acento);color:#fff}
+/* A linha que fecha a fileira: a aba ativa "abre" no painel, as outras ficam sob ela. */
+#abas::after{content:'';position:absolute}
+.painel{flex:1 1 auto;min-height:0;overflow-y:auto;padding:10px;scrollbar-gutter:stable;background:var(--cartao);
+  border-top:1px solid var(--linha);margin-top:-1px}
+.painel[hidden]{display:none}
+.pn-acoes{display:flex;justify-content:flex-end;padding:0 2px 4px}
 
 /* ── trilha do release: o resumo do que entra ───────────────────────────────
    Mesmo conteúdo que estava no centro, movido para cá pelo motivo de sempre: o centro é do diff,
