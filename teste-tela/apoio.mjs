@@ -72,6 +72,7 @@ export const test = base.extend({
             const pagina = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
             const erros = [];
             pagina.on('pageerror', e => erros.push(String(e)));
+            // qualidade:ok comentario-bloco-longo
             // "Failed to load resource: … 400" é log de REDE do navegador, não exceção de JS — e um
             // caso que prova que a rota recusa um pedido inválido gera esse log de propósito. O que
             // interessa é erro vindo do código da tela; o status HTTP quem afirma é a asserção.
@@ -86,6 +87,7 @@ export const test = base.extend({
             expect(erros, 'a tela não pode acumular erro de JS').toEqual([]);
             await pagina.close();
         } finally {
+            // qualidade:ok comentario-bloco-longo
             // Caso que falha imprime o log do SERVIDOR. Sem isto, uma falha de tela dizia só
             // "elemento não encontrado" e eu passava rodadas adivinhando se o problema era a tela,
             // a rota ou a máquina — três vezes cheguei à conclusão errada por falta deste texto.

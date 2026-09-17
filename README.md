@@ -8,7 +8,10 @@ antes/depois embaixo. Mais as ferramentas de linha de comando que ela usa.
 **Instalação: [`instalacao/README.md`](instalacao/README.md)** — e `node instalacao/verificar.mjs`
 diz o que falta antes de você tentar.
 
-Sem dependência e sem `npm install` — continua valendo, e o `package.json` não tem `dependencies`.
+Sem dependência e sem `npm install` — continua valendo **para a ferramenta**, e o `package.json`
+não tem `dependencies`. A exceção é o **teste de tela**: navegador de verdade não dá para
+improvisar, e o Playwright entra em `devDependencies`. Quem usa a tela nunca instala nada; quem
+vai rodar `npm run tela` instala uma vez — ver [Testes](#testes).
 
 **Mas o piso do Node subiu para 22.5.0** (`engines.node`), e vale explicar por quê para ninguém
 perder uma tarde: o estado que dois processos escrevem passou de JSON para um SQLite, e o SQLite vem
@@ -726,7 +729,7 @@ Duas rotas de custo diferente, como em `implantacao.mjs`:
 
 ### Três ausências que a tela distingue
 
-Ausência calada é o defeito que este projeto persegue, e aqui havia três jeitos de somer com o
+Ausência calada é o defeito que este projeto persegue, e aqui havia três jeitos de sumir com o
 pedido. A modal diz qual é qual:
 
 | O que aparece | O que aconteceu |
@@ -775,6 +778,8 @@ Banner que só diz "terminou" é o silêncio-lido-como-aprovação em outra form
 
 ```bash
 npm test        # rotas, forma das respostas, cache, mesclagem, o banco, as CLIs e a doutrina
+npm run tela    # a mesma tela num navegador de verdade — este pede `npm install`
+npm run tudo    # os dois, nessa ordem
 ```
 
 **O `npm test` roda contra um diretório temporário**, por causa do `QUALIDADE_ESTADO=$(mktemp -d)`
@@ -801,6 +806,35 @@ e a suíte ficava verde sem exercitar nada.
 Dois casos montam um **repo git temporário** com merge por squash, porque essa é a situação que a
 topologia não vê. Um exige o jeito certo (mesclado → diff vazio) e o outro exige o errado (commit
 depois do merge → continua aparecendo): sem o segundo, a correção viraria cegueira.
+
+### Teste de tela — o único canto que pede `npm install`
+
+Configurações é a tela que mais quebrou, e sempre do mesmo jeito: o servidor mudava de contrato e o
+cliente ficava para trás, sem nada acusar. O botão **salvar** passou horas mandando um corpo que a
+rota recusava com 400, e nenhum teste viu porque nenhum teste abria a tela. Os casos de
+`teste-tela/` existem para que a próxima mudança de contrato falhe ali, e não no seu clique.
+
+```bash
+npm install                      # o @playwright/test, única dependência do projeto
+npx playwright install chromium  # e o navegador, uma vez por máquina
+npm run tela                     # `npm run tela-ui` abre o modo passo a passo
+```
+
+As escolhas do `playwright.config.mjs` foram todas pagas antes:
+
+| Escolha | Por quê |
+|---|---|
+| **sem `webServer`** | a fixture sobe **um servidor por caso**, em porta livre e com estado temporário. Um servidor para todos faria um caso que escreve estragar o dado do vizinho — a versão pequena do erro que apagou a escolha de repos quatro vezes |
+| **`workers: 1`** | cada caso varre os 51 repos do workspace com git. Com 3 workers, dois casos falharam por tempo esgotado e os mesmos passaram com 1: o que se media era a carga da máquina, não a tela. Paralelismo que precisa de teto de tempo maior não é paralelismo |
+| **`retries: 0`** | o `click()` já reencontra sozinho o elemento que foi destacado, e foi essa resiliência que transformou um clique num nó que sumia em quatro remoções em cascata. Repetir o caso inteiro por cima disso esconderia justamente a instabilidade que interessa ver |
+| **`globalSetup`** | colhe servidor órfão de rodada interrompida: o `finally` da fixture não roda sob SIGKILL, e dois órfãos vivos já puseram a carga da máquina em 5,8, derrubando por tempo casos que passavam sozinhos |
+
+A colheita é estreita de propósito — só morre servidor **deste** projeto cujo estado aponta para um
+diretório temporário. O servidor de trabalho usa o estado da raiz e nunca casa: matá-lo seria
+derrubar a tela de quem está usando a ferramenta.
+
+Porta livre é `PORT=0`, e é daí que veio a correção no log: o servidor passou a anunciar a porta que
+o SO **deu**, não a que se pediu — com `PORT=0`, a que se pediu é um endereço que não existe.
 
 ### `doutrina.json` — o de-para que impede "metade implementado"
 

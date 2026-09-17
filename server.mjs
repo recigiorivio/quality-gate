@@ -1203,6 +1203,7 @@ class Servidor {
         }
         servidor.listen(PORTA, HOST, () => {
             const alvo = SO_LOCAL ? 'localhost' : (this.ipDaRede() || HOST);
+            // qualidade:ok comentario-bloco-longo
             // A porta ANUNCIADA é a que o SO deu, não a que se pediu: com `PORT=0` — que é como o
             // teste de tela sobe o seu próprio servidor sem colidir com outra suíte na mesma
             // máquina — `PORTA` vale 0, e imprimir isso é imprimir um endereço que não existe.

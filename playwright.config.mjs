@@ -13,10 +13,12 @@ export default defineConfig({
     globalSetup: './teste-tela/colheita.mjs',
     testDir: './teste-tela',
     testMatch: '**/*.spec.mjs',
+    // qualidade:ok comentario-bloco-longo
     // Sem retry: `click()` do Playwright já reencontra elemento destacado por conta própria, e foi
     // essa resiliência que transformou um clique num nó que sumia em quatro remoções em cascata.
     // Repetir o caso inteiro por cima disso esconderia justamente a instabilidade que interessa ver.
     retries: 0,
+    // qualidade:ok comentario-bloco-longo
     // Um worker. Cada caso sobe um servidor que varre os 51 repos do workspace com git; três em
     // paralelo disputam disco e CPU, e o que se mede vira o tempo da máquina, não o da tela.
     // Medido: com 3 workers, dois casos falharam por tempo esgotado esperando a tabela; com 1,

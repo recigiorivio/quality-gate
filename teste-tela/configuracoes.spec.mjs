@@ -10,6 +10,7 @@ async function abrirCatalogo({ pagina, base }) {
     await pagina.goto(base, { waitUntil: 'domcontentloaded' });
     await pagina.click('#aba-config');
     await pagina.click('.item-config[data-k="repos"]');
+    // qualidade:ok comentario-bloco-longo
     // Espera a tabela PRINCIPAL, não `.tab-repos tbody tr`: esse seletor casa também com a tabela
     // recolhida dos repos sem par, então ele dava a tela por pronta com `#corpo-repos` ainda vazio
     // — e o caso seguinte lia uma lista vazia e ia procurar `tr[data-p="undefined"]`.
@@ -50,6 +51,7 @@ test('salvar manda a linha que mudou, e a rota aceita', async ({ tela }) => {
     await pagina.click('header >> text=salvar');
     await expect(pagina.locator('#estado-repos')).not.toHaveText(/salvando/);
 
+    // qualidade:ok comentario-bloco-longo
     // O contrato: uma linha nomeada, nunca a lista inteira. Mandar tudo é o pedido destrutivo que
     // apagava a edição da outra aba, e a rota o recusa com 400 — quem regredir aqui vê o botão
     // parar de funcionar, que foi exatamente o que aconteceu.
@@ -64,6 +66,7 @@ test('salvar manda a linha que mudou, e a rota aceita', async ({ tela }) => {
     await expect(pagina.locator(`tr[data-p="${alvo}"] .par-campos input`).first()).toHaveValue('origin/prova');
 });
 
+// qualidade:ok comentario-bloco-longo
 // A segunda aba aqui é uma CÓPIA VELHA do catálogo mandando um pedido, não um segundo navegador.
 // A versão anterior subia a tela inteira duas vezes — dois boots que varrem 51 repos com git — e
 // estourava 180 s sem nunca chegar ao que interessa. O invariante não precisa de dois navegadores:
@@ -153,6 +156,7 @@ test('o botão voltar devolve à seção de onde se veio', async ({ tela }) => {
     await expect(pagina.locator('#titulo-barra')).toContainText('Implantação');
 });
 
+// qualidade:ok comentario-bloco-longo
 // Abrir a Implantação disparava 29 pedidos ao mesmo tempo, com `implantacao-detalhe` levando 11,8 s
 // cada. O navegador só abre 6 conexões por origem: nessa janela, clicar em Configurações não fazia
 // NADA — o pedido saía e ficava preso atrás dos pesados, sem resposta e sem erro na tela. O teto de

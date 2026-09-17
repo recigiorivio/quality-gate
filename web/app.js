@@ -39,6 +39,7 @@ function marcarCarga() {
   }
 }
 
+// qualidade:ok comentario-bloco-longo
 // Teto de pedidos ao mesmo tempo, com fila. O navegador já limita a 6 conexões por origem, e o
 // problema nunca foi o número: é QUAIS 6. Medido ao abrir a Implantação — 29 pedidos disparados
 // juntos, com `implantacao-detalhe` levando 11,8 s cada. Nessa janela, clicar em Configurações não
@@ -1998,6 +1999,7 @@ async function carregarConfigs() {
     <div class="grupo-config">Catálogo</div>
     ${item('repos', 'Repositórios', 'Quais entram na comparação de implantação, e com qual par de branches',
     'qualidade.db · tabela repos', 'abrirRepos()')}`;
+  // qualidade:ok comentario-bloco-longo
   // Abre o primeiro item só se NINGUÉM tiver pedido outra coisa enquanto isto carregava. A guarda
   // de geração impede que a resposta atrasada pinte por cima; esta impede o inverso, que é o auto
   // abrir TOMAR a vez de um clique já feito e deixar a tela vazia — o clique volta cedo por não ser
@@ -2123,6 +2125,7 @@ function linhaDeRepo(r, i) {
 
 let filtroRepos = '';
 let detectadoEmRepos = null;
+// qualidade:ok comentario-bloco-longo
 // Quem manda no `#conteudo`. Cada abertura toma um número; ao voltar do `await`, só escreve quem
 // ainda for o dono. Sem isso, `carregarConfigs()` — que abre o primeiro item sozinho — corria com
 // o clique da pessoa em outro item, e quem RESPONDESSE por último pintava a tela: clicar rápido em
@@ -2168,6 +2171,7 @@ function mexerNoRepo(i, campo, valor) {
   reposSujos();
 }
 
+// qualidade:ok comentario-bloco-longo
 // Redesenhar DEPOIS que o evento termina. `desenharRepos()` troca o innerHTML de `#conteudo`, o
 // que destrói o próprio botão que está despachando o clique — e o navegador, ao reencontrar o nó
 // no lugar, clica de novo. Foi assim que um clique em "adicionar" virou dois, e antes disso que um
@@ -2252,6 +2256,7 @@ async function salvarRepos() {
   }
   reposEditados.clear();
   reposRemovidos.clear();
+  // qualidade:ok comentario-bloco-longo
   // Relê do servidor em vez de confiar na cópia local: outra aba pode ter mexido em linhas que
   // não são minhas, e é justamente isso que agora sobrevive.
   // `urgente` também aqui: isto é a segunda metade de um clique, e sem furar a fila ele esperava
