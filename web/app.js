@@ -1428,6 +1428,7 @@ ligarArrasto();
 carregarChamados();
 escutarEventos();
 carregarSessoes();
+boasVindas();
 // Sessão abre e fecha sem avisar ninguém: sem esta releitura o contador vira number velho.
 setInterval(() => { if (!document.hidden) { carregarSessoes(); } }, 30000);
 // A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
@@ -2346,13 +2347,124 @@ async function salvarConfig(chave) {
   avisarNaTela(`${chave} salvo · backup em .bak`);
 }
 
+// ── primeira abertura ─────────────────────────────────────────────────────────
+
+// Portão, não aviso: com a raiz errada a tela abre vazia, e vazia é indistinguível de
+// "não há trabalho aberto" — o modo de falha silencioso que este projeto persegue.
+let conferindoRaiz = null;
+
+async function boasVindas() {
+  const r = await api('/api/primeira-vez', {});
+  if (!r.primeira) {
+    return;
+  }
+  const m = document.createElement('dialog');
+  m.id = 'modal-boas-vindas';
+  m.innerHTML = renderBoasVindas(r);
+  document.body.appendChild(m);
+  m.showModal();
+  m.addEventListener('cancel', e => e.preventDefault());
+  document.getElementById('bv-raiz').addEventListener('input', () => conferirRaiz());
+  conferirRaiz();
+}
+
+// `existe` é sempre sobre a raiz ESCOLHIDA, e por isso se redesenha junto com ela. Calculado uma
+// vez na abertura, ele seguia descrevendo a pasta detectada depois de a pessoa trocar de pasta.
+function renderItensBoasVindas(configs) {
+  return configs.map(c => `<label class="bv-item">
+      <input type="checkbox" data-k="${c.chave}" ${c.existe || !c.padrao ? 'disabled' : 'checked'}>
+      <span><b>${esc(c.rotulo)}</b> <code>${esc(c.caminho)}</code>
+      <i>${c.existe ? 'já existe nessa pasta — fica como está' : esc(c.resumo)}</i></span>
+    </label>`).join('');
+}
+
+function renderBoasVindas(r) {
+  return `<div class="bv">
+    <h2>Primeira abertura</h2>
+    <p class="bv-sub">Duas escolhas. As duas dá para mudar depois, pela aba Configurações.</p>
+
+    <label class="bv-rot" for="bv-raiz">Raiz do workspace</label>
+    <p class="bv-dica">A pasta que contém os seus clones. A tela descobre os repos olhando dentro dela.</p>
+    <input id="bv-raiz" class="bv-campo" value="${esc(r.workspace)}" spellcheck="false">
+    <div id="bv-repos" class="bv-eco">conferindo…</div>
+
+    <label class="bv-rot">Rotinas</label>
+    <p class="bv-dica">Vêm padrões genéricos. Troque pelos do seu time quando quiser — arquivo que
+      já existe nunca é sobrescrito.</p>
+    <div id="bv-itens">${renderItensBoasVindas(r.configs)}</div>
+
+    <div class="bv-pe">
+      <button class="bv-ok" onclick="salvarBoasVindas()">Começar</button>
+      <span id="bv-estado" class="bv-eco"></span>
+    </div>
+  </div>`;
+}
+
+// Eco a cada tecla, com fôlego: sem o atraso, cada caractere de um caminho colado virava um
+// pedido, e o último a responder nem sempre era o do texto que está na tela.
+function conferirRaiz() {
+  clearTimeout(conferindoRaiz);
+  conferindoRaiz = setTimeout(async () => {
+    const raiz = document.getElementById('bv-raiz')?.value.trim();
+    const eco = document.getElementById('bv-repos');
+    if (!raiz || !eco) {
+      return;
+    }
+    const r = await api('/api/primeira-vez', { raiz });
+    if (document.getElementById('bv-raiz')?.value.trim() !== raiz) {
+      return;
+    }
+    // Três respostas, não duas: pasta ilegível é erro de caminho, e zero repos é caminho certo
+    // num lugar vazio. Juntar as duas faria o usuário procurar o problema no lugar errado.
+    eco.className = `bv-eco ${r.repos ? 'bom' : 'ruim'}`;
+    eco.textContent = r.repos === null ? 'não consigo ler essa pasta'
+      : (r.repos ? `${r.repos} repo(s) git aqui` : 'nenhum repo git aqui — a tela vai abrir vazia');
+    const itens = document.getElementById('bv-itens');
+    if (itens) {
+      itens.innerHTML = renderItensBoasVindas(r.configs);
+    }
+  }, 350);
+}
+
+async function salvarBoasVindas() {
+  const raiz = document.getElementById('bv-raiz').value.trim();
+  const instalar = [...document.querySelectorAll('#modal-boas-vindas input[type=checkbox]')]
+    .filter(c => c.checked && !c.disabled).map(c => c.dataset.k);
+  const estado = document.getElementById('bv-estado');
+  estado.textContent = 'gravando…';
+  // POST direto: o `api()` é a fila de GETs, e este pedido é a segunda metade de um clique.
+  const r = await fetch(`/api/primeira-vez-salvar${window.TOKEN ? `?t=${window.TOKEN}` : ''}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ raiz, instalar })
+  }).then(x => x.json()).catch(x => ({ erro: x.message }));
+  if (r.erro) {
+    estado.className = 'bv-eco ruim';
+    estado.textContent = r.erro;
+    return;
+  }
+  if (r.precisaReiniciar) {
+    // A raiz é resolvida na carga dos módulos. Fechar aqui deixaria metade da tela lendo a pasta
+    // antiga, que é pior que pedir o reinício em voz alta.
+    document.querySelector('#modal-boas-vindas .bv').innerHTML = `<h2>Quase</h2>
+      <p class="bv-sub">Gravei <code>QUALIDADE_WORKSPACE=${esc(r.workspace)}</code> no <code>.env</code>.
+      A raiz é lida quando o servidor sobe, então ela só passa a valer no próximo start.</p>
+      <pre class="bv-cmd">npm start</pre>`;
+    return;
+  }
+  document.getElementById('modal-boas-vindas').close();
+  document.getElementById('modal-boas-vindas').remove();
+  avisarNaTela(r.escritos.length ? `${r.escritos.length} rotina(s) instalada(s)` : 'pronto');
+  carregarChamados();
+}
+
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
   alternarRepo, abrirImplantacao, analisarImplantacao, abrirPrDeRelease, verCommit, verRelease,
   abrirModalAnalise, copiarAnalise, atualizarImplantacao,
-  copiarLink, abrirModalSessoes,
+  copiarLink, abrirModalSessoes, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos
 });

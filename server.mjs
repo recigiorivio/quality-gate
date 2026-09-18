@@ -4,19 +4,20 @@
 // uso: npm start   (ou node server.mjs)   →   http://localhost:4100
 
 import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import { timingSafeEqual, randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { Buffer } from 'node:buffer';
-import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, statSync, appendFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { execFileSync, execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { join } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { Diff, WORKSPACE } from './lib/diff.mjs';
 import { Workspace } from './lib/workspace.mjs';
 import { Qualidade } from './lib/qualidade.mjs';
 import { Pontos } from './ferramentas/pontos.mjs';
 import lint from './lib/lint.mjs';
-import { corridas, caminhoEstado } from './lib/db.mjs';
+import { corridas, caminhoEstado, meta } from './lib/db.mjs';
 import comparacao from './lib/comparacao.mjs';
 import implantacao from './lib/implantacao.mjs';
 import sessoes from './lib/sessoes.mjs';
@@ -24,6 +25,14 @@ import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv } from './lib/env.mjs';
+
+// O prompt do agente mandava `qualidade/ferramentas/…` com o workspace escrito à mão: os dois só
+// valiam nesta máquina, e o clone do próprio README cria a pasta com OUTRO nome (`quality-gate`).
+
+// qualidade:ok declaracao-solta-em-arquivo-de-classe
+const AQUI = relative(WORKSPACE, dirname(fileURLToPath(import.meta.url))) || '.';
+// qualidade:ok declaracao-solta-em-arquivo-de-classe
+const RAIZ = dirname(fileURLToPath(import.meta.url));
 
 // Antes de qualquer `process.env`: o `.env` do projeto passa a valer para PORT, QUALIDADE_HOST e
 // QUALIDADE_TOKEN também. O shell continua ganhando do arquivo.
@@ -43,9 +52,9 @@ Regra de decisão, por repo:
 - nenhuma PR: --stage
 - PR mesclada mas com commit local depois dela (confira com git log origin/<base>..<branch> só se houver dúvida): --pr=N --aberto
 
-Grave a partir de /Users/recigiorivio/node_workspace, um comando por repo:
-  node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que, em uma frase>"
-  ou  node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
+Grave a partir de ${WORKSPACE}, um comando por repo:
+  node --disable-warning=ExperimentalWarning ${AQUI}/ferramentas/comparacao.mjs definir ${chamado} <repo> --pr=<N> --nota="<por que, em uma frase>"
+  ou  node --disable-warning=ExperimentalWarning ${AQUI}/ferramentas/comparacao.mjs definir ${chamado} <repo> --stage
 A flag evita o ExperimentalWarning do SQLite no stderr; não troque por --no-warnings.
 
 NÃO confira número de arquivos: o servidor confere ao final e mostra o que não bateu.
@@ -320,6 +329,105 @@ class Servidor {
                 this.cache.delete(chave);
             }
         }
+    }
+
+    // Primeira abertura. A marca fica no ESTADO, não no disco do projeto: um clone novo apontando
+    // para o mesmo `QUALIDADE_ESTADO` já está instalado, e perguntar de novo seria só atrito.
+    primeiraVez(raiz = null) {
+        const alvo = raiz || WORKSPACE;
+        return {
+            primeira: !meta('instalacao.concluidaEm'),
+            workspace: alvo,
+            detectado: WORKSPACE,
+            // `null` é pasta ilegível, `0` é pasta sem repo: quem digita caminho errado precisa ver
+            // a diferença, senão "0 repos" parece opinião sobre o workspace e não erro de caminho.
+            repos: this.contarRepos(alvo),
+            configs: Object.entries(CONFIGS).map(([chave, c]) => ({
+                chave, rotulo: c.rotulo, resumo: c.resumo, caminho: c.caminho,
+                existe: existsSync(join(alvo, c.caminho)),
+                padrao: existsSync(this.caminhoPadrao(c.caminho))
+            }))
+        };
+    }
+
+    contarRepos(raiz) {
+        try {
+            return readdirSync(raiz, { withFileTypes: true })
+                .filter(d => d.isDirectory() && existsSync(join(raiz, d.name, '.git'))).length;
+        } catch {
+            return null;
+        }
+    }
+
+    // O padrão é achado pelo nome do próprio alvo: um segundo mapa de-para seria mais uma coisa
+    // para divergir do `CONFIGS` sem ninguém perceber.
+    caminhoPadrao(caminho) {
+        return join(RAIZ, 'padroes', basename(caminho));
+    }
+
+    salvarPrimeiraVez(req, res) {
+        let corpo = '';
+        req.on('data', d => {
+            corpo += d;
+            if (corpo.length > 64 * 1024) {
+                req.destroy();
+            }
+        });
+        req.on('end', () => {
+            try {
+                const { raiz, instalar = [] } = JSON.parse(corpo || '{}');
+                const alvo = raiz || WORKSPACE;
+                if (this.contarRepos(alvo) === null) {
+                    return this.json(res, { erro: `não consigo ler ${alvo}` }, 400);
+                }
+                const plantados = this.plantarPadroes(alvo, instalar);
+                // Trocar a raiz exige reinício: `WORKSPACE` é resolvido na carga dos módulos, e
+                // fingir que mudou agora deixaria metade da tela lendo a pasta antiga.
+                const mudou = alvo !== WORKSPACE;
+                if (mudou) {
+                    this.gravarEnv('QUALIDADE_WORKSPACE', alvo);
+                }
+                meta('instalacao.concluidaEm', new Date().toISOString());
+                this.registrar('instalacao', 'concluida', `${alvo} · ${plantados.escritos.length} padrão(ões)`);
+                return this.json(res, { ok: true, ...plantados, precisaReiniciar: mudou, workspace: alvo });
+            } catch (e) {
+                return this.json(res, { erro: e.message }, 500);
+            }
+        });
+    }
+
+    // Nunca sobrescreve: arquivo que já existe é rotina do time, e plantar por cima na instalação
+    // seria apagar o processo de quem já tinha um.
+    plantarPadroes(raiz, chaves) {
+        const escritos = [];
+        const pulados = [];
+        for (const chave of chaves) {
+            const c = CONFIGS[chave];
+            const origem = c && this.caminhoPadrao(c.caminho);
+            if (!c || !existsSync(origem)) {
+                continue;
+            }
+            const destino = join(raiz, c.caminho);
+            if (existsSync(destino)) {
+                pulados.push(c.caminho);
+                continue;
+            }
+            mkdirSync(dirname(destino), { recursive: true });
+            writeFileSync(destino, readFileSync(origem));
+            escritos.push(c.caminho);
+        }
+        return { escritos, pulados };
+    }
+
+    // Reescreve a chave no `.env` do projeto em vez de acrescentar: duas linhas iguais fazem a
+    // última ganhar em silêncio, e a primeira fica no arquivo parecendo estar valendo.
+    gravarEnv(chave, valor) {
+        const arquivo = join(RAIZ, '.env');
+        const linhas = existsSync(arquivo)
+            ? readFileSync(arquivo, 'utf8').split('\n').filter(l => !l.trimStart().startsWith(`${chave}=`))
+            : [];
+        linhas.push(`${chave}=${valor}`);
+        writeFileSync(arquivo, `${linhas.filter((l, i, a) => l.trim() || i < a.length - 1).join('\n').replace(/\n+$/, '')}\n`);
     }
 
     // Grava só o conteúdo, no caminho que a allowlist define. Backup ao lado antes de sobrescrever:
@@ -1128,6 +1236,12 @@ class Servidor {
         }
         if (url.pathname === '/api/config-salvar' && req.method === 'POST') {
             return this.salvarConfig(req, res);
+        }
+        if (url.pathname === '/api/primeira-vez') {
+            return this.json(res, this.primeiraVez(q.get('raiz')));
+        }
+        if (url.pathname === '/api/primeira-vez-salvar' && req.method === 'POST') {
+            return this.salvarPrimeiraVez(req, res);
         }
         if (url.pathname === '/api/prs') {
             const chamado = q.get('chamado');

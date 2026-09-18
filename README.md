@@ -13,6 +13,30 @@ não tem `dependencies`. A exceção é o **teste de tela**: navegador de verdad
 improvisar, e o Playwright entra em `devDependencies`. Quem usa a tela nunca instala nada; quem
 vai rodar `npm run tela` instala uma vez — ver [Testes](#testes).
 
+## Instalar
+
+Peça ao seu Claude Code, com esta frase:
+
+```
+instale https://github.com/recigiorivio/quality-gate
+```
+
+Ele clona, lê o [`instalacao/SKILL.md`](instalacao/SKILL.md) e conduz. À mão são os mesmos passos:
+
+```bash
+cd <a pasta que contém os seus clones git>
+git clone https://github.com/recigiorivio/quality-gate.git
+cd quality-gate
+node instalacao/verificar.mjs   # diz o que falta; não acessa a rede
+npm start                       # e abra a URL que ele imprime
+```
+
+Na **primeira abertura** a tela pergunta duas coisas: a raiz do workspace (já preenchida com a que
+ela detectou, dizendo quantos repos git achou) e se quer as rotinas padrão. As duas se trocam
+depois, pela aba Configurações. Arquivo que já existe **nunca** é sobrescrito.
+
+Detalhes, hook e arquivos locais: [`instalacao/README.md`](instalacao/README.md).
+
 **Mas o piso do Node subiu para 22.5.0** (`engines.node`), e vale explicar por quê para ninguém
 perder uma tarde: o estado que dois processos escrevem passou de JSON para um SQLite, e o SQLite vem
 do módulo **embutido** `node:sqlite`, que só existe a partir do Node 22.5.0. Ou seja: nenhum pacote

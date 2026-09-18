@@ -35,7 +35,7 @@ Ele diz o que falta e o que a falta custa — em vez de você descobrir na tela 
 
 | Nível | O que confere |
 |---|---|
-| obrigatório | Node **20.11+**, `git`, `vendor/acorn.mjs`, o workspace existir e ter repos git |
+| obrigatório | Node **22.5.0+** (lido do `engines`, não chumbado aqui), `git`, `vendor/acorn.mjs`, o workspace existir e ter repos git |
 | recomendado | `gh` instalado **e autenticado** (sem ele: nada de PR, base observada nem checks); linters nos repos |
 | opcional | `.env` de stage, o hook registrado, a porta 4100 livre |
 
@@ -86,7 +86,9 @@ O hook **não bloqueia nada** e falha aberto: qualquer erro interno libera a aç
 comando que não casa: **29 ms**. Para desligar, apague a chave `hooks`.
 
 As rotinas que ele injeta são dois markdown em `.claude/commands/` — editáveis pela aba
-**Configurações** da própria tela. Elas não vêm neste repo porque descrevem o processo do seu time.
+**Configurações** da própria tela. Versões **genéricas** delas vêm em `padroes/`, e a primeira
+abertura oferece plantá-las no seu workspace. São ponto de partida, não o processo do seu time:
+troque. Arquivo que já existe nunca é sobrescrito, nem na instalação nem depois.
 
 ## Arquivos locais (todos no `.gitignore`)
 
@@ -120,7 +122,7 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-20 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+102 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
 e o comportamento do cache, roda cada ferramenta de linha de comando, e valida o de-para do
 `doutrina.json`.
 
@@ -128,7 +130,7 @@ e o comportamento do cache, roda cada ferramenta de linha de comando, e valida o
 node ferramentas/checar-diff.mjs --autoteste
 ```
 
-16 casos com exemplo do jeito **certo** e do **errado** para cada regra. Se algum falhar, não confie
+42 casos com exemplo do jeito **certo** e do **errado** para cada regra. Se algum falhar, não confie
 na saída: uma checagem que acusa o jeito certo ensina a ignorar o aviso. É a regra para mexer nas
 regras.
 

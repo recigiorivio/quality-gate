@@ -957,3 +957,28 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
 .repos-novo button{background:var(--acento);border:1px solid var(--acento);color:#fff;
   border-radius:6px;padding:6px 14px;font-weight:600;font-size:11.5px;cursor:pointer;flex:0 0 auto}
 .repos-novo button:hover{filter:brightness(1.07)}
+
+/* primeira abertura — portão, e por isso sem botão de fechar e com o fundo mais opaco que o das
+   outras modais: sair daqui sem escolher deixa a tela lendo a pasta errada. */
+#modal-boas-vindas{border:1px solid var(--linha);border-radius:12px;padding:0;max-width:560px;
+  width:calc(100vw - 32px);background:var(--cartao);color:var(--fg)}
+#modal-boas-vindas::backdrop{background:rgba(20,18,40,.58);backdrop-filter:blur(3px)}
+.bv{padding:22px 24px 18px}
+.bv h2{margin:0;font-size:17px}
+.bv-sub{margin:4px 0 18px;color:var(--fraco)}
+.bv-rot{display:block;margin-top:14px;font-weight:600}
+.bv-dica{margin:2px 0 8px;color:var(--fraco);font-size:12px}
+.bv-campo{width:100%;padding:8px 10px;border:1px solid var(--linha);border-radius:7px;
+  background:var(--bg);color:var(--fg);font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.bv-eco{margin-top:6px;font-size:12px;color:var(--fraco)}
+.bv-eco.bom{color:var(--ok)}
+.bv-eco.ruim{color:var(--erro)}
+.bv-item{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--linha)}
+.bv-item input{margin-top:3px}
+.bv-item code{font-size:11px;color:var(--fraco)}
+.bv-item i{display:block;color:var(--fraco);font-style:normal;font-size:12px}
+.bv-pe{display:flex;align-items:center;gap:12px;margin-top:20px}
+.bv-ok{padding:8px 18px;border:0;border-radius:7px;background:var(--acento);color:#fff;
+  font-weight:600;cursor:pointer}
+.bv-cmd{background:var(--painel);border:1px solid var(--linha);border-radius:7px;padding:9px 12px;
+  font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;margin:14px 0 0}

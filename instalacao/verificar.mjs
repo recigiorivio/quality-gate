@@ -4,7 +4,7 @@
 // uso: node instalacao/verificar.mjs
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,11 +23,37 @@ class Verificar {
         }
     }
 
+    // O piso sai do `engines.node`, não de um número escrito aqui: com os dois, esta checagem
+    // aprovava 20.11 enquanto o projeto já exigia 22.5.0 — e a quebra só aparecia no banco.
     node() {
-        const [maior, menor] = process.versions.node.split('.').map(Number);
-        const serve = maior > 20 || (maior === 20 && menor >= 11);
+        const piso = this.pisoDoNode();
+        const serve = this.compararVersao(process.versions.node, piso) >= 0;
         return [serve ? OK : FALTA, `node ${process.versions.node}`,
-            serve ? '' : 'precisa de 20.11+ (usa import.meta.dirname)'];
+            serve ? '' : `precisa de ${piso}+ — o estado usa o \`node:sqlite\` embutido, que não`
+                + ' existe antes disso; sem ele a tela sobe e quebra no primeiro acesso ao banco'];
+    }
+
+    // Sem `engines` legível o piso ainda é conhecido: devolver 0 aqui faria a checagem aprovar tudo.
+    pisoDoNode() {
+        try {
+            const engines = JSON.parse(readFileSync(join(RAIZ, 'package.json'), 'utf8')).engines || {};
+            return (engines.node || '').replace(/[^0-9.]/g, '') || '22.5.0';
+        } catch {
+            return '22.5.0';
+        }
+    }
+
+    // Número a número: em ordem de texto '20.11.0' vem depois de '22.5.0', que é o jeito de uma
+    // comparação de versão aprovar exatamente a versão que ela existe para barrar.
+    compararVersao(a, b) {
+        const va = a.split('.').map(Number);
+        const vb = b.split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            if ((va[i] || 0) !== (vb[i] || 0)) {
+                return (va[i] || 0) - (vb[i] || 0);
+            }
+        }
+        return 0;
     }
 
     git() {

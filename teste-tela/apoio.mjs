@@ -51,13 +51,28 @@ function subirServidor(estado, casaClaude) {
     });
 }
 
+// Pela MESMA rota que a tela usa, não por um atalho de teste: corpo vazio não planta arquivo nem
+// mexe no `.env` — grava só a marca de instalado, no estado temporário do caso.
+async function marcarInstalado(base) {
+    const r = await fetch(`${base}/api/primeira-vez-salvar`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
+    });
+    if (!r.ok) {
+        throw new Error(`não consegui marcar a instalação: HTTP ${r.status}`);
+    }
+}
+
 export const test = base.extend({
     // Casa do Claude que o caso quer que o servidor enxergue. Quem não declara vê a de verdade.
     casaClaude: [undefined, { option: true }],
 
+    // O portão da primeira abertura aparece por cima de tudo enquanto o estado não tiver a marca de
+    // instalado — e estado temporário nunca tem. Quem não é caso DELE já nasce instalado.
+    primeiraVez: [false, { option: true }],
+
     // Um estado por ARQUIVO de teste, não por caso: subir servidor custa ~1 s, e os casos de tela
     // leem muito mais do que escrevem. Quem escreve declara o que mexeu e devolve.
-    tela: [async ({ browser, casaClaude }, usar, info) => {
+    tela: [async ({ browser, casaClaude, primeiraVez }, usar, info) => {
         const estado = mkdtempSync(join(tmpdir(), 'tela-'));
         // O catálogo de repos e as decisões vêm de cópia do estado real quando ele existe: a tela
         // sem dado nenhum não exercita ordenação, filtro nem os pares fora do padrão.
@@ -69,6 +84,9 @@ export const test = base.extend({
         let servidor = null;
         try {
             servidor = await subirServidor(estado, casaClaude);
+            if (!primeiraVez) {
+                await marcarInstalado(servidor.base);
+            }
             const pagina = await browser.newPage({ viewport: { width: 1500, height: 1000 } });
             const erros = [];
             pagina.on('pageerror', e => erros.push(String(e)));
