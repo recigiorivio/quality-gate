@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import {
     caminhoSettings, lerSettings, gravarSettings, comGatilhos, semGatilhos,
     jaRegistrados, outrosClones, plantados, removerPlantados, faltando, plantar, caminhoPadrao,
-    refDoClone
+    refDoClone, ehFimDeTrabalho
 } from '../lib/gatilhos.mjs';
 import { CONFIGS } from '../lib/configs.mjs';
 
@@ -184,4 +184,61 @@ test('plantar() escreve o padrão e não toca no que já existe', () => {
     assert.equal(readFileSync(join(ws, CONFIGS.inicio.caminho), 'utf8'), 'MINHA rotina');
     assert.ok(escritos.includes(CONFIGS.subir.caminho));
     assert.deepEqual(faltando(ws), []);
+});
+
+// O gatilho de fim de trabalho, nas duas direções — é a regra do repo para mexer em regra: exemplo
+// do jeito certo e do errado, os dois passando.
+//
+// Por que existe: a lista fechada anterior (`commit|comita|comitar|...`) deixava passar justamente as
+// formas mais usadas. `\bcommit\b` não casa em "commit-ar", e "commite tudo" — literalmente como o
+// trabalho é pedido aqui — não disparava nada. Quem lê a rotina de fim nunca soube que ela não chegou.
+const DEVE_DISPARAR = [
+    'vamos commitar isso', 'commite tudo', 'pode commitar tudo', 'commitando agora',
+    'vamos comitar', 'comite isso agora', 'faz o commit', 'commit e push', 'pushei já',
+    'abre o PR', 'vamos fazer merge', 'mesclar na base', 'finalizar o chamado',
+    'pode subir', 'sobe isso', 'entregar a tarefa', 'já entreguei'
+];
+
+// Palavra que contém o gatilho sem ser ele. `printa` tem `pr` dentro, e `subiu` não é `subir`.
+//
+// As três com acento são o caso que `\b` não pegava: letra acentuada não é `\w`, então `\bpr\b`
+// casava dentro de "próximo", "prévia" e "prático" — e a rotina de fim inteira era injetada em quem
+// só falou do próximo passo.
+const NAO_DEVE_DISPARAR = [
+    'vamos revisar o código', 'explica esse arquivo', 'printa o resultado',
+    'o comitê de arquitetura aprovou', 'o contador subiu ontem', 'próximo passo é testar',
+    'compara os dois arquivos', 'qual a diferença?', 'faz uma prévia disso', 'é mais prático assim'
+];
+
+test('as formas verbais de commit/push/merge disparam o fim de trabalho', () => {
+    for (const frase of DEVE_DISPARAR) {
+        assert.ok(ehFimDeTrabalho(frase), `devia disparar: ${frase}`);
+    }
+});
+
+test('prompt que só contém o gatilho dentro de outra palavra não dispara', () => {
+    for (const frase of NAO_DEVE_DISPARAR) {
+        assert.ok(!ehFimDeTrabalho(frase), `NÃO devia disparar: ${frase}`);
+    }
+});
+
+// Colisão conhecida e aceita: `comite` sem acento é ao mesmo tempo o imperativo de "comitar" e um
+// typo de "comitê". Pega-se o imperativo. O custo do disparo à toa é UMA injeção — o gate tem marca
+// de uma vez por dia por chamado —, e o custo de não disparar é o projeto inteiro.
+test('comitê com acento não dispara; sem acento dispara, e isso é a escolha', () => {
+    assert.ok(!ehFimDeTrabalho('o comitê decidiu'));
+    assert.ok(ehFimDeTrabalho('comite isso'));
+});
+
+// `finalização` tem `ç`: se o `*` do prefixo parasse no acento, a palavra mais óbvia de fim de
+// trabalho deixaria de casar.
+test('palavra acentuada inteira ainda casa no prefixo', () => {
+    assert.ok(ehFimDeTrabalho('finalização do chamado'));
+    assert.ok(ehFimDeTrabalho('já fiz a entrega'));
+});
+
+test('prompt vazio ou ausente não dispara', () => {
+    for (const vazio of ['', null, undefined, '   ']) {
+        assert.ok(!ehFimDeTrabalho(vazio), `vazio não dispara: ${JSON.stringify(vazio)}`);
+    }
 });

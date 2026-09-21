@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { WORKSPACE } from '../lib/diff.mjs';
 import { ROTINA_FIM } from '../lib/configs.mjs';
+import { ehFimDeTrabalho } from '../lib/gatilhos.mjs';
 
 
 // Deduzido de onde ESTE arquivo está, nunca do nome da pasta: `join(WORKSPACE, 'qualidade')` só
@@ -201,9 +202,7 @@ class Gate {
         }
         const prompt = this.payload?.prompt || '';
         const chamado = (prompt.match(PADRAO_CHAMADO) || [])[1];   // só para separar o dedup por chamado
-        const fimDeTrabalho = /\b(commit|comita|comitar|push|pr|merge|mescla|mesclar|finaliza|finalizar|fechar o chamado|abrir o pr|subir|entregar)\b/i.test(prompt);
-
-        if (fimDeTrabalho) {
+        if (ehFimDeTrabalho(prompt)) {
             this._injetarRotina(
                 ROTINA_FIM,
                 'O usuário sinalizou fim de trabalho. A rotina de fim deste workspace é a abaixo — seguir os passos que se aplicam, dizer quais não se aplicam, e não commitar/empurrar/mesclar sem confirmação explícita.',
