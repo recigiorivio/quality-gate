@@ -55,11 +55,11 @@ perder uma tarde: o estado que dois processos escrevem passou de JSON para um SQ
 do módulo **embutido** `node:sqlite`, que só existe a partir do Node 22.5.0. Ou seja: nenhum pacote
 novo entrou, só um módulo do próprio Node que é novo demais para o piso antigo (20.11).
 
-Em Node 20 nada avisa antes. O `npm install` não existe aqui para reclamar do `engines`, o
-`instalacao/verificar.mjs` **ainda cobra só 20.11 e deixa passar** (é o próximo conserto), a tela
-sobe, e a quebra chega no primeiro acesso ao banco como `ERR_UNKNOWN_BUILTIN_MODULE` em
-`node:sqlite` — um erro que fala de módulo inexistente, não de versão velha. Se você viu isso, é a
-versão do Node:
+Em Node 20 nada avisa antes, e o `npm install` não existe aqui para reclamar do `engines`. Quem
+cobra é o `instalacao/verificar.mjs`, e ele lê o piso **do próprio `engines.node`** em vez de ter o
+número escrito dentro: com os dois, ele aprovava 20.11 enquanto o projeto já exigia 22.5.0, e a
+quebra chegava só no primeiro acesso ao banco como `ERR_UNKNOWN_BUILTIN_MODULE` em `node:sqlite` —
+um erro que fala de módulo inexistente, não de versão velha. Se você viu isso, é a versão do Node:
 
 ```bash
 node -v                # precisa ser >= 22.5.0
@@ -657,7 +657,10 @@ cp .env.example .env
 ```
 
 Leia os comentários do `.env.example`: ele explica quais chaves têm efeito **naquele arquivo** e
-quais são do processo. Resumo da armadilha: `PORT` no `.env` **não faz nada**.
+quais são do processo. `PORT` no `.env` **passou a valer**: o `.env` é aplicado antes de qualquer
+módulo resolver configuração, e antes disso ele era lido depois — então `QUALIDADE_WORKSPACE`
+gravado pela tela também não tinha efeito, o que era o defeito de verdade. O shell continua ganhando
+do arquivo, e o `PORT` do LaunchAgent continua ganhando dos dois.
 
 Precisa de um usuário de banco com permissão só de leitura. Não reaproveitar usuário de escrita: o
 guard do `lib/stg.mjs` é client-side — bloqueia `insert`/`update`/`delete`/`$out`/`$merge`, recusa

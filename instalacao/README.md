@@ -57,7 +57,10 @@ cp .env.example .env
 ```
 
 Leia os comentários do `.env.example`: ele explica quais chaves têm efeito **naquele arquivo** e
-quais são do processo. Resumo da armadilha: `PORT` no `.env` **não faz nada**.
+quais são do processo. `PORT` no `.env` **passou a valer**: o `.env` é aplicado antes de qualquer
+módulo resolver configuração, e antes disso ele era lido depois — então `QUALIDADE_WORKSPACE`
+gravado pela tela também não tinha efeito, o que era o defeito de verdade. O shell continua ganhando
+do arquivo, e o `PORT` do LaunchAgent continua ganhando dos dois.
 
 ## 5. Os gatilhos e o serviço
 
