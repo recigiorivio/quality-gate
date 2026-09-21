@@ -5,7 +5,7 @@ description: Rotina de fim — o que corrigir e o que conferir antes de entregar
 # Fim de trabalho
 
 Este é o **padrão que veio na instalação**. Troque pela aba **Configurações** da tela — o arquivo é
-`.claude/commands/final-trabalho.md` no seu workspace.
+`.claude/commands/quality-fim-trabalho.md` no seu workspace.
 
 A regra que organiza a rotina: **o que é mecânico se corrige, o que exige julgamento se confere.**
 Item mecânico não vira pergunta nem cartão na tela — vira commit.

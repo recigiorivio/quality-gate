@@ -26,6 +26,7 @@ import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
 import { CONFIGS } from './lib/configs.mjs';
+import { caminhoPadrao } from './lib/gatilhos.mjs';
 
 // O prompt do agente mandava `qualidade/ferramentas/…` com o workspace escrito à mão: os dois só
 // valiam nesta máquina, e o clone do próprio README cria a pasta com OUTRO nome (`quality-gate`).
@@ -330,7 +331,7 @@ class Servidor {
             configs: Object.entries(CONFIGS).map(([chave, c]) => ({
                 chave, rotulo: c.rotulo, resumo: c.resumo, caminho: c.caminho,
                 existe: existsSync(join(alvo, c.caminho)),
-                padrao: existsSync(this.caminhoPadrao(c.caminho))
+                padrao: existsSync(caminhoPadrao(c.caminho))
             }))
         };
     }
@@ -342,12 +343,6 @@ class Servidor {
         } catch {
             return null;
         }
-    }
-
-    // O padrão é achado pelo nome do próprio alvo: um segundo mapa de-para seria mais uma coisa
-    // para divergir do `CONFIGS` sem ninguém perceber.
-    caminhoPadrao(caminho) {
-        return join(RAIZ, 'padroes', basename(caminho));
     }
 
     salvarPrimeiraVez(req, res) {
@@ -406,7 +401,7 @@ class Servidor {
                 continue;
             }
             const escolhido = this.conteudoEscolhido(escolhidos[chave]);
-            const origem = this.caminhoPadrao(c.caminho);
+            const origem = caminhoPadrao(c.caminho);
             if (!escolhido && !existsSync(origem)) {
                 continue;
             }

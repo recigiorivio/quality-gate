@@ -5,7 +5,7 @@ description: Rotina de início — o que conferir antes de planejar ou escrever 
 # Início de trabalho
 
 Este é o **padrão que veio na instalação**. Ele descreve um processo genérico; o seu time tem
-outro. Troque pela aba **Configurações** da tela — o arquivo é `.claude/commands/inicio-trabalho.md`
+outro. Troque pela aba **Configurações** da tela — o arquivo é `.claude/commands/quality-inicio-trabalho.md`
 no seu workspace, e nada aqui é especial.
 
 ## 1. Descobrir o que já existe

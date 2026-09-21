@@ -5,7 +5,7 @@ description: Regras de código — comentários, estrutura, testes; as que as ch
 # Regras de código
 
 Este é o **padrão que veio na instalação**. Troque pela aba **Configurações** da tela — o arquivo é
-`.claude/docs/qualidade-de-codigo.md` no seu workspace.
+`.claude/docs/quality-qualidade-de-codigo.md` no seu workspace.
 
 Este documento é o par humano do `doutrina.json`: cada regra aqui aparece lá com a checagem que a
 implementa **ou com o motivo de não ter**. O `teste/doutrina.mjs` falha se os dois discordarem — é o

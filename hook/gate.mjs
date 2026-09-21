@@ -7,7 +7,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { WORKSPACE } from '../lib/diff.mjs';
@@ -104,7 +104,9 @@ class Gate {
 
     gerarDiff(comando, cwd) {
         const projeto = this.projetoDo(comando, cwd);
-        if (!projeto || projeto === '.' || projeto === 'qualidade') {
+        // O próprio clone sai pelo `basename`, não pelo literal `'qualidade'`: quem clonou com
+        // outro nome recebia relatório de diff do quality-gate ao commitar no quality-gate.
+        if (!projeto || projeto === '.' || projeto === basename(PROJETO)) {
             this.liberar();
         }
         if (this._telaNoAr()) {
@@ -123,8 +125,10 @@ class Gate {
         const caminho = (r.saida.match(/^.*\.html$/m) || [])[0];
         this.registrar('diff', caminho ? 'html' : 'falhou', `${projeto} ${caminho || r.saida.slice(0, 120)}`);
         if (caminho) {
+            // Instrução pelo comando, não por `cd <pasta>`: o nome da pasta estava chumbado como
+            // `qualidade` e mandava todo mundo que clonou com outro nome para um lugar inexistente.
             process.stdout.write(`Relatório de diff (temporário, 24h): ${caminho}\n` +
-                `Ou suba a tela: cd qualidade && npm start\n`);
+                `Ou suba a tela com /quality-subir-tela\n`);
         }
         this.liberar();
     }

@@ -59,28 +59,44 @@ cp .env.example .env
 Leia os comentários do `.env.example`: ele explica quais chaves têm efeito **naquele arquivo** e
 quais são do processo. Resumo da armadilha: `PORT` no `.env` **não faz nada**.
 
-## 5. Os gatilhos
-
-Fazem a rotina de fim chegar sozinha ao Claude quando você fala de commit, PR ou merge, e derrubam o
-cache da tela depois de um commit. Sem eles, a tela funciona igual — só não é acionada sozinha, e
-rotina que depende de você lembrar de acionar não é acionada.
+## 5. Os gatilhos e o serviço
 
 ```bash
-node instalacao/gatilhos.mjs          # estado: o que está registrado e o que está plantado
-node instalacao/gatilhos.mjs --add    # mostra o que vai gravar e pede confirmação
-node instalacao/gatilhos.mjs --remove # desfaz: tira os gatilhos e as rotinas plantadas
+node instalacao/gatilhos.mjs          # estado: gatilhos, serviço, tela e rotinas plantadas
+node instalacao/gatilhos.mjs --add    # pergunta as duas coisas, uma por vez
+node instalacao/gatilhos.mjs --remove # desfaz TUDO deste clone
 ```
 
-O `--add` mescla só as três entradas **deste** clone no `<workspace>/.claude/settings.json`, guarda
-`.bak` antes de gravar, e é idempotente. A remoção é por **caminho**, não por evento: dois clones
-convivem, e desinstalar um não desliga o gatilho do outro. `--sim` pula a confirmação, para script.
+O `--add` pergunta **duas** coisas separadas:
+
+**1. Os gatilhos (recomendado).** Fazem a rotina de fim chegar sozinha quando você fala de commit,
+PR ou merge, e derrubam o cache da tela depois de um commit. Mescla só as três entradas **deste**
+clone no `<workspace>/.claude/settings.json`, guarda `.bak` antes, e é idempotente. A remoção é por
+**caminho**, não por evento: dois clones convivem, e desinstalar um não desliga o do outro.
+
+**2. O LaunchAgent.** É o que mantém a tela no ar. Sem ele nada a sobe sozinha, e `npm start` num
+terminal **morre com o terminal** — reboot também derruba. O plist vai para
+`~/Library/LaunchAgents/quality-gate.<hash-do-clone>.plist`, com `RunAtLoad` e `KeepAlive`.
+
+Duas coisas nele que quebram em silêncio se você escrever o plist à mão:
+
+- o **`node` por caminho absoluto** — o launchd não resolve nome pelo PATH. E num node de `nvm` o
+  caminho carrega a versão: trocar de node exige rodar o `--add` de novo
+- o **`PATH` assado** — o padrão do launchd é `/usr/bin:/bin:/usr/sbin:/sbin`, e o `gh` mora em
+  `/opt/homebrew/bin`. Sem assar, a tela sobe e perde PR, base observada e checks, sem erro nenhum
+
+Rodar sem terminal interativo responde **não** às duas. `--sim` aceita as duas, `--porta=4200` muda
+a porta do serviço.
 
 ⚠️ Hook novo só vale na **próxima** sessão do Claude Code — a atual já leu o `settings.json`.
+
+Em qualquer momento, **`/quality-subir-tela`** põe a tela no ar (ou devolve o link, se já estiver).
+É um dos markdown plantados, então sai no `--remove` junto com o resto.
 
 O hook **não bloqueia nada** e falha aberto: qualquer erro interno libera a ação. Overhead medido em
 comando que não casa: **29 ms**. Para desligar tudo de uma vez, apague a chave `hooks`.
 
-As rotinas que ele injeta são dois markdown em `.claude/commands/` — editáveis pela aba
+As rotinas são quatro markdown (duas rotinas, as regras de código e o `/quality-subir-tela`) — editáveis pela aba
 **Configurações** da própria tela. Versões **genéricas** delas vêm em `padroes/`, e a primeira
 abertura oferece plantá-las no seu workspace, ou **apontar um `.md` seu** no lugar de cada padrão.
 São ponto de partida, não o processo do seu time: troque.
@@ -100,6 +116,10 @@ Nada do que é do **seu** time mora no código. São quatro arquivos, e nenhum �
 | `bases.json` | `bases.example.json` | base de fallback por repo, quando não há PR mesclado para observar |
 | `.env` | `.env.example` | consulta de leitura ao banco de stage |
 | `LOCAL.md` | — | suas anotações: convenções do time, medições, o que você trocou nas rotinas |
+
+E dois arquivos que a ferramenta escreve sozinha, também ignorados: `gate.log` (disparos do hook) e
+`servico.log` (o stderr do LaunchAgent — zerado a cada `--add`, porque `KeepAlive` com servidor em
+laço de erro escreve sem teto).
 
 Sem `regras.json` a checagem de spec novo nunca dispara — é o comportamento certo para um projeto
 genérico, e o que você provavelmente quer mudar primeiro.
@@ -122,9 +142,9 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-113 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+128 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
 e o comportamento do cache, roda cada ferramenta de linha de comando, valida o de-para do
-`doutrina.json`, e cobre o registro dos gatilhos no `settings.json`.
+`doutrina.json`, e cobre o registro dos gatilhos no `settings.json` e o plist do LaunchAgent.
 
 ```bash
 node ferramentas/checar-diff.mjs --autoteste

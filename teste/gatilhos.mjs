@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     caminhoSettings, lerSettings, gravarSettings, comGatilhos, semGatilhos,
-    jaRegistrados, outrosClones, plantados, removerPlantados
+    jaRegistrados, outrosClones, plantados, removerPlantados, faltando, plantar, caminhoPadrao
 } from '../lib/gatilhos.mjs';
 import { CONFIGS } from '../lib/configs.mjs';
 
@@ -122,4 +122,33 @@ test('todo caminho plantado leva o prefixo quality-', () => {
     for (const c of Object.values(CONFIGS)) {
         assert.match(c.caminho, /\/quality-[a-z-]+\.md$/, c.caminho);
     }
+});
+
+// Cada chave do CONFIGS promete um arquivo em `padroes/`. Chave sem padrão nunca é oferecida nem
+// plantada: entra calada no mapa e não aparece em lugar nenhum.
+test('toda chave do CONFIGS tem padrão no disco', () => {
+    for (const [chave, c] of Object.entries(CONFIGS)) {
+        assert.ok(existsSync(caminhoPadrao(c.caminho)), `${chave} sem padrão: ${caminhoPadrao(c.caminho)}`);
+    }
+});
+
+// O buraco que isto fecha: padrão acrescentado numa versão nova não alcançava quem já tinha passado
+// pelo portão da primeira abertura — o arquivo existia no repo e nunca chegava a ninguém.
+test('faltando() acha o que o CONFIGS promete e o workspace não tem', () => {
+    const ws = workspaceComSettings('{}');
+    assert.equal(faltando(ws).length, Object.keys(CONFIGS).length);
+    mkdirSync(join(ws, '.claude/commands'), { recursive: true });
+    writeFileSync(join(ws, CONFIGS.fim.caminho), 'ja existe');
+    assert.ok(!faltando(ws).some(f => f.chave === 'fim'));
+});
+
+test('plantar() escreve o padrão e não toca no que já existe', () => {
+    const ws = workspaceComSettings('{}');
+    mkdirSync(join(ws, '.claude/commands'), { recursive: true });
+    writeFileSync(join(ws, CONFIGS.inicio.caminho), 'MINHA rotina');
+    const escritos = plantar(ws, Object.keys(CONFIGS));
+    assert.ok(!escritos.includes(CONFIGS.inicio.caminho), 'não sobrescreve');
+    assert.equal(readFileSync(join(ws, CONFIGS.inicio.caminho), 'utf8'), 'MINHA rotina');
+    assert.ok(escritos.includes(CONFIGS.subir.caminho));
+    assert.deepEqual(faltando(ws), []);
 });

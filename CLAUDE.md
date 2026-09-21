@@ -14,7 +14,8 @@ nada funcionando. (`npm install` só serve para o teste de tela, que traz o Play
 `devDependencies`.)
 
 Instalar aqui é: conferir pré-requisitos, clonar ao lado dos repos, subir a tela, responder o que
-ela pergunta na primeira abertura e ligar os gatilhos com `node instalacao/gatilhos.mjs --add`.
+ela pergunta na primeira abertura e rodar `node instalacao/gatilhos.mjs --add`, que pergunta
+separadamente pelos gatilhos e pelo LaunchAgent que mantém a tela no ar.
 **Só está instalado quando a tela abre e lista os repos** — e só é *acionado* com os gatilhos no
 `settings.json`. `--remove` desfaz os dois.
 
@@ -52,6 +53,6 @@ chegar nela. Três regras que o repo cobra de si mesmo:
    `node --check server.mjs`.
 
 ```bash
-npm test        # 113 casos: rotas, respostas, cache, banco, CLIs, gatilhos e a doutrina
+npm test        # 128 casos: rotas, respostas, cache, banco, CLIs, gatilhos, serviço e a doutrina
 npm run tela    # a tela num navegador de verdade — este pede `npm install`
 ```

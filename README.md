@@ -38,11 +38,15 @@ detectou, dizendo quantos repos git achou) e as rotinas — os padrões genéric
 apontado no lugar de cada um. As duas se trocam depois, pela aba Configurações. Arquivo que já
 existe **nunca** é sobrescrito.
 
-Falta um passo depois dela, e é o que faz a rotina ser *acionada* em vez de só estar no disco:
+Falta um passo depois dela, e ele pergunta duas coisas separadas: os **gatilhos** (o que faz a
+rotina ser *acionada* em vez de só estar no disco) e o **LaunchAgent** (o que mantém a tela no ar —
+sem ele nada a sobe sozinha, e `npm start` num terminal morre com o terminal):
 
 ```bash
-node instalacao/gatilhos.mjs --add    # registra os gatilhos; --remove desfaz
+node instalacao/gatilhos.mjs --add    # pergunta os dois; --remove desfaz tudo deste clone
 ```
+
+E **`/quality-subir-tela`** sobe a tela a qualquer momento, ou devolve o link se ela já estiver no ar.
 
 Detalhes, gatilhos e arquivos locais: [`instalacao/README.md`](instalacao/README.md).
 
@@ -662,8 +666,8 @@ cluster.
 
 ## O hook
 
-Registrado no `settings.json` do Claude Code por `node instalacao/gatilhos.mjs --add`, **não
-bloqueia nada**:
+Registrado no `settings.json` do Claude Code por `node instalacao/gatilhos.mjs --add` (que pergunta
+antes), **não bloqueia nada**:
 
 | Evento | Gatilho | O que faz |
 |---|---|---|
@@ -681,6 +685,11 @@ Registrar e remover é sempre pelo `instalacao/gatilhos.mjs`, nunca à mão: ele
 deste clone, guarda `.bak`, é idempotente, e remove **por caminho** — dois clones lado a lado
 convivem, e desinstalar um não desliga o gatilho do outro. Editar o JSON à mão é como se perdem as
 permissões e os hooks de outras ferramentas que moram no mesmo arquivo.
+
+O hook **não sobe a tela**, só sonda a porta: com ela no ar devolve o link, sem ela entrega um HTML
+temporário e lembra do `/quality-subir-tela`. Quem mantém a tela viva é o LaunchAgent do `--add` —
+e o que o plist tem de ter para não subir meia-boca está no
+[`instalacao/README.md`](instalacao/README.md).
 
 ## Convenções assumidas, e cegueiras conhecidas
 

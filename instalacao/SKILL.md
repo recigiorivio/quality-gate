@@ -78,6 +78,10 @@ npm start
 
 Imprime a URL. Se a porta 4100 estiver ocupada, `PORT=4200 npm start`.
 
+⚠️ **Nada sobe a tela sozinho**, e `npm start` num terminal **morre com o terminal** (SIGHUP). Para
+ela voltar depois de reboot ou de fechar o terminal, é o LaunchAgent do passo 6. E em qualquer
+momento o comando **`/quality-subir-tela`** põe a tela no ar (ou devolve o link, se já estiver).
+
 ## 5. A primeira abertura
 
 Abra a URL e **entregue a tela para a pessoa**. Ela ocupa a tela inteira, sem nada carregado atrás:
@@ -87,31 +91,43 @@ pode ser a errada. Pede duas coisas:
 1. **A raiz do workspace** — já vem preenchida com a pasta detectada, e a tela diz quantos repos git
    achou ali. Trocar a raiz grava `QUALIDADE_WORKSPACE` no `.env` e **exige reiniciar** (a raiz é
    lida quando o servidor sobe).
-2. **As rotinas** — três markdown. Vêm padrões genéricos, e em cada um dá para **apontar um `.md` da
-   própria pessoa** no botão `escolher .md…`, que é plantado no lugar do padrão. Arquivo que já
-   existe na pasta **nunca** é sobrescrito, e os nomes levam prefixo `quality-` justamente para
-   conviverem com a rotina que o time já tem.
+2. **As rotinas** — quatro markdown (as duas rotinas, as regras de código e o
+   `/quality-subir-tela`). Vêm padrões genéricos, e em cada um dá para **apontar um `.md` da própria
+   pessoa** no botão `escolher .md…`, que é plantado no lugar do padrão. Arquivo que já existe na
+   pasta **nunca** é sobrescrito, e os nomes levam prefixo `quality-` justamente para conviverem com
+   a rotina que o time já tem.
 
 **A instalação está concluída quando a tela abre e lista os repos.** "O comando terminou sem erro"
 não é evidência de nada — é o mesmo erro que esta ferramenta cobra de quem a usa.
 
-## 6. Ligar os gatilhos
-
-Sem este passo os markdown estão no disco mas **nada os aciona** — e rotina que depende de alguém
-lembrar de acionar não é acionada. É o que faz a rotina de fim chegar sozinha quando a pessoa fala
-de commit, PR ou merge:
+## 6. Gatilhos e serviço
 
 ```bash
-node instalacao/gatilhos.mjs          # só mostra o estado, não grava
-node instalacao/gatilhos.mjs --add    # mostra o que vai gravar e pede confirmação
+node instalacao/gatilhos.mjs          # só mostra o estado, não grava nada
+node instalacao/gatilhos.mjs --add    # pergunta DUAS coisas, uma por vez
 ```
 
-O `--add` é aditivo e idempotente: mescla só as três entradas deste clone no
-`<workspace>/.claude/settings.json`, guarda `.bak` antes, e rodar duas vezes não duplica. Se já
-houver gatilho de **outro** clone, ele avisa — os dois vão rodar, e a rotina chega duas vezes.
+O `--add` faz duas perguntas separadas, porque são coisas diferentes e quem quer uma não
+necessariamente quer a outra:
+
+1. **Instalar os gatilhos de qualidade? (recomendado)** — sem eles os markdown estão no disco e
+   **nada os aciona**, e rotina que depende de alguém lembrar de acionar não é acionada. Mescla só
+   as três entradas deste clone no `<workspace>/.claude/settings.json`, aditivo e idempotente, com
+   `.bak` antes. Se já houver gatilho de **outro** clone, avisa: os dois rodam, e a rotina chega
+   duas vezes.
+2. **Instalar o LaunchAgent?** — é o que mantém a tela no ar entre reboots e fechamentos de
+   terminal. Sem ele, a tela só existe enquanto alguém segura um `npm start`.
+
+Rodar sem terminal interativo responde **não** às duas: é para nenhum agente instalar serviço na
+máquina de alguém por conta própria. `--sim` aceita as duas, `--porta=4200` muda a porta do serviço.
 
 ⚠️ O hook novo só vale na **próxima** sessão do Claude Code; a atual já leu o `settings.json`.
 Diga isso à pessoa, senão ela conclui que não funcionou.
+
+⚠️ Dois detalhes do plist que quebram em silêncio se você o escrever à mão: o `node` precisa de
+caminho **absoluto** (o launchd não resolve nome, e num node de `nvm` o caminho carrega a versão —
+trocar de node exige rodar o `--add` de novo), e o `PATH` tem de ser **assado** no plist, senão o
+`gh` de `/opt/homebrew/bin` desaparece e a tela sobe sem PR, sem base observada e sem checks.
 
 ## 7. Deixar a rotina à mão (opcional)
 
@@ -137,17 +153,23 @@ cd <raiz>/quality-gate
 node instalacao/gatilhos.mjs --remove
 ```
 
-Isso tira do `settings.json` **só** os gatilhos deste clone (gatilho de outro clone fica de pé) e
-apaga as três rotinas plantadas, guardando `.bak` de cada uma antes — a pessoa provavelmente editou
-o texto, e apagar edição sem cópia não se desfaz. Ele imprime o que sobrou para você decidir:
+Isso desfaz **tudo** o que este clone instalou fora de si mesmo, numa tacada:
+
+- os gatilhos no `settings.json` — **só** os deste clone: gatilho de outro clone fica de pé
+- o **LaunchAgent**, descarregado do `launchctl` e o plist apagado de `~/Library/LaunchAgents`
+- as quatro rotinas plantadas, com `.bak` de cada uma antes — a pessoa provavelmente editou o texto,
+  e apagar edição sem cópia não se desfaz
+
+Depois disso a tela para de subir sozinha. Ele imprime o que sobrou para você decidir:
 
 ```bash
 rm -rf ~/.claude/skills/instalar-quality-gate   # a skill
 rm -rf <raiz>/quality-gate                      # o clone, o .env e o banco de estado
 ```
 
-Se a pessoa só quer **desligar** o acionamento e manter a tela, pare no `--remove` dos gatilhos: a
-tela funciona igual sem hook, só não é acionada sozinha.
+Se a pessoa só quer **desligar** o acionamento e manter a tela, o `--remove` é grosso demais: ele
+leva o serviço e as rotinas junto. Nesse caso apague à mão as entradas do clone no `settings.json`
+(o `--status` mostra quais são) — a tela funciona igual sem hook, só não é acionada sozinha.
 
 ---
 

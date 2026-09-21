@@ -275,6 +275,11 @@ async function carregarChamados() {
     : '';
   marcarContaImplantacao();
   marcarPinosDaBarra(chamados);
+  // O overlay diz "lendo os repos", então sai quando os repos foram lidos — e não quando um chamado
+  // por acaso abre. Preso na abertura de chamado ele nunca saía em dois casos: workspace sem chamado
+  // aberto (todo install novo), e pessoa que clicou em outra aba durante a varredura. Overlay que
+  // não sai engole os cliques da tela inteira, sem erro nenhum.
+  tirarOverlay();
   // `?chamado=UND-1638` (e `&projeto=`) na URL: é o que faz o link ser passável — abrir a tela já
   // no chamado certo, de outra máquina, sem procurar na barra.
   const pedido = new URLSearchParams(location.search);

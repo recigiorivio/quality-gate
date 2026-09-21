@@ -6,6 +6,7 @@ test-results/
 playwright-report/
 relatorios/
 gate.log
+servico.log
 *.local
 *.bak
 

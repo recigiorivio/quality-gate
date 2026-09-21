@@ -1,0 +1,52 @@
+---
+description: Sobe a tela do quality-gate (ou devolve o link, se ela já estiver no ar)
+---
+
+# Subir a tela
+
+A tela do quality-gate é um servidor Node local. Ela **não sobe sozinha** a menos que o LaunchAgent
+esteja instalado — e `npm start` num terminal morre junto com o terminal.
+
+Siga na ordem e **pare no primeiro passo que resolver**.
+
+## 1. Ela já está no ar?
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" --max-time 3 http://localhost:4100/
+```
+
+`200` → está no ar. Entregue o link e **pare**: http://localhost:4100/
+
+## 2. Existe LaunchAgent para este clone?
+
+```bash
+cd <clone do quality-gate> && node instalacao/gatilhos.mjs
+```
+
+A linha `serviço` diz se há agente e se está carregado.
+
+- **instalado mas não carregado** → `launchctl kickstart -k gui/$(id -u)/<rótulo>`
+- **não instalado** → ofereça instalar (`node instalacao/gatilhos.mjs --add`), que é o que faz a tela
+  voltar sozinha depois de reboot. Se a pessoa não quiser, vá para o passo 3.
+
+## 3. Subir à mão, sem morrer com o terminal
+
+```bash
+cd <clone do quality-gate> && nohup npm start > /dev/null 2>> servico.log &
+```
+
+Sem o `nohup`, fechar o terminal derruba a tela.
+
+Porta 4100 ocupada por outra coisa? `PORT=4200 nohup npm start > /dev/null 2>> servico.log &` — e
+avise a pessoa que o hook procura a tela na 4100, então ele vai achar que ela está fora do ar.
+
+## 4. Confirmar antes de dizer que subiu
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" --retry 10 --retry-connrefused --retry-delay 1 http://localhost:4100/
+```
+
+"O comando não deu erro" não é evidência de nada — é o mesmo defeito que esta ferramenta cobra de
+quem a usa. Só diga que subiu depois de ver `200`, e entregue o link.
+
+Se não vier `200`, o motivo está em `servico.log` no clone, nas últimas linhas.
