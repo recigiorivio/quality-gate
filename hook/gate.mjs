@@ -7,12 +7,16 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { WORKSPACE } from '../lib/diff.mjs';
+import { ROTINA_FIM } from '../lib/configs.mjs';
 
 
-const PROJETO = join(WORKSPACE, 'qualidade');
+// Deduzido de onde ESTE arquivo está, nunca do nome da pasta: `join(WORKSPACE, 'qualidade')` só
+// acertava em quem clonou com esse nome, e errava calado em qualquer outro clone.
+const PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 const FERRAMENTAS = join(PROJETO, 'ferramentas');
 const PORTA_TELA = Number(process.env.QUALIDADE_PORTA || 4100);
 const LOG = join(PROJETO, 'gate.log');
@@ -163,8 +167,10 @@ class Gate {
 
     // Injeta o conteúdo da rotina, não um ponteiro para ela. Ponteiro ainda depende de decidir
     // abrir o arquivo — e é aí que as três tentativas anteriores morreram.
-    _injetarRotina(arquivo, cabecalho, chave) {
-        const caminho = join(WORKSPACE, '.claude/commands', arquivo);
+    // Recebe o caminho relativo do `CONFIGS`, não o nome do arquivo: saber `.claude/commands` aqui
+    // TAMBÉM deixava dois lugares para divergir, e o que fica errado é o que ninguém lê.
+    _injetarRotina(relativo, cabecalho, chave) {
+        const caminho = join(WORKSPACE, relativo);
         if (!existsSync(caminho)) {
             this.liberar();
         }
@@ -195,7 +201,7 @@ class Gate {
 
         if (fimDeTrabalho) {
             this._injetarRotina(
-                'final-trabalho.md',
+                ROTINA_FIM,
                 'O usuário sinalizou fim de trabalho. A rotina de fim deste workspace é a abaixo — seguir os passos que se aplicam, dizer quais não se aplicam, e não commitar/empurrar/mesclar sem confirmação explícita.',
                 `final${chamado ? `-${chamado}` : ''}`
             );

@@ -958,12 +958,15 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
   border-radius:6px;padding:6px 14px;font-weight:600;font-size:11.5px;cursor:pointer;flex:0 0 auto}
 .repos-novo button:hover{filter:brightness(1.07)}
 
-/* primeira abertura — portão, e por isso sem botão de fechar e com o fundo mais opaco que o das
-   outras modais: sair daqui sem escolher deixa a tela lendo a pasta errada. */
-#modal-boas-vindas{border:1px solid var(--linha);border-radius:12px;padding:0;max-width:560px;
-  width:calc(100vw - 32px);background:var(--cartao);color:var(--fg)}
-#modal-boas-vindas::backdrop{background:rgba(20,18,40,.58);backdrop-filter:blur(3px)}
-.bv{padding:22px 24px 18px}
+/* primeira abertura — portão, e por isso sem botão de fechar: sair daqui sem escolher deixa a tela
+   lendo a pasta errada.
+   Ocupa a tela inteira, opaca, em vez de flutuar sobre a tela carregada: modal sobre conteúdo
+   mostra repos de uma raiz que ainda não foi confirmada, e dá a impressão de já estar funcionando. */
+#modal-boas-vindas{border:0;border-radius:0;padding:0;margin:0;max-width:none;max-height:none;
+  width:100vw;height:100vh;background:var(--bg);color:var(--fg);display:grid;place-items:center}
+#modal-boas-vindas::backdrop{background:var(--bg)}
+.bv{padding:22px 24px 18px;width:min(560px,calc(100vw - 32px));background:var(--cartao);
+  border:1px solid var(--linha);border-radius:12px}
 .bv h2{margin:0;font-size:17px}
 .bv-sub{margin:4px 0 18px;color:var(--fraco)}
 .bv-rot{display:block;margin-top:14px;font-weight:600}
@@ -973,10 +976,21 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
 .bv-eco{margin-top:6px;font-size:12px;color:var(--fraco)}
 .bv-eco.bom{color:var(--ok)}
 .bv-eco.ruim{color:var(--erro)}
-.bv-item{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--linha)}
-.bv-item input{margin-top:3px}
+.bv-item{padding:7px 0;border-top:1px solid var(--linha)}
+.bv-item-cab{display:flex;gap:9px;align-items:flex-start}
+.bv-item-cab input[type=checkbox]{margin-top:3px}
 .bv-item code{font-size:11px;color:var(--fraco)}
 .bv-item i{display:block;color:var(--fraco);font-style:normal;font-size:12px}
+/* O eco fica ao lado do botão, não embaixo: é ele que diz qual arquivo vai ser plantado, e um eco
+   que se perde na lista faz a pessoa clicar "Começar" sem saber o que escolheu. */
+.bv-item-pe{display:flex;align-items:center;gap:9px;margin:5px 0 2px 25px}
+.bv-item-pe .bv-eco{margin-top:0}
+.bv-pick{border:1px solid var(--linha);border-radius:6px;padding:3px 9px;font-size:12px;
+  cursor:pointer;background:var(--painel);white-space:nowrap}
+.bv-pick input[type=file]{display:none}
+.bv-pick.travada{opacity:.45;cursor:not-allowed}
+.bv-pick-limpa{border:0;background:0;padding:0;color:var(--fraco);font-size:12px;cursor:pointer;
+  text-decoration:underline}
 .bv-pe{display:flex;align-items:center;gap:12px;margin-top:20px}
 .bv-ok{padding:8px 18px;border:0;border-radius:7px;background:var(--acento);color:#fff;
   font-weight:600;cursor:pointer}

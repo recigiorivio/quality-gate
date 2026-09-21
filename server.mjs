@@ -24,7 +24,8 @@ import sessoes from './lib/sessoes.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
-import { aplicarEnv } from './lib/env.mjs';
+import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
+import { CONFIGS } from './lib/configs.mjs';
 
 // O prompt do agente mandava `qualidade/ferramentas/…` com o workspace escrito à mão: os dois só
 // valiam nesta máquina, e o clone do próprio README cria a pasta com OUTRO nome (`quality-gate`).
@@ -104,24 +105,8 @@ const SO_LOCAL = HOST === '127.0.0.1' || HOST === 'localhost';
 const ehLocal = ip => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(String(ip || ''));
 const execFileAsync = promisify(execFile);
 
-// Allowlist por chave, nunca caminho vindo do cliente: é o que impede escrever fora daqui.
-const CONFIGS = {
-    inicio: {
-        caminho: '.claude/commands/inicio-trabalho.md',
-        rotulo: 'Rotina de início',
-        resumo: 'O que conferir antes de planejar ou escrever código'
-    },
-    fim: {
-        caminho: '.claude/commands/final-trabalho.md',
-        rotulo: 'Rotina de fim',
-        resumo: 'O que corrigir e o que conferir antes de entregar'
-    },
-    regras: {
-        caminho: '.claude/docs/qualidade-de-codigo.md',
-        rotulo: 'Regras de código',
-        resumo: 'Comentários, estrutura, testes — as regras que as checagens cobram'
-    }
-};
+// Igual ao teto da aba Configurações: as duas rotas agora carregam markdown escolhido por gente.
+const LIMITE_CORPO = 512 * 1024;
 
 class Servidor {
     constructor() {
@@ -367,20 +352,30 @@ class Servidor {
 
     salvarPrimeiraVez(req, res) {
         let corpo = '';
+        let estourou = false;
         req.on('data', d => {
+            if (estourou) {
+                return;
+            }
             corpo += d;
-            if (corpo.length > 64 * 1024) {
-                req.destroy();
+            // Responder, não derrubar o socket: `req.destroy()` chega na tela como falha de rede, e
+            // "o pedido sumiu" é exatamente o modo de falha silencioso que este projeto persegue.
+            if (corpo.length > LIMITE_CORPO) {
+                estourou = true;
+                this.json(res, { erro: `passou de ${LIMITE_CORPO / 1024} KB — escolha um .md menor` }, 413);
             }
         });
         req.on('end', () => {
+            if (estourou) {
+                return;
+            }
             try {
-                const { raiz, instalar = [] } = JSON.parse(corpo || '{}');
+                const { raiz, instalar = [], escolhidos = {} } = JSON.parse(corpo || '{}');
                 const alvo = raiz || WORKSPACE;
                 if (this.contarRepos(alvo) === null) {
                     return this.json(res, { erro: `não consigo ler ${alvo}` }, 400);
                 }
-                const plantados = this.plantarPadroes(alvo, instalar);
+                const plantados = this.plantarPadroes(alvo, instalar, escolhidos);
                 // Trocar a raiz exige reinício: `WORKSPACE` é resolvido na carga dos módulos, e
                 // fingir que mudou agora deixaria metade da tela lendo a pasta antiga.
                 const mudou = alvo !== WORKSPACE;
@@ -398,13 +393,21 @@ class Servidor {
 
     // Nunca sobrescreve: arquivo que já existe é rotina do time, e plantar por cima na instalação
     // seria apagar o processo de quem já tinha um.
-    plantarPadroes(raiz, chaves) {
+    //
+    // `escolhidos` é o .md que a pessoa apontou no lugar do padrão. Vem como conteúdo, nunca como
+    // caminho: o destino continua saindo do `CONFIGS`, senão o allowlist deixava de valer.
+    plantarPadroes(raiz, chaves, escolhidos = {}) {
         const escritos = [];
         const pulados = [];
+        const proprios = [];
         for (const chave of chaves) {
             const c = CONFIGS[chave];
-            const origem = c && this.caminhoPadrao(c.caminho);
-            if (!c || !existsSync(origem)) {
+            if (!c) {
+                continue;
+            }
+            const escolhido = this.conteudoEscolhido(escolhidos[chave]);
+            const origem = this.caminhoPadrao(c.caminho);
+            if (!escolhido && !existsSync(origem)) {
                 continue;
             }
             const destino = join(raiz, c.caminho);
@@ -413,16 +416,29 @@ class Servidor {
                 continue;
             }
             mkdirSync(dirname(destino), { recursive: true });
-            writeFileSync(destino, readFileSync(origem));
+            writeFileSync(destino, escolhido ?? readFileSync(origem));
             escritos.push(c.caminho);
+            if (escolhido) {
+                proprios.push(c.caminho);
+            }
         }
-        return { escritos, pulados };
+        return { escritos, pulados, proprios };
+    }
+
+    // Arquivo vazio é quase sempre picker errado, e plantar o vazio calado deixaria a rotina sem
+    // conteúdo parecendo instalada.
+    conteudoEscolhido(escolha) {
+        const conteudo = escolha?.conteudo;
+        if (typeof conteudo !== 'string' || !conteudo.trim()) {
+            return null;
+        }
+        return conteudo;
     }
 
     // Reescreve a chave no `.env` do projeto em vez de acrescentar: duas linhas iguais fazem a
     // última ganhar em silêncio, e a primeira fica no arquivo parecendo estar valendo.
     gravarEnv(chave, valor) {
-        const arquivo = join(RAIZ, '.env');
+        const arquivo = CAMINHO_ENV;
         const linhas = existsSync(arquivo)
             ? readFileSync(arquivo, 'utf8').split('\n').filter(l => !l.trimStart().startsWith(`${chave}=`))
             : [];
@@ -451,7 +467,12 @@ class Servidor {
                     return this.json(res, { erro: 'conteúdo vazio recusado' }, 400);
                 }
                 const alvo = join(WORKSPACE, c.caminho);
-                writeFileSync(`${alvo}.bak`, readFileSync(alvo));
+                // `.bak` só do que existe: salvar uma rotina ainda não plantada morria no backup, e
+                // a aba Configurações é justamente por onde se planta a primeira versão dela.
+                if (existsSync(alvo)) {
+                    writeFileSync(`${alvo}.bak`, readFileSync(alvo));
+                }
+                mkdirSync(dirname(alvo), { recursive: true });
                 writeFileSync(alvo, conteudo);
                 this.avisar({ tipo: 'config-salva', chave });
                 return this.json(res, { ok: true, chave, bytes: Buffer.byteLength(conteudo), quando: Date.now() });
@@ -1225,10 +1246,18 @@ class Servidor {
             if (!c) {
                 return this.json(res, { erro: 'chave desconhecida' }, 404);
             }
+            // Rotina ainda não plantada é resposta, não erro: 500 aqui dizia "o servidor quebrou"
+            // quando a verdade é "esse arquivo não existe nessa pasta ainda".
+            const alvo = join(WORKSPACE, c.caminho);
+            if (!existsSync(alvo)) {
+                return this.json(res, {
+                    chave: q.get('chave'), rotulo: c.rotulo, caminho: c.caminho, conteudo: '', existe: false
+                });
+            }
             try {
                 return this.json(res, {
-                    chave: q.get('chave'), rotulo: c.rotulo, caminho: c.caminho,
-                    conteudo: readFileSync(join(WORKSPACE, c.caminho), 'utf8')
+                    chave: q.get('chave'), rotulo: c.rotulo, caminho: c.caminho, existe: true,
+                    conteudo: readFileSync(alvo, 'utf8')
                 });
             } catch (e) {
                 return this.json(res, { erro: e.message }, 500);

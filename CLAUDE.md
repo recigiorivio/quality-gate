@@ -13,8 +13,10 @@ Siga **[`instalacao/SKILL.md`](instalacao/SKILL.md)**, os passos na ordem.
 nada funcionando. (`npm install` só serve para o teste de tela, que traz o Playwright em
 `devDependencies`.)
 
-Instalar aqui é: conferir pré-requisitos, clonar ao lado dos repos, subir a tela e responder o que
-ela pergunta na primeira abertura. **Só está instalado quando a tela abre e lista os repos.**
+Instalar aqui é: conferir pré-requisitos, clonar ao lado dos repos, subir a tela, responder o que
+ela pergunta na primeira abertura e ligar os gatilhos com `node instalacao/gatilhos.mjs --add`.
+**Só está instalado quando a tela abre e lista os repos** — e só é *acionado* com os gatilhos no
+`settings.json`. `--remove` desfaz os dois.
 
 ## O que este projeto exige
 
@@ -50,6 +52,6 @@ chegar nela. Três regras que o repo cobra de si mesmo:
    `node --check server.mjs`.
 
 ```bash
-npm test        # 102 casos: rotas, forma das respostas, cache, banco, CLIs e a doutrina
+npm test        # 113 casos: rotas, respostas, cache, banco, CLIs, gatilhos e a doutrina
 npm run tela    # a tela num navegador de verdade — este pede `npm install`
 ```

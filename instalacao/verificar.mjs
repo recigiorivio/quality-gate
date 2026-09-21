@@ -5,8 +5,14 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { aplicarEnv } from '../lib/env.mjs';
+import { caminhoSettings, lerSettings, jaRegistrados, outrosClones } from '../lib/gatilhos.mjs';
+
+// O `.env` entra antes de resolver a raiz: é lá que o portão da primeira abertura grava a pasta
+// escolhida, e sem isto o verificador conferia uma raiz diferente da que a tela usa.
+aplicarEnv();
 
 const RAIZ = dirname(dirname(fileURLToPath(import.meta.url)));
 const WORKSPACE = process.env.QUALIDADE_WORKSPACE || dirname(RAIZ);
@@ -115,18 +121,30 @@ class Verificar {
             tem ? '' : 'opcional: sem ele o cartão de índices não confirma o plano de execução'];
     }
 
+    // Confere se o hook aponta para ESTE clone, não se existe algum `gate.mjs` no arquivo: com dois
+    // clones lado a lado, o `includes('gate.mjs')` dava ok para o install novo por causa do antigo
+    // — check que responde ok sem o gatilho estar ligado é pior que check nenhum.
     hook() {
-        for (const rel of ['.claude/settings.json', '../.claude/settings.json']) {
-            const caminho = join(WORKSPACE, rel);
-            if (!existsSync(caminho)) {
-                continue;
-            }
-            const texto = this.cmd('cat', [caminho]) || '';
-            const ligado = texto.includes('gate.mjs');
-            return [ligado ? OK : AVISO, `hook em ${rel}`,
-                ligado ? '' : 'opcional: sem o hook a rotina de fim não é injetada sozinha'];
+        const caminho = caminhoSettings(WORKSPACE);
+        if (!existsSync(caminho)) {
+            return [AVISO, 'hook', `sem ${relative(WORKSPACE, caminho)} (opcional: node instalacao/gatilhos.mjs --add)`];
         }
-        return [AVISO, 'hook', 'nenhum .claude/settings.json encontrado (opcional)'];
+        let settings;
+        try {
+            settings = lerSettings(caminho).settings;
+        } catch (e) {
+            return [AVISO, 'hook', e.message];
+        }
+        const meus = jaRegistrados(settings, RAIZ);
+        const outros = outrosClones(settings, RAIZ);
+        if (meus.length === 3) {
+            return [OK, 'hook deste clone registrado',
+                outros.length ? `também há ${outros.length} de outro clone — a rotina chega duas vezes` : ''];
+        }
+        const detalhe = outros.length
+            ? `há hook de ${outros[0]}, mas não deste clone — ligue com node instalacao/gatilhos.mjs --add`
+            : 'opcional: sem o hook a rotina de fim não é injetada sozinha (node instalacao/gatilhos.mjs --add)';
+        return [AVISO, meus.length ? `hook parcial (${meus.length}/3)` : 'hook não registrado', detalhe];
     }
 
     porta() {

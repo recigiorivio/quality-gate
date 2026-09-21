@@ -262,7 +262,7 @@ async function carregarChamados() {
       </span>
       ${c.titulo
         ? `<span class="lch-sub">${esc(c.titulo)}</span>`
-        : '<span class="lch-sub sem">título não cacheado — rodar /inicio-trabalho</span>'}
+        : '<span class="lch-sub sem">título não cacheado — rodar /quality-inicio-trabalho</span>'}
     </button>`).join('') || '<p class="vazio">nenhum chamado com branch aberta</p>';
   document.getElementById('ocultos').innerHTML = ocultos.length
     ? `<button class="conta-ocultos" onclick="this.parentNode.classList.toggle('aberto')">
@@ -283,7 +283,10 @@ async function carregarChamados() {
     abrirChamado(daUrl, pedido.get('projeto') || null);
     return;
   }
-  if (!atual && chamados.length) {
+  // `visao` também, não só `!atual`: a varredura de 50 repos leva ~1 s, e quem clicou em outra aba
+  // nesse meio tempo era arrastado de volta para um chamado que não pediu, com o painel que ele
+  // acabou de abrir apagado por baixo.
+  if (!atual && chamados.length && visao === 'chamados') {
     abrirChamado(chamados[0].chamado);
   }
 }
@@ -1423,19 +1426,29 @@ function ligarArrasto() {
   });
 }
 
+function iniciarTela() {
+  carregarChamados();
+  escutarEventos();
+  carregarSessoes();
+  // Sessão abre e fecha sem avisar ninguém: sem esta releitura o contador vira number velho.
+  setInterval(() => { if (!document.hidden) { carregarSessoes(); } }, 30000);
+  // A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
+  api('/api/implantacao', {}).then(r => {
+    filaImplantacao = r.fila || [];
+    escolhidosImplantacao = new Set(r.escolhidos || []);
+    marcarContaImplantacao();
+  });
+}
+
 aplicarSplit(lerSplit());
 ligarArrasto();
-carregarChamados();
-escutarEventos();
-carregarSessoes();
-boasVindas();
-// Sessão abre e fecha sem avisar ninguém: sem esta releitura o contador vira number velho.
-setInterval(() => { if (!document.hidden) { carregarSessoes(); } }, 30000);
-// A contagem no botão vem já na abertura: saber que há 5 repos esperando não pode exigir clicar.
-api('/api/implantacao', {}).then(r => {
-  filaImplantacao = r.fila || [];
-  escolhidosImplantacao = new Set(r.escolhidos || []);
-  marcarContaImplantacao();
+// O portão decide antes de carregar qualquer coisa: enquanto a raiz não está confirmada, o que a
+// tela carregaria atrás dele é a leitura de uma pasta que pode ser a errada — e mostrar repos ali
+// afirma que está funcionando justamente quando ninguém sabe ainda.
+boasVindas().then(pendente => {
+  if (!pendente) {
+    iniciarTela();
+  }
 });
 
 // ---------- implantação: o que vai de stage para main ----------
@@ -2309,7 +2322,7 @@ async function abrirConfig(chave) {
       <span class="selo pr-carregando" id="estado-config">sem alteração</span>
     </header>
     <p class="dica">Editar o markdown direto. O que estiver aqui é o que eu sigo nas rotinas
-      <code>/inicio-trabalho</code> e <code>/final-trabalho</code> — a de fim é injetada no meu
+      <code>/quality-inicio-trabalho</code> e <code>/quality-fim-trabalho</code> — a de fim é injetada no meu
       contexto automaticamente quando você fala de commit, PR ou merge.</p>
     <textarea id="editor" spellcheck="false">${esc(c.conteudo)}</textarea>`;
   const editor = document.getElementById('editor');
@@ -2353,10 +2366,15 @@ async function salvarConfig(chave) {
 // "não há trabalho aberto" — o modo de falha silencioso que este projeto persegue.
 let conferindoRaiz = null;
 
+// Fora do DOM de propósito: `#bv-itens` é redesenhado a cada tecla na raiz, e o arquivo escolhido
+// guardado no `<input type=file>` sumia junto com o redesenho, calado.
+const escolhidasBoasVindas = {};
+
+// Devolve se o portão ficou de pé: quem chama usa isso para NÃO carregar a tela atrás dele.
 async function boasVindas() {
   const r = await api('/api/primeira-vez', {});
   if (!r.primeira) {
-    return;
+    return false;
   }
   const m = document.createElement('dialog');
   m.id = 'modal-boas-vindas';
@@ -2365,17 +2383,65 @@ async function boasVindas() {
   m.showModal();
   m.addEventListener('cancel', e => e.preventDefault());
   document.getElementById('bv-raiz').addEventListener('input', () => conferirRaiz());
+  ligarPickers();
   conferirRaiz();
+  return true;
 }
 
 // `existe` é sempre sobre a raiz ESCOLHIDA, e por isso se redesenha junto com ela. Calculado uma
 // vez na abertura, ele seguia descrevendo a pasta detectada depois de a pessoa trocar de pasta.
 function renderItensBoasVindas(configs) {
-  return configs.map(c => `<label class="bv-item">
-      <input type="checkbox" data-k="${c.chave}" ${c.existe || !c.padrao ? 'disabled' : 'checked'}>
-      <span><b>${esc(c.rotulo)}</b> <code>${esc(c.caminho)}</code>
-      <i>${c.existe ? 'já existe nessa pasta — fica como está' : esc(c.resumo)}</i></span>
-    </label>`).join('');
+  return configs.map(c => {
+    const escolhida = escolhidasBoasVindas[c.chave];
+    const travado = c.existe || (!c.padrao && !escolhida);
+    return `<div class="bv-item">
+      <label class="bv-item-cab">
+        <input type="checkbox" data-k="${c.chave}" ${travado ? 'disabled' : 'checked'}>
+        <span><b>${esc(c.rotulo)}</b> <code>${esc(c.caminho)}</code>
+        <i>${c.existe ? 'já existe nessa pasta — fica como está' : esc(c.resumo)}</i></span>
+      </label>
+      <div class="bv-item-pe">
+        <label class="bv-pick ${c.existe ? 'travada' : ''}">
+          <input type="file" accept=".md,.markdown,text/markdown" data-pick="${c.chave}"
+            ${c.existe ? 'disabled' : ''}>
+          escolher .md…
+        </label>
+        <span class="bv-eco ${escolhida ? 'bom' : ''}">${escolhida
+          ? `${esc(escolhida.nome)} · ${Math.max(1, Math.round(escolhida.conteudo.length / 1024))} KB`
+          : 'padrão genérico do quality-gate'}</span>
+        ${escolhida ? `<button type="button" class="bv-pick-limpa" data-limpa="${c.chave}">usar o padrão</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Delegação, e não listener por nó: os itens são substituídos por `innerHTML` a cada eco da raiz, e
+// listener preso no nó antigo morre sem avisar.
+function ligarPickers() {
+  const itens = document.getElementById('bv-itens');
+  if (!itens || itens.dataset.ligado) {
+    return;
+  }
+  itens.dataset.ligado = '1';
+  itens.addEventListener('change', async e => {
+    const chave = e.target.dataset?.pick;
+    const arquivo = e.target.files?.[0];
+    if (!chave || !arquivo) {
+      return;
+    }
+    // O navegador não entrega o caminho absoluto do arquivo, só nome e conteúdo. Então o eco mostra
+    // o NOME — prometer caminho aqui seria mentira de interface.
+    escolhidasBoasVindas[chave] = { nome: arquivo.name, conteudo: await arquivo.text() };
+    conferirRaiz(0);
+  });
+  itens.addEventListener('click', e => {
+    const chave = e.target.dataset?.limpa;
+    if (!chave) {
+      return;
+    }
+    delete escolhidasBoasVindas[chave];
+    conferirRaiz(0);
+  });
 }
 
 function renderBoasVindas(r) {
@@ -2389,8 +2455,9 @@ function renderBoasVindas(r) {
     <div id="bv-repos" class="bv-eco">conferindo…</div>
 
     <label class="bv-rot">Rotinas</label>
-    <p class="bv-dica">Vêm padrões genéricos. Troque pelos do seu time quando quiser — arquivo que
-      já existe nunca é sobrescrito.</p>
+    <p class="bv-dica">Vêm padrões genéricos. Dá para apontar um <code>.md</code> seu no lugar de
+      cada um, agora — ou trocar depois pela aba Configurações. Arquivo que já existe na pasta nunca
+      é sobrescrito.</p>
     <div id="bv-itens">${renderItensBoasVindas(r.configs)}</div>
 
     <div class="bv-pe">
@@ -2402,7 +2469,7 @@ function renderBoasVindas(r) {
 
 // Eco a cada tecla, com fôlego: sem o atraso, cada caractere de um caminho colado virava um
 // pedido, e o último a responder nem sempre era o do texto que está na tela.
-function conferirRaiz() {
+function conferirRaiz(espera = 350) {
   clearTimeout(conferindoRaiz);
   conferindoRaiz = setTimeout(async () => {
     const raiz = document.getElementById('bv-raiz')?.value.trim();
@@ -2422,21 +2489,24 @@ function conferirRaiz() {
     const itens = document.getElementById('bv-itens');
     if (itens) {
       itens.innerHTML = renderItensBoasVindas(r.configs);
+      ligarPickers();
     }
-  }, 350);
+  }, espera);
 }
 
 async function salvarBoasVindas() {
   const raiz = document.getElementById('bv-raiz').value.trim();
   const instalar = [...document.querySelectorAll('#modal-boas-vindas input[type=checkbox]')]
     .filter(c => c.checked && !c.disabled).map(c => c.dataset.k);
+  const escolhidos = Object.fromEntries(instalar
+    .filter(k => escolhidasBoasVindas[k]).map(k => [k, escolhidasBoasVindas[k]]));
   const estado = document.getElementById('bv-estado');
   estado.textContent = 'gravando…';
   // POST direto: o `api()` é a fila de GETs, e este pedido é a segunda metade de um clique.
   const r = await fetch(`/api/primeira-vez-salvar${window.TOKEN ? `?t=${window.TOKEN}` : ''}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ raiz, instalar })
+    body: JSON.stringify({ raiz, instalar, escolhidos })
   }).then(x => x.json()).catch(x => ({ erro: x.message }));
   if (r.erro) {
     estado.className = 'bv-eco ruim';
@@ -2454,8 +2524,10 @@ async function salvarBoasVindas() {
   }
   document.getElementById('modal-boas-vindas').close();
   document.getElementById('modal-boas-vindas').remove();
-  avisarNaTela(r.escritos.length ? `${r.escritos.length} rotina(s) instalada(s)` : 'pronto');
-  carregarChamados();
+  const seus = r.proprios?.length ? `, ${r.proprios.length} de arquivo seu` : '';
+  avisarNaTela(r.escritos.length ? `${r.escritos.length} rotina(s) instalada(s)${seus}` : 'pronto');
+  // Só agora a tela carrega: é aqui que a raiz deixa de ser suposição.
+  iniciarTela();
 }
 
 // Em módulo nada é global, e os onclick do HTML gerado precisam alcançar estas funções.

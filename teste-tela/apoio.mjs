@@ -29,6 +29,10 @@ function subirServidor(estado, casaClaude) {
             env: {
                 ...process.env, PORT: '0', QUALIDADE_HOST: '127.0.0.1', QUALIDADE_TOKEN: '',
                 QUALIDADE_ESTADO: estado,
+                // O `.env` também vai para o diretório do caso: trocar a raiz no portão GRAVA
+                // `QUALIDADE_WORKSPACE`, e sem isto a suíte apontava a tela do próprio
+                // desenvolvedor para uma pasta temporária que ela apaga no fim.
+                QUALIDADE_ENV: join(estado, '.env'),
                 // Sem isto o contador de agentes mediria o que a máquina por acaso estivesse rodando.
                 ...(casaClaude ? { QUALIDADE_CLAUDE_HOME: casaClaude } : {})
             },

@@ -1,11 +1,12 @@
 ---
 name: instalar-quality-gate
 description: |
-  Instala o quality-gate na máquina de quem pediu: confere pré-requisitos, clona ao lado dos
-  repositórios, sobe a tela e deixa a primeira abertura perguntar a raiz do workspace e as rotinas.
-  Usar quando alguém disser "instale https://github.com/recigiorivio/quality-gate", "instala o
-  quality-gate", "configura a tela de qualidade aqui", ou abrir este repositório pela primeira vez
-  sem saber o que fazer com ele. NÃO é `npm install` — o projeto não tem dependência de runtime.
+  Instala, atualiza ou REMOVE o quality-gate na máquina de quem pediu: confere pré-requisitos, clona
+  ao lado dos repositórios, sobe a tela, deixa a primeira abertura perguntar a raiz do workspace e as
+  rotinas, e liga os gatilhos no settings.json. Usar quando alguém disser "instale
+  https://github.com/recigiorivio/quality-gate", "instala o quality-gate", "configura a tela de
+  qualidade aqui", "desinstala o quality-gate", ou abrir este repositório pela primeira vez sem saber
+  o que fazer com ele. NÃO é `npm install` — o projeto não tem dependência de runtime.
 ---
 
 # Instalar o quality-gate
@@ -79,20 +80,42 @@ Imprime a URL. Se a porta 4100 estiver ocupada, `PORT=4200 npm start`.
 
 ## 5. A primeira abertura
 
-Abra a URL e **entregue a tela para a pessoa**. Na primeira vez ela pede duas coisas:
+Abra a URL e **entregue a tela para a pessoa**. Ela ocupa a tela inteira, sem nada carregado atrás:
+enquanto a raiz não está confirmada, qualquer repo listado ali seria leitura de uma pasta que ainda
+pode ser a errada. Pede duas coisas:
 
 1. **A raiz do workspace** — já vem preenchida com a pasta detectada, e a tela diz quantos repos git
    achou ali. Trocar a raiz grava `QUALIDADE_WORKSPACE` no `.env` e **exige reiniciar** (a raiz é
    lida quando o servidor sobe).
-2. **As rotinas** — três markdown padrão, genéricos, que a pessoa troca depois pela aba
-   Configurações. Arquivo que já existe no workspace **nunca** é sobrescrito.
+2. **As rotinas** — três markdown. Vêm padrões genéricos, e em cada um dá para **apontar um `.md` da
+   própria pessoa** no botão `escolher .md…`, que é plantado no lugar do padrão. Arquivo que já
+   existe na pasta **nunca** é sobrescrito, e os nomes levam prefixo `quality-` justamente para
+   conviverem com a rotina que o time já tem.
 
 **A instalação está concluída quando a tela abre e lista os repos.** "O comando terminou sem erro"
 não é evidência de nada — é o mesmo erro que esta ferramenta cobra de quem a usa.
 
-## 6. Deixar a rotina à mão (opcional)
+## 6. Ligar os gatilhos
 
-Para a pessoa poder reinstalar ou atualizar sem lembrar da URL:
+Sem este passo os markdown estão no disco mas **nada os aciona** — e rotina que depende de alguém
+lembrar de acionar não é acionada. É o que faz a rotina de fim chegar sozinha quando a pessoa fala
+de commit, PR ou merge:
+
+```bash
+node instalacao/gatilhos.mjs          # só mostra o estado, não grava
+node instalacao/gatilhos.mjs --add    # mostra o que vai gravar e pede confirmação
+```
+
+O `--add` é aditivo e idempotente: mescla só as três entradas deste clone no
+`<workspace>/.claude/settings.json`, guarda `.bak` antes, e rodar duas vezes não duplica. Se já
+houver gatilho de **outro** clone, ele avisa — os dois vão rodar, e a rotina chega duas vezes.
+
+⚠️ O hook novo só vale na **próxima** sessão do Claude Code; a atual já leu o `settings.json`.
+Diga isso à pessoa, senão ela conclui que não funcionou.
+
+## 7. Deixar a rotina à mão (opcional)
+
+Para a pessoa poder reinstalar, atualizar ou remover sem lembrar da URL:
 
 ```bash
 mkdir -p ~/.claude/skills/instalar-quality-gate
@@ -104,11 +127,38 @@ reinicia achando que algo falhou.
 
 ---
 
+# Desinstalar
+
+A instalação escreve em três lugares, e cada um sai de um jeito. Faça na ordem, e **confirme com a
+pessoa antes do último passo** — clone apagado leva `.env`, `qualidade.db` e as decisões com ele.
+
+```bash
+cd <raiz>/quality-gate
+node instalacao/gatilhos.mjs --remove
+```
+
+Isso tira do `settings.json` **só** os gatilhos deste clone (gatilho de outro clone fica de pé) e
+apaga as três rotinas plantadas, guardando `.bak` de cada uma antes — a pessoa provavelmente editou
+o texto, e apagar edição sem cópia não se desfaz. Ele imprime o que sobrou para você decidir:
+
+```bash
+rm -rf ~/.claude/skills/instalar-quality-gate   # a skill
+rm -rf <raiz>/quality-gate                      # o clone, o .env e o banco de estado
+```
+
+Se a pessoa só quer **desligar** o acionamento e manter a tela, pare no `--remove` dos gatilhos: a
+tela funciona igual sem hook, só não é acionada sozinha.
+
+---
+
 ## O que NÃO fazer
 
 - **`npm install` não é a instalação.** Ele só traz o Playwright do teste de tela.
 - **Não escreva por cima de arquivo existente** em `.claude/`. Se já existe, é o processo do time.
-- **Não mexa no `settings.json` da pessoa** sem ler, mesclar só as chaves novas e gravar. O hook
-  (passo opcional do `instalacao/README.md`) é aditivo; sobrescrever o arquivo não é.
+- **Não edite o `settings.json` à mão.** Use `instalacao/gatilhos.mjs`: ele mescla só as chaves
+  novas, guarda `.bak` e sabe remover exatamente o que pôs. Sobrescrever o arquivo apaga as
+  permissões e os hooks de outras ferramentas que a pessoa tem ali.
 - **Não importe `server.mjs`** para testar se ele carrega: importar já sobe o servidor. Use
   `node --check server.mjs`.
+- **Não rode sonda avulsa sem `QUALIDADE_ESTADO=$(mktemp -d)` na frente** — sem isso ela escreve no
+  banco de verdade e apaga a escolha de repos de quem está usando.

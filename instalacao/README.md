@@ -37,7 +37,7 @@ Ele diz o que falta e o que a falta custa — em vez de você descobrir na tela 
 |---|---|
 | obrigatório | Node **22.5.0+** (lido do `engines`, não chumbado aqui), `git`, `vendor/acorn.mjs`, o workspace existir e ter repos git |
 | recomendado | `gh` instalado **e autenticado** (sem ele: nada de PR, base observada nem checks); linters nos repos |
-| opcional | `.env` de stage, o hook registrado, a porta 4100 livre |
+| opcional | `.env` de stage, os gatilhos **deste clone** registrados, a porta 4100 livre |
 
 Sai com código 1 se faltar algo obrigatório, então serve em script.
 
@@ -59,36 +59,36 @@ cp .env.example .env
 Leia os comentários do `.env.example`: ele explica quais chaves têm efeito **naquele arquivo** e
 quais são do processo. Resumo da armadilha: `PORT` no `.env` **não faz nada**.
 
-## 5. Opcional: o hook
+## 5. Os gatilhos
 
-Faz a rotina de fim chegar sozinha ao Claude quando você fala de commit, PR ou merge, e derruba o
-cache da tela depois de um commit. Sem ele, a tela funciona igual — só não é acionada sozinha.
+Fazem a rotina de fim chegar sozinha ao Claude quando você fala de commit, PR ou merge, e derrubam o
+cache da tela depois de um commit. Sem eles, a tela funciona igual — só não é acionada sozinha, e
+rotina que depende de você lembrar de acionar não é acionada.
 
-Em `<workspace>/.claude/settings.json`, trocando o caminho pelo seu:
-
-```json
-{
-  "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "node /caminho/quality-gate/hook/gate.mjs prompt", "timeout": 20 }] }
-    ],
-    "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node /caminho/quality-gate/hook/gate.mjs pretooluse", "timeout": 120 }] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "node /caminho/quality-gate/hook/gate.mjs posttooluse", "timeout": 20 }] }
-    ]
-  }
-}
+```bash
+node instalacao/gatilhos.mjs          # estado: o que está registrado e o que está plantado
+node instalacao/gatilhos.mjs --add    # mostra o que vai gravar e pede confirmação
+node instalacao/gatilhos.mjs --remove # desfaz: tira os gatilhos e as rotinas plantadas
 ```
 
+O `--add` mescla só as três entradas **deste** clone no `<workspace>/.claude/settings.json`, guarda
+`.bak` antes de gravar, e é idempotente. A remoção é por **caminho**, não por evento: dois clones
+convivem, e desinstalar um não desliga o gatilho do outro. `--sim` pula a confirmação, para script.
+
+⚠️ Hook novo só vale na **próxima** sessão do Claude Code — a atual já leu o `settings.json`.
+
 O hook **não bloqueia nada** e falha aberto: qualquer erro interno libera a ação. Overhead medido em
-comando que não casa: **29 ms**. Para desligar, apague a chave `hooks`.
+comando que não casa: **29 ms**. Para desligar tudo de uma vez, apague a chave `hooks`.
 
 As rotinas que ele injeta são dois markdown em `.claude/commands/` — editáveis pela aba
 **Configurações** da própria tela. Versões **genéricas** delas vêm em `padroes/`, e a primeira
-abertura oferece plantá-las no seu workspace. São ponto de partida, não o processo do seu time:
-troque. Arquivo que já existe nunca é sobrescrito, nem na instalação nem depois.
+abertura oferece plantá-las no seu workspace, ou **apontar um `.md` seu** no lugar de cada padrão.
+São ponto de partida, não o processo do seu time: troque.
+
+Os nomes levam prefixo `quality-` (`quality-inicio-trabalho.md`, `quality-fim-trabalho.md`,
+`quality-qualidade-de-codigo.md`) para conviverem com a rotina que você já tem: sem o prefixo o
+destino colidia, a instalação pulava os três e terminava "ok" sem ter entregado nada. Arquivo que já
+existe nunca é sobrescrito, nem na instalação nem depois.
 
 ## Arquivos locais (todos no `.gitignore`)
 
@@ -99,7 +99,7 @@ Nada do que é do **seu** time mora no código. São quatro arquivos, e nenhum �
 | `regras.json` | `regras.example.json` | repos onde **não** se cria spec novo |
 | `bases.json` | `bases.example.json` | base de fallback por repo, quando não há PR mesclado para observar |
 | `.env` | `.env.example` | consulta de leitura ao banco de stage |
-| `LOCAL.md` | — | suas anotações: convenções do time, medições, onde o hook está |
+| `LOCAL.md` | — | suas anotações: convenções do time, medições, o que você trocou nas rotinas |
 
 Sem `regras.json` a checagem de spec novo nunca dispara — é o comportamento certo para um projeto
 genérico, e o que você provavelmente quer mudar primeiro.
@@ -122,9 +122,9 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-102 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
-e o comportamento do cache, roda cada ferramenta de linha de comando, e valida o de-para do
-`doutrina.json`.
+113 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+e o comportamento do cache, roda cada ferramenta de linha de comando, valida o de-para do
+`doutrina.json`, e cobre o registro dos gatilhos no `settings.json`.
 
 ```bash
 node ferramentas/checar-diff.mjs --autoteste

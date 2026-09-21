@@ -31,11 +31,20 @@ node instalacao/verificar.mjs   # diz o que falta; não acessa a rede
 npm start                       # e abra a URL que ele imprime
 ```
 
-Na **primeira abertura** a tela pergunta duas coisas: a raiz do workspace (já preenchida com a que
-ela detectou, dizendo quantos repos git achou) e se quer as rotinas padrão. As duas se trocam
-depois, pela aba Configurações. Arquivo que já existe **nunca** é sobrescrito.
+Na **primeira abertura** a tela pergunta duas coisas, numa tela própria e vazia — sem nada carregado
+atrás, porque enquanto a raiz não está confirmada qualquer repo listado ali seria leitura de uma
+pasta que ainda pode ser a errada. As duas coisas: a raiz do workspace (já preenchida com a que ela
+detectou, dizendo quantos repos git achou) e as rotinas — os padrões genéricos, ou um **`.md` seu**
+apontado no lugar de cada um. As duas se trocam depois, pela aba Configurações. Arquivo que já
+existe **nunca** é sobrescrito.
 
-Detalhes, hook e arquivos locais: [`instalacao/README.md`](instalacao/README.md).
+Falta um passo depois dela, e é o que faz a rotina ser *acionada* em vez de só estar no disco:
+
+```bash
+node instalacao/gatilhos.mjs --add    # registra os gatilhos; --remove desfaz
+```
+
+Detalhes, gatilhos e arquivos locais: [`instalacao/README.md`](instalacao/README.md).
 
 **Mas o piso do Node subiu para 22.5.0** (`engines.node`), e vale explicar por quê para ninguém
 perder uma tarde: o estado que dois processos escrevem passou de JSON para um SQLite, e o SQLite vem
@@ -653,7 +662,8 @@ cluster.
 
 ## O hook
 
-Registrado no `settings.json` do Claude Code, **não bloqueia nada**:
+Registrado no `settings.json` do Claude Code por `node instalacao/gatilhos.mjs --add`, **não
+bloqueia nada**:
 
 | Evento | Gatilho | O que faz |
 |---|---|---|
@@ -666,6 +676,11 @@ por dia por chamado. Falha aberto sempre — **29 ms** de overhead em comando qu
 
 Por que existe: memória que exige *decidir consultar* não é consultada. Isso foi medido três vezes
 antes deste projeto, uma delas com **0 buscas em 5.693 chamadas de ferramenta**.
+
+Registrar e remover é sempre pelo `instalacao/gatilhos.mjs`, nunca à mão: ele mescla só as entradas
+deste clone, guarda `.bak`, é idempotente, e remove **por caminho** — dois clones lado a lado
+convivem, e desinstalar um não desliga o gatilho do outro. Editar o JSON à mão é como se perdem as
+permissões e os hooks de outras ferramentas que moram no mesmo arquivo.
 
 ## Convenções assumidas, e cegueiras conhecidas
 

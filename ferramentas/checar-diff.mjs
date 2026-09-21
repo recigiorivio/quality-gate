@@ -37,13 +37,13 @@ export class ChecarDiff {
             {
                 nome: 'comentario-acima-de-class',
                 severidade: 'erro',
-                doc: 'qualidade-de-codigo.md § Comentários',
+                doc: 'quality-qualidade-de-codigo.md § Comentários',
                 aplicar: a => this._acimaDeClass(a)
             },
             {
                 nome: 'comentario-dentro-de-definition',
                 severidade: 'erro',
-                doc: 'qualidade-de-codigo.md § Comentários (model Mongoose)',
+                doc: 'quality-qualidade-de-codigo.md § Comentários (model Mongoose)',
                 aplicar: a => this._dentroDeDefinition(a)
             },
             {
@@ -55,7 +55,7 @@ export class ChecarDiff {
             {
                 nome: 'declaracao-solta-em-arquivo-de-classe',
                 severidade: 'erro',
-                doc: 'qualidade-de-codigo.md § Estrutura',
+                doc: 'quality-qualidade-de-codigo.md § Estrutura',
                 aplicar: a => this._soltaNoTopo(a)
             },
             {
@@ -91,7 +91,7 @@ export class ChecarDiff {
             {
                 nome: 'model-de-outro-dominio',
                 severidade: 'aviso',
-                doc: 'qualidade-de-codigo.md § Estrutura — procurar o service/comando do domínio antes de ler o model',
+                doc: 'quality-qualidade-de-codigo.md § Estrutura — procurar o service/comando do domínio antes de ler o model',
                 aplicar: a => this._modelDeOutroDominio(a)
             }
         ];
