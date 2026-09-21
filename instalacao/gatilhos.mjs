@@ -60,7 +60,10 @@ function status() {
             ? `${s.carregado ? 'carregado' : 'instalado, NÃO carregado'} · ${curto(s.plist)}`
             : 'não instalado'}${s.log ? ` · log ${(s.log / 1024).toFixed(0)} KB` : ''}`);
         for (const outro of servico.outrosAgentes(PROJETO)) {
-            console.log(`  ⚠ agente de outro clone: ${servico.projetoDoPlist(outro) || outro}  → disputa da porta ${porta}`);
+            const p = servico.portaDoPlist(outro);
+            const onde = servico.projetoDoPlist(outro) || outro;
+            console.log(`  · agente de outro clone: ${onde} na porta ${p ?? '?'}`
+                + (p === porta || p === null ? `  ⚠ disputa da porta ${porta}` : ''));
         }
     }
     console.log(`tela        ${telaNoAr() ? `no ar na ${porta}` : `fora do ar (${COMANDO_SUBIR} sobe)`}`);
@@ -115,9 +118,11 @@ async function adicionar({ settings, meus, servicoEstado }) {
         console.log(`  plist   ${servico.caminhoPlist(PROJETO)}`);
         console.log(`  node    ${process.execPath}`);
         console.log(`  porta   ${porta}`);
-        const outros = servico.outrosAgentes(PROJETO);
-        for (const o of outros) {
-            console.log(`  ⚠ já há agente de ${servico.projetoDoPlist(o) || o} — os dois disputariam a porta ${porta}`);
+        for (const o of servico.outrosAgentes(PROJETO)) {
+            const p = servico.portaDoPlist(o);
+            console.log(p === porta || p === null
+                ? `  ⚠ já há agente de ${servico.projetoDoPlist(o) || o} na MESMA porta ${porta} — os dois brigariam`
+                : `  · já há agente de ${servico.projetoDoPlist(o) || o}, na porta ${p} — sem conflito com a ${porta}`);
         }
         if (telaNoAr()) {
             console.log(`  ⚠ a porta ${porta} já está ocupada agora; se não for este clone, o agente entra em laço de erro`);

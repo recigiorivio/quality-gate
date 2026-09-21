@@ -152,6 +152,8 @@ test('nenhum padrão carrega caminho de máquina nem nome de clone chumbado', ()
         assert.ok(!/\/Users\/|\/home\//.test(texto), `${c.caminho} tem caminho absoluto de máquina`);
         assert.ok(!/\bqualidade\/ferramentas\b/.test(texto), `${c.caminho} chumbou a pasta do clone`);
         assert.ok(!/localhost:\d+/.test(texto), `${c.caminho} chumbou a porta da tela — use {{TELA}}`);
+        assert.ok(!/\bPORT=4[0-9]{3}\b/.test(texto), `${c.caminho} chumbou um número de porta`);
+        assert.ok(!/\bporta 4[0-9]{3}\b/i.test(texto), `${c.caminho} chumbou "porta 41xx" em prosa`);
     }
 });
 

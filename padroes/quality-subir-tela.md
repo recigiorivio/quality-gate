@@ -37,8 +37,9 @@ cd {{CLONE}} && nohup npm start > /dev/null 2>> servico.log &
 
 Sem o `nohup`, fechar o terminal derruba a tela.
 
-Porta 4100 ocupada por outra coisa? `PORT=4200 nohup npm start > /dev/null 2>> servico.log &` — e
-avise a pessoa que o hook procura a tela na porta padrão, então ele vai achar que ela está fora do ar.
+Porta ocupada por outra coisa? Suba em outra (`PORT=<outra> nohup npm start …`) — e avise a pessoa
+que o hook procura a tela em {{TELA}}, então numa porta diferente ele vai achar que ela está fora do
+ar e cair para o HTML temporário.
 
 ## 4. Confirmar antes de dizer que subiu
 
