@@ -154,7 +154,7 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-128 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+136 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
 e o comportamento do cache, roda cada ferramenta de linha de comando, valida o de-para do
 `doutrina.json`, e cobre o registro dos gatilhos no `settings.json` e o plist do LaunchAgent.
 
