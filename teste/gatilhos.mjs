@@ -13,7 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     caminhoSettings, lerSettings, gravarSettings, comGatilhos, semGatilhos,
-    jaRegistrados, outrosClones, plantados, removerPlantados, faltando, plantar, caminhoPadrao
+    jaRegistrados, outrosClones, plantados, removerPlantados, faltando, plantar, caminhoPadrao,
+    refDoClone
 } from '../lib/gatilhos.mjs';
 import { CONFIGS } from '../lib/configs.mjs';
 
@@ -140,6 +141,38 @@ test('faltando() acha o que o CONFIGS promete e o workspace não tem', () => {
     mkdirSync(join(ws, '.claude/commands'), { recursive: true });
     writeFileSync(join(ws, CONFIGS.fim.caminho), 'ja existe');
     assert.ok(!faltando(ws).some(f => f.chave === 'fim'));
+});
+
+// Os padrões são versionados com `{{CLONE}}`/`{{TELA}}` justamente para NÃO carregarem o caminho de
+// uma máquina. Caminho chumbado aqui viaja para todo mundo que instalar, e o comando plantado aponta
+// para uma pasta que não existe na máquina de quem leu.
+test('nenhum padrão carrega caminho de máquina nem nome de clone chumbado', () => {
+    for (const c of Object.values(CONFIGS)) {
+        const texto = readFileSync(caminhoPadrao(c.caminho), 'utf8');
+        assert.ok(!/\/Users\/|\/home\//.test(texto), `${c.caminho} tem caminho absoluto de máquina`);
+        assert.ok(!/\bqualidade\/ferramentas\b/.test(texto), `${c.caminho} chumbou a pasta do clone`);
+        assert.ok(!/localhost:\d+/.test(texto), `${c.caminho} chumbou a porta da tela — use {{TELA}}`);
+    }
+});
+
+// Token que sobra no arquivo plantado é pior que caminho errado: `{{CLONE}}` num comando é erro de
+// sintaxe visível, e a rotina inteira perde autoridade na primeira vez que alguém tenta rodar.
+test('plantar() reescreve os tokens e não deixa nenhum para trás', () => {
+    const ws = workspaceComSettings('{}');
+    plantar(ws, Object.keys(CONFIGS), '/ws/quality-gate', 4321);
+    for (const c of Object.values(CONFIGS)) {
+        const texto = readFileSync(join(ws, c.caminho), 'utf8');
+        assert.ok(!texto.includes('{{'), `${c.caminho} ficou com token sem substituir`);
+    }
+    const fim = readFileSync(join(ws, CONFIGS.fim.caminho), 'utf8');
+    assert.match(fim, /localhost:4321/, 'a porta escolhida entra na URL da tela');
+});
+
+// Clone fora do workspace precisa de caminho absoluto: o relativo sairia como `../algo` e o comando
+// plantado dependeria de onde a pessoa está quando roda.
+test('o clone dentro do workspace vira caminho relativo; fora, absoluto', () => {
+    assert.equal(refDoClone('/ws', '/ws/quality-gate'), 'quality-gate');
+    assert.equal(refDoClone('/ws', '/outro/lugar/quality-gate'), '/outro/lugar/quality-gate');
 });
 
 test('plantar() escreve o padrão e não toca no que já existe', () => {

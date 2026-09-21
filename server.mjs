@@ -25,8 +25,8 @@ import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
-import { CONFIGS } from './lib/configs.mjs';
-import { caminhoPadrao } from './lib/gatilhos.mjs';
+import { CONFIGS, comCaminhos } from './lib/configs.mjs';
+import { caminhoPadrao, refDoClone } from './lib/gatilhos.mjs';
 
 // O prompt do agente mandava `qualidade/ferramentas/…` com o workspace escrito à mão: os dois só
 // valiam nesta máquina, e o clone do próprio README cria a pasta com OUTRO nome (`quality-gate`).
@@ -411,7 +411,10 @@ class Servidor {
                 continue;
             }
             mkdirSync(dirname(destino), { recursive: true });
-            writeFileSync(destino, escolhido ?? readFileSync(origem));
+            // Os `{{CLONE}}`/`{{TELA}}` do padrão saem aqui com o caminho real. Vale também para o
+            // `.md` que a pessoa aponta: se ela usar os tokens, funcionam igual.
+            writeFileSync(destino, comCaminhos(escolhido ?? readFileSync(origem, 'utf8'),
+                { clone: refDoClone(raiz, RAIZ), porta: PORTA }));
             escritos.push(c.caminho);
             if (escolhido) {
                 proprios.push(c.caminho);

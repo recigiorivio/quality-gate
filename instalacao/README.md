@@ -96,10 +96,19 @@ Em qualquer momento, **`/quality-subir-tela`** põe a tela no ar (ou devolve o l
 O hook **não bloqueia nada** e falha aberto: qualquer erro interno libera a ação. Overhead medido em
 comando que não casa: **29 ms**. Para desligar tudo de uma vez, apague a chave `hooks`.
 
-As rotinas são quatro markdown (duas rotinas, as regras de código e o `/quality-subir-tela`) — editáveis pela aba
-**Configurações** da própria tela. Versões **genéricas** delas vêm em `padroes/`, e a primeira
-abertura oferece plantá-las no seu workspace, ou **apontar um `.md` seu** no lugar de cada padrão.
-São ponto de partida, não o processo do seu time: troque.
+As rotinas são quatro markdown (duas rotinas, as regras de código e o `/quality-subir-tela`) —
+editáveis pela aba **Configurações** da própria tela. Vêm em `padroes/`, e a primeira abertura oferece
+plantá-las no seu workspace, ou **apontar um `.md` seu** no lugar de cada uma.
+
+Os padrões trazem uma rotina **real**, com o porquê de cada passo, e não um esqueleto vazio. O que é
+de um time específico está marcado com `<...>` para você preencher. E os comandos são versionados com
+`{{CLONE}}` e `{{TELA}}` no lugar do caminho e da URL: **quem planta reescreve com o caminho real
+deste clone e a porta em uso.**
+
+Dois motivos para o caminho não ficar fixo no repo: o clone pode ter qualquer nome, e comando com
+pasta errada dentro de uma rotina é pior que nenhum comando — o agente tenta, falha, e a rotina perde
+autoridade. Deixar um placeholder para a pessoa preencher tem o mesmo problema ao contrário:
+instrução dentro de um bloco de comando é coisa que ninguém executa.
 
 Os nomes levam prefixo `quality-` (`quality-inicio-trabalho.md`, `quality-fim-trabalho.md`,
 `quality-qualidade-de-codigo.md`) para conviverem com a rotina que você já tem: sem o prefixo o

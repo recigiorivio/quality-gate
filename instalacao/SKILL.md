@@ -92,10 +92,15 @@ pode ser a errada. Pede duas coisas:
    achou ali. Trocar a raiz grava `QUALIDADE_WORKSPACE` no `.env` e **exige reiniciar** (a raiz é
    lida quando o servidor sobe).
 2. **As rotinas** — quatro markdown (as duas rotinas, as regras de código e o
-   `/quality-subir-tela`). Vêm padrões genéricos, e em cada um dá para **apontar um `.md` da própria
-   pessoa** no botão `escolher .md…`, que é plantado no lugar do padrão. Arquivo que já existe na
-   pasta **nunca** é sobrescrito, e os nomes levam prefixo `quality-` justamente para conviverem com
-   a rotina que o time já tem.
+   `/quality-subir-tela`). Em cada um dá para **apontar um `.md` da própria pessoa** no botão
+   `escolher .md…`, que é plantado no lugar do padrão. Arquivo que já existe na pasta **nunca** é
+   sobrescrito, e os nomes levam prefixo `quality-` justamente para conviverem com a rotina que o
+   time já tem.
+
+   Os padrões **não** são um esqueleto vazio: trazem uma rotina real, com o porquê de cada passo. O
+   que é de um time específico está marcado com `<...>` para a pessoa preencher. E os comandos vêm com
+   `{{CLONE}}`/`{{TELA}}`, que a instalação **reescreve com o caminho e a porta deste clone** — rotina
+   plantada com comando que não roda é pior que rotina sem comando.
 
 **A instalação está concluída quando a tela abre e lista os repos.** "O comando terminou sem erro"
 não é evidência de nada — é o mesmo erro que esta ferramenta cobra de quem a usa.
