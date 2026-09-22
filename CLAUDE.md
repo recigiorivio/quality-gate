@@ -53,6 +53,6 @@ chegar nela. Três regras que o repo cobra de si mesmo:
    `node --check server.mjs`.
 
 ```bash
-npm test        # 141 casos: rotas, respostas, cache, banco, CLIs, gatilhos, serviço e a doutrina
+npm test        # 142 casos: rotas, respostas, cache, banco, CLIs, gatilhos, serviço e a doutrina
 npm run tela    # a tela num navegador de verdade — este pede `npm install`
 ```

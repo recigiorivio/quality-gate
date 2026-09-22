@@ -429,6 +429,14 @@ function duracao(ms) {
 
 let buildsAbertos = null;
 let relogioBuilds = null;
+let janelaBuilds = (() => {
+  try {
+    return Number(localStorage.getItem('janelaBuilds')) || 5;
+  } catch {
+    return 5;
+  }
+})();
+const ROTULO_JANELA = { 5: '5 min', 15: '15 min', 30: '30 min', 60: '1 h' };
 
 async function carregarBuilds(forcar = false) {
   document.getElementById('btn-builds')?.classList.add('girando');
@@ -481,7 +489,8 @@ async function abrirModalBuilds() {
 async function atualizarModalBuilds(forcar = false) {
   if (!document.getElementById('modal-builds')?.open) { return; }
   document.getElementById('btn-atualizar-builds')?.classList.add('girando');
-  buildsAbertos = await api('/api/builds', forcar ? { detalhe: '1', forcar: '1' } : { detalhe: '1' }, { urgente: true });
+  const params = { detalhe: '1', janela: String(janelaBuilds), ...(forcar ? { forcar: '1' } : {}) };
+  buildsAbertos = await api('/api/builds', params, { urgente: true });
   const m = document.getElementById('modal-builds');
   if (m?.open) {
     m.innerHTML = renderModalBuilds(buildsAbertos, false);
@@ -497,6 +506,16 @@ const ROTULO_BUILD = {
 };
 const EVENTO_BUILD = { pull_request: 'PR', push: 'push', workflow_dispatch: 'manual', schedule: 'agendado' };
 
+function trocarJanelaBuilds(valor) {
+  janelaBuilds = Number(valor);
+  try {
+    localStorage.setItem('janelaBuilds', String(janelaBuilds));
+  } catch {
+    // aba privada
+  }
+  atualizarModalBuilds();
+}
+
 function linhaDeBuild(b, feita) {
   const [rotulo, tom] = ROTULO_BUILD[feita ? b.conclusao : b.status] || [feita ? b.conclusao : b.status, 'neutra'];
   const jobs = b.jobs || [];
@@ -505,7 +524,8 @@ function linhaDeBuild(b, feita) {
   const quando = feita
     ? `terminou ${new Date(b.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
     : !b.inicio ? '' : Date.now() - Date.parse(b.inicio) < 60000 ? 'agora' : duracao(Date.now() - Date.parse(b.inicio));
-  const levou = feita && b.inicio && b.fim ? `levou ${duracao(Date.parse(b.fim) - Date.parse(b.inicio)).replace('há ', '')}` : '';
+  const ms = feita && b.inicio && b.fim ? Date.parse(b.fim) - Date.parse(b.inicio) : null;
+  const levou = ms === null ? '' : ms < 60000 ? 'levou <1 min' : `levou ${duracao(ms).replace('há ', '')}`;
   const progresso = !feita && b.status === 'in_progress' && jobs.length
     ? `<div class="bu-prog"><div class="bu-barra"><i style="width:${Math.round(100 * prontos / jobs.length)}%"></i></div>
         <span>${prontos}/${jobs.length} jobs${ativo ? ` · <b>${esc(ativo.nome)}</b>${ativo.passo
@@ -535,6 +555,11 @@ function renderModalBuilds(r, carregando) {
   const rodando = runs.filter(b => b.status === 'in_progress').length;
   const hora = new Date(r?.desde || Date.now()).toLocaleTimeString('pt-BR');
   const numero = (n, rot, tom) => `<div class="bu-num ${n ? tom : ''}"><b>${n}</b><span>${rot}</span></div>`;
+  const janela = ROTULO_JANELA[r?.janela || janelaBuilds];
+  const opcoes = Object.entries(ROTULO_JANELA)
+    .map(([v, rot]) => `<option value="${v}" ${Number(v) === janelaBuilds ? 'selected' : ''}>${rot}</option>`).join('');
+  const cortados = r?.cortados?.length
+    ? `<div class="bu-aviso">A janela passa das últimas 50 runs em ${r.cortados.map(esc).join(', ')} — as mais antigas ficaram de fora.</div>` : '';
   const semGithub = r?.semResposta?.length
     ? `<span title="${esc(r.semResposta.map(f => `${f.projeto}: ${f.erro}`).join('\n'))}">fora do GitHub ou sem resposta: ${
       r.semResposta.map(f => esc(f.projeto)).join(', ')}</span>` : '';
@@ -542,14 +567,18 @@ function renderModalBuilds(r, carregando) {
     <div class="bu-nums">
       ${numero(rodando, 'rodando', 'bu-t-rodando')}
       ${numero(runs.length - rodando, 'na fila', 'bu-t-fila')}
-      ${numero(feitas.length, 'concluídas em 5 min', 'bu-t-feita')}
+      ${numero(feitas.length, `concluídas em ${janela}`, 'bu-t-feita')}
     </div>
+    ${cortados}
     <div class="bu-secao">Em andamento</div>
     ${runs.length ? runs.map(b => linhaDeBuild(b, false)).join('') : '<div class="bu-vazio">Nada rodando agora.</div>'}
-    ${feitas.length ? `<div class="bu-secao">Concluídas nos últimos 5 min</div>${feitas.map(b => linhaDeBuild(b, true)).join('')}` : ''}`;
+    <div class="bu-secao">Concluídas ${janela === '1 h' ? 'na última hora' : `nos últimos ${janela}`}</div>
+    ${feitas.length ? feitas.map(b => linhaDeBuild(b, true)).join('') : '<div class="bu-vazio">Nenhuma concluída nesse tempo.</div>'}`;
   return `<div class="me-cabeca">
       <div><div class="me-titulo">Builds</div>
-        <div class="me-sub">GitHub Actions de ${r?.repos || 0} repos · atualizado às ${hora}</div></div>
+        <div class="me-sub">${carregando ? 'lendo o GitHub…' : `GitHub Actions de ${r?.repos || 0} repos · atualizado às ${hora}`}</div></div>
+      <label class="bu-janela" title="até quanto tempo atrás listar as concluídas">
+        <span>concluídas em</span><select onchange="trocarJanelaBuilds(this.value)">${opcoes}</select></label>
       <span class="sf-recarregar ${carregando ? 'girando' : ''}" id="btn-atualizar-builds" role="button" tabindex="0"
         onclick="atualizarModalBuilds(true)" onkeydown="if(event.key==='Enter'){atualizarModalBuilds(true)}"
         title="buscar no GitHub agora, sem cache — sozinha a modal relê a cada 10 s">⟳</span>
@@ -2675,7 +2704,7 @@ Object.assign(window, {
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
   alternarRepo, abrirImplantacao, analisarImplantacao, abrirPrDeRelease, verCommit, verRelease,
   abrirModalAnalise, copiarAnalise, atualizarImplantacao,
-  copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, salvarBoasVindas,
+  copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos
 });

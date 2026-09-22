@@ -99,6 +99,11 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 .bu-recarregar{position:absolute;top:9px;right:28px}
 .conta-builds .cs-txt{padding-right:18px}
 #modal-builds .me-cabeca{align-items:center}
+.bu-janela{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fraco)}
+.bu-janela select{font:inherit;font-size:11px;color:var(--fg);background:var(--cartao);border:1px solid var(--linha);
+  border-radius:6px;padding:3px 6px;cursor:pointer}
+.bu-janela select:hover,.bu-janela select:focus{border-color:var(--acento);outline:none}
+.bu-aviso{margin:8px 0 0;padding:7px 10px;border-radius:7px;font-size:11px;background:color-mix(in srgb,var(--aviso) 12%,transparent);color:var(--aviso)}
 .bu-corpo{overflow-y:auto;flex:1 1 auto;padding:4px 18px 14px}
 .bu-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px}
 .bu-num{border:1px solid var(--linha);border-radius:9px;padding:9px 12px;display:flex;align-items:baseline;gap:8px}

@@ -1106,12 +1106,14 @@ class Servidor {
             const projetos = [...new Set([...implantacao.catalogo.ativos().map(r => r.projeto),
                 ...implantacao.escolhidos()])];
             const detalhe = q.get('detalhe') === '1';
+            const janela = builds.janela(q.get('janela'));
             if (q.get('forcar') === '1') {
-                this.cache.delete('builds');
-                this.cache.delete('builds|detalhe');
+                for (const chave of [...this.cache.keys()].filter(c => c.startsWith('builds'))) {
+                    this.cache.delete(chave);
+                }
             }
-            return this.emCacheAsync(detalhe ? 'builds|detalhe' : 'builds',
-                () => (detalhe ? builds.detalhe(projetos) : builds.resumo(projetos)),
+            return this.emCacheAsync(detalhe ? `builds|detalhe|${janela}` : 'builds',
+                () => (detalhe ? builds.detalhe(projetos, janela) : builds.resumo(projetos)),
                 detalhe ? 5000 : 20000).then(v => this.json(res, v));
         }
         if (url.pathname === '/api/repos') {

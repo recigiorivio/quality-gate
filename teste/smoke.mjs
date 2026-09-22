@@ -1359,3 +1359,16 @@ test('builds: run concluída há menos de 5 min vai para concluidas, a mais velh
     assert.equal(r.total, 0);
     assert.deepEqual(r.concluidas.map(c => [c.id, c.conclusao]), [[1, 'failure']]);
 });
+
+test('builds: a janela vem de uma lista fechada e alarga o que conta como concluída', async () => {
+    const b = new Builds();
+    assert.equal(b.janela('60'), 60);
+    assert.equal(b.janela('999'), 5, 'janela fora da lista cai no padrão, não vira consulta arbitrária');
+    b._slug = async () => 'org/repo';
+    const ha = min => new Date(Date.now() - min * 60000).toISOString();
+    b._gh = async () => ({ workflow_runs: [
+        { id: 1, status: 'completed', conclusion: 'success', updated_at: ha(2) },
+        { id: 2, status: 'completed', conclusion: 'success', updated_at: ha(40) }] });
+    assert.equal((await b.resumo(['repo'], 5)).concluidas.length, 1);
+    assert.equal((await b.resumo(['repo'], 60)).concluidas.length, 2);
+});

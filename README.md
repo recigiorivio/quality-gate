@@ -800,7 +800,9 @@ versão lia uma janela fixa e mostrava `—` — indistinguível de "não pediu 
 No topo da aba **Implantação**, um cartão diz quais repos estão com GitHub Actions rodando ou na
 fila agora. Clicar abre uma modal com uma linha por run: workflow, branch, evento, quem disparou, há
 quanto tempo, quantos jobs já terminaram e o passo em que o job ativo está, com o link para a run. Abaixo, as runs **concluídas nos últimos 5 minutos**, com o resultado (✓ ✗ –) e quanto levaram —
-saem da mesma chamada, sem custo a mais.
+saem da mesma chamada, sem custo a mais. Um seletor no cabeçalho alarga essa janela para 15 min, 30 min ou 1 h;
+acima de 5 min cada repo pede 50 runs em vez de 15, e se ainda assim a janela não couber a modal diz
+em quais repos a lista foi cortada.
 
 Os repos são os **ativos do catálogo** mais os escolhidos. Não é a fila: repo que acabou de ir para
 a `main` sai da fila, e é justamente ele que está com deploy rodando.
