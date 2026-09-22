@@ -94,7 +94,49 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
    A fileira de barrinhas é o que o número sozinho não diz — 3 pulsando é trabalho, 3 apagadas são
    3 sessões esquecidas abertas. Uma barrinha por agente, sem teto: acima de 6 elas quebram linha
    em vez de virar fiapo de 1px. */
-#sessoes:empty{display:none}
+#sessoes:empty,#builds:empty{display:none}
+#builds{margin:0 0 10px;position:relative}
+.bu-recarregar{position:absolute;top:9px;right:28px}
+.conta-builds .cs-txt{padding-right:18px}
+#modal-builds .me-cabeca{align-items:center}
+.bu-corpo{overflow-y:auto;flex:1 1 auto;padding:4px 18px 14px}
+.bu-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px}
+.bu-num{border:1px solid var(--linha);border-radius:9px;padding:9px 12px;display:flex;align-items:baseline;gap:8px}
+.bu-num b{font-size:20px;letter-spacing:-.03em;color:var(--fraco)}
+.bu-num span{font-size:11px;color:var(--fraco)}
+.bu-num.bu-t-rodando b{color:var(--acento)}
+.bu-num.bu-t-fila b{color:var(--aviso)}
+.bu-num.bu-t-feita b{color:var(--ok)}
+.bu-secao{margin:16px 0 6px;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fraco)}
+.bu-vazio{padding:14px;border:1px dashed var(--linha);border-radius:9px;text-align:center;font-size:12px;color:var(--fraco)}
+.bu-item{display:block;text-decoration:none;color:inherit;border:1px solid var(--linha);border-radius:9px;
+  padding:10px 12px;margin-bottom:6px;transition:border-color .12s,background .12s}
+.bu-item:hover{border-color:var(--acento);background:var(--painel)}
+.bu-l1{display:flex;align-items:center;gap:8px;min-width:0}
+.bu-repo{font-weight:700;font-size:13px;white-space:nowrap}
+.bu-wf{font-size:11.5px;color:var(--fraco);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bu-quando{margin-left:auto;flex:0 0 auto;font-size:11px;color:var(--fraco);white-space:nowrap}
+.bu-ir{margin-left:6px;color:var(--acento);opacity:0;transition:opacity .12s}
+.bu-item:hover .bu-ir{opacity:1}
+.bu-titulo{margin-top:5px;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bu-meta{margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:11px;color:var(--fraco)}
+.bu-meta code{font-size:10.5px;background:var(--painel);border:1px solid var(--linha);border-radius:4px;padding:0 5px;
+  max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bu-selo{flex:0 0 auto;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+  border-radius:5px;padding:2px 6px;background:var(--painel);color:var(--fraco)}
+.bu-selo.bu-rodando{background:color-mix(in srgb,var(--acento) 15%,transparent);color:var(--acento)}
+.bu-selo.bu-rodando::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px;
+  background:var(--acento);vertical-align:1px;animation:pulsar 1.6s ease-in-out infinite}
+.bu-selo.bu-fila{background:color-mix(in srgb,var(--aviso) 16%,transparent);color:var(--aviso)}
+.bu-selo.bu-ok{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.bu-selo.bu-falha{background:color-mix(in srgb,var(--erro) 14%,transparent);color:var(--erro)}
+.bu-prog{margin-top:8px;display:flex;align-items:center;gap:10px;font-size:11px;min-width:0}
+.bu-prog>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bu-barra{flex:0 0 90px;height:5px;border-radius:3px;background:var(--linha);overflow:hidden}
+.bu-barra i{display:block;height:100%;background:var(--acento);border-radius:3px}
+.bu-fraco{color:var(--fraco)}
+.bu-pe{display:flex;justify-content:space-between;gap:12px}
+@media(prefers-reduced-motion:reduce){.bu-selo.bu-rodando::before{animation:none}}
 #sessoes{margin:0}
 .conta-sessoes{width:100%;cursor:pointer;text-align:left;background:var(--cartao);font-family:inherit;
   border:1px solid var(--linha);border-radius:10px;padding:11px 12px;color:var(--fg);
@@ -558,7 +600,10 @@ body.arrastando{user-select:none;cursor:col-resize}
 #modal-sessoes{border:1px solid var(--linha);border-radius:12px;padding:0;
   width:min(880px,calc(100vw - 40px));max-height:calc(100vh - 60px);background:var(--cartao);
   color:var(--fg);box-shadow:0 18px 50px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden}
-#modal-sessoes::backdrop{background:rgba(20,18,40,.38);backdrop-filter:blur(2px)}
+#modal-sessoes::backdrop,#modal-builds::backdrop{background:rgba(20,18,40,.38);backdrop-filter:blur(2px)}
+#modal-builds{border:1px solid var(--linha);border-radius:12px;padding:0;
+  width:min(760px,calc(100vw - 40px));max-height:calc(100vh - 60px);background:var(--cartao);
+  color:var(--fg);box-shadow:0 18px 50px rgba(0,0,0,.22);display:flex;flex-direction:column;overflow:hidden}
 #modal-sessoes .me-tabela{display:block;overflow-y:auto;flex:1 1 auto}
 .se-tabela tr{cursor:default}
 .se-tabela tr:hover{background:transparent}

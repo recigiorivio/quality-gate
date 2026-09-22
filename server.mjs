@@ -21,6 +21,7 @@ import { corridas, caminhoEstado, meta } from './lib/db.mjs';
 import comparacao from './lib/comparacao.mjs';
 import implantacao from './lib/implantacao.mjs';
 import sessoes from './lib/sessoes.mjs';
+import builds from './lib/builds.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { pagina } from './web/pagina.mjs';
@@ -1100,6 +1101,18 @@ class Servidor {
             return this.emCacheAsync(`impl|${projeto}`,
                 () => implantacao.detalhe(projeto).then(d => d || { projeto, erro: 'sem origin/main ou origin/stage' }),
                 60000).then(v => this.json(res, v));
+        }
+        if (url.pathname === '/api/builds') {
+            const projetos = [...new Set([...implantacao.catalogo.ativos().map(r => r.projeto),
+                ...implantacao.escolhidos()])];
+            const detalhe = q.get('detalhe') === '1';
+            if (q.get('forcar') === '1') {
+                this.cache.delete('builds');
+                this.cache.delete('builds|detalhe');
+            }
+            return this.emCacheAsync(detalhe ? 'builds|detalhe' : 'builds',
+                () => (detalhe ? builds.detalhe(projetos) : builds.resumo(projetos)),
+                detalhe ? 5000 : 20000).then(v => this.json(res, v));
         }
         if (url.pathname === '/api/repos') {
             return this.json(res, { repos: implantacao.catalogo.listar(), detectadoEm: implantacao.catalogo.detectadoEm() });

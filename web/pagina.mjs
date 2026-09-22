@@ -46,6 +46,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
             onclick="atualizarImplantacao(event)" onkeydown="if(event.key==='Enter'){atualizarImplantacao(event)}"
             title="buscar origin/main e origin/stage de novo — a fila é lida desses dois refs">⟳</span>
     </div>
+    <div id="builds"></div>
     <div id="painel-implantacao"></div>
   </div>
   <div class="painel" id="painel-config" hidden></div>

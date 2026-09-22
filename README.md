@@ -795,6 +795,34 @@ versão lia uma janela fixa e mostrava `—` — indistinguível de "não pediu 
 
 **Só leitura.** A tela não fala com essas sessões, não manda mensagem e não encerra nenhuma.
 
+## Builds em andamento
+
+No topo da aba **Implantação**, um cartão diz quais repos estão com GitHub Actions rodando ou na
+fila agora. Clicar abre uma modal com uma linha por run: workflow, branch, evento, quem disparou, há
+quanto tempo, quantos jobs já terminaram e o passo em que o job ativo está, com o link para a run. Abaixo, as runs **concluídas nos últimos 5 minutos**, com o resultado (✓ ✗ –) e quanto levaram —
+saem da mesma chamada, sem custo a mais.
+
+Os repos são os **ativos do catálogo** mais os escolhidos. Não é a fila: repo que acabou de ir para
+a `main` sai da fila, e é justamente ele que está com deploy rodando.
+
+| Chamada | O que faz | Quem usa |
+|---|---|---|
+| `/api/builds` | um `gh api .../actions/runs` por repo, cache de 20 s | o cartão, a cada 30 s e só com a aba aberta |
+| `/api/builds?detalhe=1` | acrescenta os jobs de cada run ativa, cache de 5 s | a modal, a cada 10 s enquanto aberta |
+
+O cache serve o valor velho uma vez enquanto revalida, então o dado do cartão pode ter até ~50 s e o
+da modal ~15 s. Por isso a modal mostra a hora do dado. O ⟳ do cartão e o da modal mandam
+`forcar=1`: derrubam **só** o cache dos builds e buscam no GitHub na hora — não passam pelo ⟳ da
+Implantação, que é `git fetch` em todos os repos.
+
+**Pedido condicional, ou o limite estoura.** 36 repos a cada 30 s são ~4.300 pedidos/h, e o GitHub dá
+5.000/h por conta — a modal aberta somaria mais que isso. O `_gh` guarda o `ETag` de cada URL e manda
+`If-None-Match`; o `304` não consome o limite. Medido: 8 repos custaram 8 pedidos na primeira rodada
+e 0 nas duas seguintes. Só se paga quando uma run anda.
+
+Repo sem remote no GitHub, ou que o `gh` não respondeu, aparece nomeado na modal, em vez de ser
+contado como "nada buildando". **Só leitura:** a tela não reexecuta nem cancela nada.
+
 ## As duas linhas que a rotina escreve
 
 ```

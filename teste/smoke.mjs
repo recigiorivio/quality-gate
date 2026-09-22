@@ -16,6 +16,7 @@ import { Diff, CatFile, WORKSPACE } from '../lib/diff.mjs';
 import { Comparacao } from '../lib/comparacao.mjs';
 import { Implantacao } from '../lib/implantacao.mjs';
 import { Sessoes } from '../lib/sessoes.mjs';
+import { Builds } from '../lib/builds.mjs';
 import { repos as catalogoDoBanco } from '../lib/db.mjs';
 import { recusarEstadoDeProducao } from './anteparo.mjs';
 import { ler, gravar, mesclar } from '../lib/estado.mjs';
@@ -1305,4 +1306,56 @@ test('/api/sessoes responde resumo e detalhe com a forma esperada', async () => 
     for (const s of det.corpo.sessoes) {
         assert.ok('pedido' in s && 'truncado' in s, 'o detalhe precisa dizer se o pedido foi achado');
     }
+});
+
+test('/api/builds responde a forma que o cartão da implantação lê', async () => {
+    const { status, corpo } = await pegar('/api/builds');
+    assert.equal(status, 200);
+    assert.equal(typeof corpo.repos, 'number');
+    assert.ok(Array.isArray(corpo.buildando) && Array.isArray(corpo.runs) && Array.isArray(corpo.semResposta));
+    assert.equal(corpo.total, corpo.runs.length);
+});
+
+test('builds: run concluída fica fora, e o job ativo diz o passo em que está', async () => {
+    const b = new Builds();
+    b._slug = async () => 'org/repo';
+    b._gh = async caminho => (caminho.includes('/jobs')
+        ? { jobs: [{ name: 'build', status: 'in_progress',
+            steps: [{ name: 'checkout', status: 'completed' }, { name: 'docker build', status: 'in_progress' }] }] }
+        : { workflow_runs: [
+            { id: 1, name: 'CI/CD', status: 'in_progress', head_branch: 'stage' },
+            { id: 2, name: 'CI/CD', status: 'completed', conclusion: 'success' }] });
+    const r = await b.detalhe(['repo']);
+    assert.deepEqual(r.buildando, ['repo']);
+    assert.equal(r.total, 1, 'run concluída não é build em andamento');
+    assert.equal(r.runs[0].jobs[0].passo, 'docker build');
+    assert.equal(r.runs[0].jobs[0].passoNumero, 2);
+});
+
+test('builds: repo sem resposta do GitHub é dito, não some', async () => {
+    const b = new Builds();
+    b._slug = async () => 'org/repo';
+    b._gh = async () => ({ erro: 'HTTP 404' });
+    const r = await b.resumo(['repo']);
+    assert.equal(r.total, 0);
+    assert.deepEqual(r.semResposta, [{ projeto: 'repo', erro: 'HTTP 404' }]);
+});
+
+test('builds: o slug sai de remote https, ssh e com barra no fim', () => {
+    const b = new Builds();
+    assert.equal(b._slugDe('https://github.com/Rivio-Tech/drmarvin-evidencia-loader/'), 'Rivio-Tech/drmarvin-evidencia-loader');
+    assert.equal(b._slugDe('git@github.com:Rivio-Tech/rivio-hub.git'), 'Rivio-Tech/rivio-hub');
+    assert.equal(b._slugDe('https://git.dynamix.com.br/crohc/docker/ambiente.git'), null);
+});
+
+test('builds: run concluída há menos de 5 min vai para concluidas, a mais velha fica fora', async () => {
+    const b = new Builds();
+    b._slug = async () => 'org/repo';
+    const ha = min => new Date(Date.now() - min * 60000).toISOString();
+    b._gh = async () => ({ workflow_runs: [
+        { id: 1, status: 'completed', conclusion: 'failure', updated_at: ha(2) },
+        { id: 2, status: 'completed', conclusion: 'success', updated_at: ha(9) }] });
+    const r = await b.resumo(['repo']);
+    assert.equal(r.total, 0);
+    assert.deepEqual(r.concluidas.map(c => [c.id, c.conclusao]), [[1, 'failure']]);
 });
