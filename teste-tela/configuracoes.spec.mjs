@@ -5,6 +5,14 @@
 // mandando um corpo que a rota recusava com 400, e nenhum teste viu porque nenhum teste abria a
 // tela. Estes casos existem para que a próxima mudança de contrato falhe aqui, e não no seu clique.
 import { test, expect } from './apoio.mjs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+function estadoDaImplantacao(estado, mudanca) {
+    const arquivo = join(estado, 'implantacao.json');
+    const atual = existsSync(arquivo) ? JSON.parse(readFileSync(arquivo, 'utf8')) : {};
+    writeFileSync(arquivo, JSON.stringify({ ...atual, ...mudanca }));
+}
 
 async function abrirCatalogo({ pagina, base }) {
     await pagina.goto(base, { waitUntil: 'domcontentloaded' });
@@ -136,6 +144,36 @@ test('adicionar e remover repo à mão', async ({ tela }) => {
     await expect(pagina.locator('#estado-repos')).not.toHaveText(/salvando/);
     catalogo = await pagina.evaluate(() => fetch('/api/repos').then(r => r.json()));
     expect(catalogo.repos.some(r => r.projeto === 'repo-inventado')).toBe(false);
+});
+
+test('refs vencidos: a aba busca sozinha e nomeia a branch local que não avançou', async ({ tela }) => {
+    const { pagina, base, estado } = tela;
+    estadoDaImplantacao(estado, {
+        buscadoEm: '2026-01-01T00:00:00.000Z',
+        locais: [{ projeto: 'workflow-admin', ref: 'stage', estado: 'divergente', afrente: 2, atras: 306 }]
+    });
+    await pagina.goto(base, { waitUntil: 'domcontentloaded' });
+    await pagina.click('#aba-implantacao');
+    await expect(pagina.locator('.impl-locais')).toContainText('workflow-admin/stage');
+    await expect(pagina.locator('.impl-locais')).toContainText('2 commit(s) só no local, 306 atrás');
+    await expect(pagina.locator('#toast'), 'a busca automática não disparou, ou a fixture deixou buscar')
+        .toContainText('QUALIDADE_SEM_BUSCA');
+});
+
+test('refs recentes: abrir a aba não busca de novo', async ({ tela }) => {
+    const { pagina, base, estado } = tela;
+    estadoDaImplantacao(estado, { buscadoEm: new Date().toISOString(), locais: [] });
+    const buscas = [];
+    pagina.on('request', r => {
+        if (r.url().includes('/api/implantacao-atualizar')) {
+            buscas.push(r.url());
+        }
+    });
+    await pagina.goto(base, { waitUntil: 'domcontentloaded' });
+    await pagina.click('#aba-implantacao');
+    await expect(pagina.locator('.impl-topo')).toContainText('refs buscados agora');
+    await expect(pagina.locator('.impl-locais')).toHaveCount(0);
+    expect(buscas, 'buscou com refs de menos de 5 min').toEqual([]);
 });
 
 test('o botão voltar devolve à seção de onde se veio', async ({ tela }) => {

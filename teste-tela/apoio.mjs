@@ -33,6 +33,8 @@ function subirServidor(estado, casaClaude) {
                 // `QUALIDADE_WORKSPACE`, e sem isto a suíte apontava a tela do próprio
                 // desenvolvedor para uma pasta temporária que ela apaga no fim.
                 QUALIDADE_ENV: join(estado, '.env'),
+                // A aba de Implantação busca sozinha e avança branch local: nos repos DE VERDADE, sem isto.
+                QUALIDADE_SEM_BUSCA: '1',
                 // Sem isto o contador de agentes mediria o que a máquina por acaso estivesse rodando.
                 ...(casaClaude ? { QUALIDADE_CLAUDE_HOME: casaClaude } : {})
             },

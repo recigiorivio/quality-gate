@@ -699,6 +699,10 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
 /* ── implantação: a fila de stage para main ───────────────────────────────── */
 .impl-topo{display:flex;align-items:center;gap:8px;padding:2px 4px 10px;font-size:10.5px;
   color:var(--fraco);border-bottom:1px solid var(--linha);margin-bottom:8px}
+.impl-locais{display:flex;flex-direction:column;gap:3px;margin:0 4px 10px;padding:7px 9px;border-radius:7px;
+  font-size:10.5px;background:color-mix(in srgb,var(--aviso) 12%,transparent);color:var(--aviso)}
+.impl-local{color:var(--fraco);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.impl-local code{color:var(--fg);font-size:10px}
 .impl-linha{display:flex;align-items:center;gap:4px;border-radius:7px}
 .impl-linha:hover{background:var(--bg)}
 .impl-linha.ativo{background:var(--acento)}

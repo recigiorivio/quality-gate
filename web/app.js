@@ -1645,6 +1645,8 @@ let escolhidosImplantacao = new Set();
 // inteiro). `geracaoDiffImpl` descarta resposta de clique velho: clicar em três commits seguidos
 // dispara três buscas e a que chega por último é que pinta, não a que foi pedida por último.
 let buscadoEmImplantacao = null;
+let locaisImplantacao = [];
+const REFS_VENCEM_MS = 5 * 60000;
 let implAtual = null;
 let commitAberto = null;
 let geracaoDiffImpl = 0;
@@ -1656,8 +1658,14 @@ async function carregarImplantacao() {
   filaImplantacao = r.fila || [];
   escolhidosImplantacao = new Set(r.escolhidos || []);
   buscadoEmImplantacao = r.buscadoEm || null;
+  locaisImplantacao = r.locais || [];
   desenharFilaImplantacao();
   marcarContaImplantacao();
+  // Refs vencidos se buscam sozinhos ao abrir a aba; pela LAN o servidor recusaria de todo jeito.
+  const vencido = !buscadoEmImplantacao || Date.now() - new Date(buscadoEmImplantacao) > REFS_VENCEM_MS;
+  if (window.LOCAL && vencido && await atualizarImplantacao()) {
+    return;
+  }
   // Só os escolhidos ganham detalhe: são 22 repos à frente, um deles com 563 commits, e calcular
   // tudo é trabalho jogado fora — o resumo é uma contagem, o detalhe é log mais numstat.
   for (const p of escolhidosImplantacao) {
@@ -1690,17 +1698,19 @@ async function atualizarImplantacao(evento) {
   evento?.preventDefault();
   const b = document.getElementById('btn-atualizar-impl');
   if (!b || b.classList.contains('girando')) {
-    return;
+    return Boolean(b);
   }
   b.classList.add('girando');
   const r = await api('/api/implantacao-atualizar', {});
   b.classList.remove('girando');
   if (!r.ok) {
-    return avisarNaTela(r.erro || 'não consegui buscar');
+    avisarNaTela(r.erro || 'não consegui buscar');
+    return false;
   }
   filaImplantacao = r.fila || [];
   escolhidosImplantacao = new Set(r.escolhidos || []);
   buscadoEmImplantacao = r.buscadoEm || null;
+  locaisImplantacao = r.locais || [];
   desenharFilaImplantacao();
   marcarContaImplantacao();
   // O detalhe de cada escolhido também saiu de refs velhos; o cache do servidor já caiu, então
@@ -1712,7 +1722,28 @@ async function atualizarImplantacao(evento) {
     abrirImplantacao(atual.projeto);
   }
   avisarNaTela(`${r.repos} repos buscados em ${r.segundos}s`
+    + (r.avancadas?.length ? ` · ${r.avancadas.length} branch(es) local(is) avançada(s)` : '')
+    + (locaisImplantacao.length ? ` · ${locaisImplantacao.length} não avançada(s)` : '')
     + (r.semRefs?.length ? ` · ${r.semRefs.length} sem main/stage no remoto` : ''));
+  return true;
+}
+
+function motivoLocal(l) {
+  if (l.estado === 'divergente') {
+    return `${l.afrente} commit(s) só no local, ${l.atras} atrás — resolver à mão`;
+  }
+  return l.motivo || l.estado;
+}
+
+function blocoLocais() {
+  if (!locaisImplantacao.length) {
+    return '';
+  }
+  return `<div class="impl-locais">
+      <b>${locaisImplantacao.length} branch(es) local(is) não avançada(s)</b>
+      ${locaisImplantacao.map(l => `<span class="impl-local" title="${esc(motivoLocal(l))}">
+          <code>${esc(l.projeto)}/${esc(l.ref)}</code> ${esc(motivoLocal(l))}</span>`).join('')}
+    </div>`;
 }
 
 function marcarContaImplantacao() {
@@ -1738,6 +1769,7 @@ function desenharFilaImplantacao() {
         prontos ? ` · ${prontos} já na main` : ''}</span>
       <span class="impl-buscado ${buscadoEmImplantacao ? '' : 'nunca'}">${carimboDaBusca()}</span>
     </div>
+    ${blocoLocais()}
     ${escolhidos.map(linhaImplantacao).join('') || '<p class="vazio">escolha os repos desta implantação abaixo</p>'}
     ${resto.length ? `<details class="impl-resto" ${escolhidos.length ? '' : 'open'}>
         <summary>${resto.length} repo(s) fora desta implantação</summary>

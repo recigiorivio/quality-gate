@@ -44,7 +44,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
     <div class="pn-acoes">
       <span class="sf-recarregar" id="btn-atualizar-impl" role="button" tabindex="0"
             onclick="atualizarImplantacao(event)" onkeydown="if(event.key==='Enter'){atualizarImplantacao(event)}"
-            title="buscar origin/main e origin/stage de novo — a fila é lida desses dois refs">⟳</span>
+            title="buscar os refs do remoto e avançar as branches locais do par (só fast-forward) — sozinho ao abrir a aba, se passou de 5 min">⟳</span>
     </div>
     <div id="builds"></div>
     <div id="painel-implantacao"></div>

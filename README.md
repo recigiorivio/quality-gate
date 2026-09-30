@@ -795,6 +795,40 @@ versão lia uma janela fixa e mostrava `—` — indistinguível de "não pediu 
 
 **Só leitura.** A tela não fala com essas sessões, não manda mensagem e não encerra nenhuma.
 
+## Implantação: o fetch também avança as branches locais
+
+A fila compara `origin/<destino>...origin/<origem>`, que são cópias locais e só mudam com
+`git fetch`. Até aqui o fetch era só o ⟳, e só atualizava o `origin/*`: a branch local ficava onde
+estava. Medido em 30/09/2026, logo depois de um ⟳: `origin/*` em dia nos 36 repos do catálogo, e
+**43 branches locais atrasadas em 28 deles** — `crohc-server/main` 176 commits, `jungle-monorepo/stage`
+122. A fila não mentia, mas `git checkout stage && git checkout -b UND-…` partia de uma stage velha.
+
+Agora:
+
+- **A aba busca sozinha ao abrir** se a última busca passou de 5 min. Só de localhost, como o ⟳ —
+  pela rede a rota continua recusada. O ⟳ segue forçando na hora.
+- **Depois do fetch, as branches locais do par avançam** (`stage`/`main`, `desenv`/`master`…, o par
+  do catálogo), **só por fast-forward**:
+
+| A branch local | O que acontece |
+|---|---|
+| fora de checkout, atrás | avança por `git fetch . origin/X:X` — é o próprio git que recusa o que não é fast-forward e a branch em checkout em qualquer worktree |
+| em checkout (neste ou noutro worktree), árvore limpa | `git merge --ff-only` no worktree dela: é o `git pull --ff-only` |
+| em checkout com alteração **não commitada** | **pulada** — nada muda |
+| com commit que o remoto não tem | **divergente** — nada muda, resolver à mão |
+| não existe | nada — a ferramenta não cria branch |
+
+Arquivo não rastreado não conta como alteração; se o merge fosse sobrescrever um, o git recusa e a
+linha vem como `erro`, com a mensagem dele.
+
+O que não avançou aparece **nomeado no topo da fila**, com o motivo, e fica gravado junto do
+`buscadoEm` no `implantacao.json` — some na próxima busca em que avançar. Cada busca deixa uma linha
+no `gate.log` com quantas avançaram e quais não.
+
+⚠️ O teste de tela sobe o servidor com **`QUALIDADE_SEM_BUSCA=1`**, que faz a rota recusar a busca. Ele
+roda contra os repos de verdade (só o estado é temporário), e sem isso abrir a aba num caso de teste
+buscaria e avançaria branch neles. Sonda avulsa que abra a Implantação leva a mesma variável.
+
 ## Builds em andamento
 
 No topo da aba **Implantação**, um cartão diz quais repos estão com GitHub Actions rodando ou na

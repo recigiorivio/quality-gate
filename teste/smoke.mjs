@@ -855,6 +855,87 @@ test('toda classe que a tela escreve tem regra no CSS', () => {
     assert.deepEqual(semRegra, [], `classes sem CSS: ${semRegra.join(', ')}`);
 });
 
+// Remoto bare, um clone que publica e o clone local: o fast-forward precisa de `origin/*` de verdade.
+function remotoComClone(nome) {
+    const raiz = mkdtempSync(join(tmpdir(), `qualidade-${nome}-`));
+    const g = (dir, ...a) => execFileSync('git', ['-C', dir, '-c', 'user.email=teste@local', '-c', 'user.name=Teste', ...a],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const [remoto, autor, local] = ['remoto.git', 'autor', 'local'].map(p => join(raiz, p));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remoto]);
+    execFileSync('git', ['init', '-q', '-b', 'main', autor]);
+    writeFileSync(join(autor, 'a.txt'), 'base\n');
+    g(autor, 'add', '-A');
+    g(autor, 'commit', '-qm', 'base');
+    g(autor, 'remote', 'add', 'origin', remoto);
+    g(autor, 'push', '-q', 'origin', 'main:main', 'main:stage', 'main:desenv');
+    execFileSync('git', ['clone', '-q', remoto, local]);
+    g(local, 'branch', 'stage', 'origin/stage');
+    g(local, 'checkout', '-q', 'stage');
+    g(local, 'worktree', 'add', '-q', join(raiz, 'wt'), '-b', 'desenv', 'origin/desenv');
+    const publicar = (ref, arquivo) => {
+        g(autor, 'checkout', '-q', '-B', ref, `origin/${ref}`);
+        writeFileSync(join(autor, arquivo), `${ref}\n`);
+        g(autor, 'add', '-A');
+        g(autor, 'commit', '-qm', `novo em ${ref}`);
+        g(autor, 'push', '-q', 'origin', ref);
+        g(autor, 'fetch', '-q', 'origin');
+    };
+    g(autor, 'fetch', '-q', 'origin');
+    return { raiz, local, g, publicar };
+}
+
+test('o fetch avança a branch local atrasada: fora do checkout, em checkout e em outro worktree', async () => {
+    const { raiz, local, g, publicar } = remotoComClone('ff');
+    try {
+        publicar('main', 'm.txt');
+        publicar('stage', 's.txt');
+        publicar('desenv', 'd.txt');
+        g(local, 'fetch', '-q', 'origin');
+        const r = await new Implantacao().avancarLocais(local, ['main', 'stage', 'desenv']);
+        const por = Object.fromEntries(r.map(l => [l.ref, l]));
+        for (const ref of ['main', 'stage', 'desenv']) {
+            assert.equal(por[ref]?.estado, 'avancada', `${ref}: ${JSON.stringify(por[ref])}`);
+            assert.equal(g(local, 'rev-parse', ref), g(local, 'rev-parse', `origin/${ref}`), `${ref} não chegou no origin`);
+        }
+        assert.equal(por.main.emCheckout, false);
+        assert.equal(por.stage.emCheckout, true);
+        assert.ok(existsSync(join(local, 's.txt')), 'a branch em checkout andou e a árvore não');
+        assert.ok(existsSync(join(raiz, 'wt', 'd.txt')), 'o worktree da desenv não recebeu o commit');
+        const denovo = await new Implantacao().avancarLocais(local, ['main', 'stage', 'desenv']);
+        assert.deepEqual(denovo.map(l => l.estado), ['em-dia', 'em-dia', 'em-dia']);
+    } finally {
+        rmSync(raiz, { recursive: true, force: true });
+    }
+});
+
+test('o fetch não avança branch divergente nem em checkout com alteração não commitada', async () => {
+    const { raiz, local, g, publicar } = remotoComClone('nao-ff');
+    try {
+        publicar('main', 'm.txt');
+        publicar('stage', 's.txt');
+        g(local, 'fetch', '-q', 'origin');
+        g(local, 'checkout', '-q', 'main');
+        writeFileSync(join(local, 'local.txt'), 'só aqui\n');
+        g(local, 'add', '-A');
+        g(local, 'commit', '-qm', 'commit só local');
+        const mainAntes = g(local, 'rev-parse', 'main');
+        g(local, 'checkout', '-q', 'stage');
+        writeFileSync(join(local, 'a.txt'), 'mexido e não commitado\n');
+        const stageAntes = g(local, 'rev-parse', 'stage');
+        const r = await new Implantacao().avancarLocais(local, ['main', 'stage']);
+        const por = Object.fromEntries(r.map(l => [l.ref, l]));
+        assert.equal(por.main.estado, 'divergente');
+        assert.deepEqual([por.main.afrente, por.main.atras], [1, 1]);
+        assert.equal(g(local, 'rev-parse', 'main'), mainAntes, 'branch divergente foi movida');
+        assert.equal(por.stage.estado, 'pulada');
+        assert.match(por.stage.motivo, /não commitada/);
+        assert.equal(g(local, 'rev-parse', 'stage'), stageAntes, 'stage andou por cima da alteração');
+        assert.equal(readFileSync(join(local, 'a.txt'), 'utf8'), 'mexido e não commitado\n');
+    } finally {
+        rmSync(raiz, { recursive: true, force: true });
+    }
+});
+
 // ── o botão de recarregar os refs ─────────────────────────────────────────────
 // A fila é lida de `origin/main` e `origin/stage`, que são cópias LOCAIS. Medido em 10/09/2026: a
 // tela mostrava 36 commits a implantar no contas-service para uma release que já estava na main —

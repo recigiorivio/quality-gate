@@ -627,19 +627,15 @@ class Servidor {
         };
     }
 
-    // Roda o agente de verdade (`claude -p`) para a única coisa que não dá para automatizar: decidir
-    // qual PR/branch é a comparação certa de cada repo. O prompt é FIXO aqui — o cliente só manda o
-    // ID, validado contra o padrão de chamado. Página local montando prompt seria injeção.
-    // `git fetch` mexe em ref de remoto — não toca branch local nem árvore de trabalho — mas ainda
-    // é escrita no `.git`, e por isso vale a mesma regra da corrida e da PR: só da máquina do
-    // servidor. Pela LAN a tela é para VER.
-    //
-    // Serializado: dois cliques concorrentes seriam 204 `git fetch` disputando a mesma rede e o
-    // mesmo `.git`, e o segundo não traria nada que o primeiro já não fosse trazer.
+    // Fetch e fast-forward das branches locais são escrita: só da máquina do servidor, como a corrida.
+    // Serializado: dois cliques disputariam a mesma rede e o mesmo `.git`, e o segundo não traria nada.
     async atualizarImplantacao(res, remoto) {
         if (!ehLocal(remoto)) {
             this.registrar('implantacao', 'negado-lan', `${remoto} pediu atualizar`);
             return this.json(res, { ok: false, erro: 'atualizar os repos só da máquina do servidor' });
+        }
+        if (process.env.QUALIDADE_SEM_BUSCA) {
+            return this.json(res, { ok: false, erro: 'busca de refs desligada neste servidor (QUALIDADE_SEM_BUSCA)' });
         }
         if (this.buscandoRemoto) {
             return this.json(res, { ok: false, erro: 'já estou buscando' });
@@ -652,11 +648,15 @@ class Servidor {
             this.invalidarImplantacao();
             const falhos = r.achados.filter(a => !a.ok);
             this.registrar('implantacao', 'atualizar',
-                `${r.repos} repos em ${Date.now() - inicio}ms, ${falhos.length} sem nenhum ref`);
+                `${r.repos} repos em ${Date.now() - inicio}ms, ${falhos.length} sem nenhum ref, `
+                + `${r.avancadas.length} branch(es) local(is) avançada(s)`
+                + (r.pendentes.length ? `, não avançadas: ${r.pendentes.map(p => `${p.projeto}/${p.ref} ${p.estado}`).join(', ')}` : ''));
             return this.json(res, {
                 ok: true, buscadoEm: r.buscadoEm, repos: r.repos,
                 segundos: Math.round((Date.now() - inicio) / 100) / 10,
                 semRefs: falhos.map(a => a.projeto),
+                avancadas: r.avancadas.map(a => `${a.projeto}/${a.ref}`),
+                locais: r.pendentes,
                 fila: await implantacao.resumo(),
                 escolhidos: implantacao.escolhidos()
             });
@@ -1102,7 +1102,8 @@ class Servidor {
                 escolhidos: implantacao.escolhidos(),
                 // Sem isto o painel não tinha como distinguir "nada mudou" de "ninguém buscou": os
                 // dois desenham a mesma fila, e só um deles é notícia.
-                buscadoEm: implantacao.buscadoEm()
+                buscadoEm: implantacao.buscadoEm(),
+                locais: implantacao.locaisPendentes()
             }), 60000).then(v => this.json(res, v));
         }
         if (url.pathname === '/api/implantacao-detalhe') {
