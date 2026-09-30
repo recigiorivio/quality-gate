@@ -994,6 +994,14 @@ class Servidor {
         return null;
     }
 
+    // O link de compartilhar: IP da rede e token, porque `localhost` não abre de outra máquina.
+    linkDaRede() {
+        if (SO_LOCAL || !this.porta) {
+            return '';
+        }
+        return `http://${this.ipDaRede() || HOST}:${this.porta}/?t=${TOKEN}`;
+    }
+
     // Varre a pasta em vez de uma lista de nomes: asset fora dela não entrava no maior mtime, e a
     // tela seguia servindo o app.js velho do cache do navegador depois de ele ser partido em dois.
     versaoDosAssets() {
@@ -1053,7 +1061,8 @@ class Servidor {
             // O token volta embutido na página: quem chegou com `?t=` já provou que tem, e as
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
             const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
-                TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace());
+                TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace(),
+                this.linkDaRede());
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -1364,6 +1373,7 @@ class Servidor {
             // teste de tela sobe o seu próprio servidor sem colidir com outra suíte na mesma
             // máquina — `PORTA` vale 0, e imprimir isso é imprimir um endereço que não existe.
             const porta = servidor.address().port;
+            this.porta = porta;
             console.log(`qualidade → http://${alvo}:${porta}/${TOKEN ? `?t=${TOKEN}` : ''}`
                 + `   (workspace: ${WORKSPACE})`
                 + (SO_LOCAL ? '' : `\n⚠  exposto na rede${sorteado ? ', token sorteado agora' : ''} —`

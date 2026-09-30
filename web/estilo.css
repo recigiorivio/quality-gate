@@ -62,6 +62,12 @@ aside{background:var(--painel);border-right:1px solid var(--linha);padding:0;
 .linha-chamado.ativo .ocultar{opacity:.75}
 .linha-chamado .ocultar:hover{background:var(--rem);color:var(--erro)}
 .linha-chamado.ativo .ocultar:hover{background:rgba(255,255,255,.25);color:#fff}
+.linha-chamado .compartilhar{opacity:.4;color:var(--fraco);line-height:0;padding:2px 4px;border-radius:5px;
+  transition:opacity .12s,background .12s,color .12s;flex:0 0 auto}
+.linha-chamado:hover .compartilhar{opacity:1}
+.linha-chamado.ativo .compartilhar{opacity:.75;color:#fff}
+.linha-chamado .compartilhar:hover{background:var(--linha);color:var(--acento)}
+.linha-chamado.ativo .compartilhar:hover{background:rgba(255,255,255,.25);color:#fff}
 
 .pino-repo{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--linha);cursor:help}
 .pino-repo.p-ok{background:var(--ok)}.pino-repo.p-aviso{background:var(--aviso)}

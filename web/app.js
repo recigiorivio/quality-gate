@@ -258,6 +258,7 @@ async function carregarChamados() {
         <span class="pino-repo p-vazio" title="conferindo…"></span>
         <span class="lch-id">${c.chamado}</span>
         <span class="lch-repos" title="${c.repos.length} repo(s) neste chamado">${c.repos.length}</span>
+        <span class="compartilhar" title="Copiar link com o IP da rede" onclick="compartilhar(event,'${c.chamado}')"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10V2M5 5l3-3 3 3M3 9v4a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9"/></svg></span>
         <span class="ocultar" title="Tirar do menu" onclick="ocultar(event,'${c.chamado}')">×</span>
       </span>
       ${c.titulo
@@ -785,6 +786,22 @@ async function ocultar(evento, chamado) {
   evento.stopPropagation();
   await api('/api/ocultar', { chamado });
   await carregarChamados();
+}
+
+// Fora do localhost a aba não é contexto seguro e não há `navigator.clipboard`: o prompt deixa copiar.
+async function compartilhar(evento, chamado) {
+  evento.stopPropagation();
+  if (!window.REDE) {
+    avisarNaTela('a tela só escuta em localhost — suba com QUALIDADE_HOST=0.0.0.0 para compartilhar');
+    return;
+  }
+  const link = `${window.REDE}&chamado=${encodeURIComponent(chamado)}`;
+  if (!navigator.clipboard) {
+    window.prompt('Link para outra máquina:', link);
+    return;
+  }
+  await navigator.clipboard.writeText(link);
+  avisarNaTela(`link de ${chamado} copiado — ${link.split('/?')[0]}`);
 }
 
 async function mostrar(chamado) {
