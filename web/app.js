@@ -670,7 +670,7 @@ async function abrirChamado(chamado, projetoPedido = null) {
         </button>`).join('')}</div>
     </details>
     <details class="tr-secao tr-dobra" id="tr-prs" style="--altura-prs:${c.repos.length * 26}px" ${aberta('prs')}>
-      <summary class="tr-titulo">Pull requests</summary>
+      <summary class="tr-titulo">Pull requests ${botaoRecarregarPrs()}</summary>
       <div class="tr-carregando">${esqRepos(c.repos.length)}</div>
     </details>
     <div class="tr-pe">
@@ -693,65 +693,7 @@ async function abrirChamado(chamado, projetoPedido = null) {
   const tokenChamado = ++geracaoChamado;
   api('/api/prs', { chamado, projetos: c.repos.map(x => x.projeto).join(',') }).then(r => {
     if (tokenChamado !== geracaoChamado) { return; }
-    prsDoChamado = r.prs || [];
-    const l = r.linear;
-    const titulo = document.getElementById('cab-titulo');
-    if (titulo) {
-      titulo.innerHTML = l?.titulo ? esc(l.titulo) : '';
-    }
-    const alvo = document.getElementById('tr-chamado');
-    if (alvo) {
-      const quando = l?.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
-      // O título já está no cabeçalho, ao lado do ID: aqui ficam só o estágio e o link.
-      const estagio = `<span class="tr-estagio e-${estagioDe(l?.status)}"
-                title="${l?.status ? esc(l.status) : 'estágio não sabido — o cache do Linear não tem status'}"></span>`;
-      alvo.innerHTML = `
-        <div class="tr-titulo">Chamado</div>
-        ${l?.url ? `<a class="tr-linear" href="${l.url}" target="_blank" rel="noopener"
-            title="abrir ${chamado} no Linear${quando ? ` · dado lido em ${quando}` : ''}">
-            ${estagio}<span class="tl-marca">L</span><span>${chamado} no Linear</span><span class="tl-seta">↗</span></a>`
-    : `<div class="tr-nome">${estagio}<span>${esc(chamado)}</span></div>`}
-        ${quando ? `<div class="tr-nota">lido em ${quando}</div>` : ''}`;
-    }
-    // Todas as abertas, listadas — é o que estava na barra antes da trilha, e é o que se persegue.
-    // Mesclada e fechada ficam na aba, que tem largura para o título.
-    const prAlvo = document.getElementById('tr-prs');
-    if (prAlvo) {
-      // Todas, sempre abertas: a trilha é o único lugar onde os PRs aparecem, então esconder
-      // atrás de um botão significaria esconder de vez.
-      const comPr = prsDoChamado.filter(x => x.temPr);
-      const abertas = comPr.filter(x => x.estado === 'OPEN').length;
-      const semPr = prsDoChamado.filter(x => x.temPr === false).map(x => x.projeto);
-      // Trocar o innerHTML da seção inteira apagava o <summary> e o listener da dobra: o corpo é
-      // um elemento próprio, e só ele é redesenhado.
-      prAlvo.querySelector('summary').innerHTML = `Pull requests
-        <span class="tr-conta">${comPr.length}${abertas ? ` · ${abertas} aberta(s)` : ''}</span>`;
-      let corpoPr = prAlvo.querySelector('.tr-corpo');
-      if (!corpoPr) {
-        corpoPr = document.createElement('div');
-        corpoPr.className = 'tr-corpo';
-        prAlvo.appendChild(corpoPr);
-      }
-      prAlvo.querySelector('.tr-carregando')?.remove();
-      const htmlPr = `
-        ${comPr.map(x => `
-          <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')} ${classeDecisao(x)}"
-             href="${x.url}" target="_blank" rel="noopener"
-             title="${esc(x.titulo || '')}\n\n${esc(x.rotulo)}${x.doLinear ? ' · só o Linear conhece este PR'
-               : (x.foraDaVarredura ? ' · fora da varredura local: repo não clonado aqui, ou branch com sufixo' : '')}">
-            <span class="tr-pr-estado pr-${x.estado.toLowerCase()}" title="${esc(x.rotulo)}"></span>
-            <span class="tr-pr-num">${classeDecisao(x) === 'decidida' ? '★ ' : ''}#${x.numero}</span>
-            <span class="tr-pr-repo">${esc(x.projeto)}</span>
-            <span class="tr-pr-seta">↗</span>
-          </a>`).join('') || '<div class="tr-nota">nenhum PR</div>'}
-        ${semPr.length ? `<div class="tr-sem-pr">sem PR: ${esc(semPr.join(', '))}</div>` : ''}`;
-      // Só troca se mudou: a lista de 28 PRs era reescrita a cada resposta, e cada reescrita é um
-      // pisca na trilha.
-      if (corpoPr.innerHTML !== htmlPr) {
-        suave(() => { corpoPr.innerHTML = htmlPr; });
-      }
-    }
-    pintarAbasDoAtual();
+    pintarPrs(r, chamado);
   });
 
   // Volta para onde você estava neste chamado; sem memória, cai no repo com o pior pino.
@@ -768,6 +710,91 @@ async function abrirChamado(chamado, projetoPedido = null) {
   if (chip) {
     abrir(chip);
   }
+}
+
+// A identidade do chamado e as PRs, na trilha. O ⟳ do título refaz só isto, sem reabrir o chamado.
+function pintarPrs(r, chamado) {
+  prsDoChamado = r.prs || [];
+  const l = r.linear;
+  const titulo = document.getElementById('cab-titulo');
+  if (titulo) {
+    titulo.innerHTML = l?.titulo ? esc(l.titulo) : '';
+  }
+  const alvo = document.getElementById('tr-chamado');
+  if (alvo) {
+    const quando = l?.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
+    // O título já está no cabeçalho, ao lado do ID: aqui ficam só o estágio e o link.
+    const estagio = `<span class="tr-estagio e-${estagioDe(l?.status)}"
+              title="${l?.status ? esc(l.status) : 'estágio não sabido — o cache do Linear não tem status'}"></span>`;
+    alvo.innerHTML = `
+      <div class="tr-titulo">Chamado</div>
+      ${l?.url ? `<a class="tr-linear" href="${l.url}" target="_blank" rel="noopener"
+          title="abrir ${chamado} no Linear${quando ? ` · dado lido em ${quando}` : ''}">
+          ${estagio}<span class="tl-marca">L</span><span>${chamado} no Linear</span><span class="tl-seta">↗</span></a>`
+  : `<div class="tr-nome">${estagio}<span>${esc(chamado)}</span></div>`}
+      ${quando ? `<div class="tr-nota">lido em ${quando}</div>` : ''}`;
+  }
+  // Todas as abertas, listadas — é o que estava na barra antes da trilha, e é o que se persegue.
+  // Mesclada e fechada ficam na aba, que tem largura para o título.
+  const prAlvo = document.getElementById('tr-prs');
+  if (prAlvo) {
+    // Todas, sempre abertas: a trilha é o único lugar onde os PRs aparecem, então esconder
+    // atrás de um botão significaria esconder de vez.
+    const comPr = prsDoChamado.filter(x => x.temPr);
+    const abertas = comPr.filter(x => x.estado === 'OPEN').length;
+    const semPr = prsDoChamado.filter(x => x.temPr === false).map(x => x.projeto);
+    // Trocar o innerHTML da seção inteira apagava o <summary> e o listener da dobra: o corpo é
+    // um elemento próprio, e só ele é redesenhado.
+    prAlvo.querySelector('summary').innerHTML = `Pull requests
+      <span class="tr-conta">${comPr.length}${abertas ? ` · ${abertas} aberta(s)` : ''}</span>${botaoRecarregarPrs(r.desde)}`;
+    let corpoPr = prAlvo.querySelector('.tr-corpo');
+    if (!corpoPr) {
+      corpoPr = document.createElement('div');
+      corpoPr.className = 'tr-corpo';
+      prAlvo.appendChild(corpoPr);
+    }
+    prAlvo.querySelector('.tr-carregando')?.remove();
+    const htmlPr = `
+      ${comPr.map(x => `
+        <a class="tr-pr ${x.doLinear ? 'so-linear' : (x.foraDaVarredura ? 'so-busca' : '')} ${classeDecisao(x)}"
+           href="${x.url}" target="_blank" rel="noopener"
+           title="${esc(x.titulo || '')}\n\n${esc(x.rotulo)}${x.doLinear ? ' · só o Linear conhece este PR'
+             : (x.foraDaVarredura ? ' · fora da varredura local: repo não clonado aqui, ou branch com sufixo' : '')}">
+          <span class="tr-pr-estado pr-${x.estado.toLowerCase()}" title="${esc(x.rotulo)}"></span>
+          <span class="tr-pr-num">${classeDecisao(x) === 'decidida' ? '★ ' : ''}#${x.numero}</span>
+          <span class="tr-pr-repo">${esc(x.projeto)}</span>
+          <span class="tr-pr-seta">↗</span>
+        </a>`).join('') || '<div class="tr-nota">nenhum PR</div>'}
+      ${semPr.length ? `<div class="tr-sem-pr">sem PR: ${esc(semPr.join(', '))}</div>` : ''}`;
+    // Só troca se mudou: a lista de 28 PRs era reescrita a cada resposta, e cada reescrita é um
+    // pisca na trilha.
+    if (corpoPr.innerHTML !== htmlPr) {
+      suave(() => { corpoPr.innerHTML = htmlPr; });
+    }
+  }
+  pintarAbasDoAtual();
+}
+
+function botaoRecarregarPrs(desde) {
+  const lido = desde ? `status lido às ${new Date(desde).toLocaleTimeString('pt-BR')} — ` : '';
+  return `<button class="tr-recarregar" id="btn-recarregar-prs" onclick="recarregarPrs(event)"
+    title="${lido}rever o status das PRs no GitHub">⟳</button>`;
+}
+
+// O status vem do `gh` com cache de 5 min que devolve o velho e atualiza por trás: o ⟳ pula o cache.
+async function recarregarPrs(ev) {
+  ev?.preventDefault();
+  ev?.stopPropagation();
+  const c = chamados.find(x => x.chamado === atual?.chamado);
+  const b = document.getElementById('btn-recarregar-prs');
+  if (!c || b?.classList.contains('girando')) { return; }
+  b?.classList.add('girando');
+  const token = geracaoChamado;
+  const r = await api('/api/prs', { chamado: c.chamado, projetos: c.repos.map(x => x.projeto).join(','), 'de-novo': 1 });
+  if (token !== geracaoChamado) { return; }
+  pintarPrs(r, c.chamado);
+  carregarRemotos(geracao);
+  avisarNaTela('status das PRs relido');
 }
 
 function alternarMenu() {
@@ -904,6 +931,10 @@ async function abrir(chip, forcar = false) {
     }));
     pintarAbasDoAtual(token);
   });
+  carregarRemotos(token);
+}
+
+function carregarRemotos(token) {
   api('/api/qualidade-remoto', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
     if (token !== geracao) { return; }
     itensDoAtual.remotos = r.itens;
@@ -3253,7 +3284,7 @@ Object.assign(window, {
   copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos,
-  trocarAbaConteudo, trocarSubAnalises, abrirWhiteboard, copiarDoQuadro, abrirModalDependencias, marcarBotaoDependencias
+  trocarAbaConteudo, trocarSubAnalises, abrirWhiteboard, copiarDoQuadro, abrirModalDependencias, marcarBotaoDependencias, recarregarPrs
 });
 // Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });

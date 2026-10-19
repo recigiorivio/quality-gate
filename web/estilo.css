@@ -1145,3 +1145,9 @@ details[open]>.linha1 .det-linha{visibility:hidden}
 .dp-nota{font-size:11.5px;margin-top:2px;color:var(--fraco)}
 .dp-aviso .dp-nota{color:var(--aviso)}
 .dp-falta .dp-nota{color:var(--erro)}
+
+/* O ⟳ do título "Pull requests": relê o status no GitHub sem o cache de 5 min. */
+.tr-recarregar{margin-left:auto;background:none;border:0;color:var(--fraco);cursor:pointer;font-size:12px;line-height:1;
+  padding:1px 3px;border-radius:4px;text-transform:none;letter-spacing:0}
+.tr-recarregar:hover,.tr-recarregar:focus-visible{color:var(--acento);background:var(--linha);outline:none}
+.tr-recarregar.girando{animation:girar .8s linear infinite;color:var(--acento)}
