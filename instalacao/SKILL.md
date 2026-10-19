@@ -105,14 +105,14 @@ pode ser a errada. Pede duas coisas:
 **A instalação está concluída quando a tela abre e lista os repos.** "O comando terminou sem erro"
 não é evidência de nada — é o mesmo erro que esta ferramenta cobra de quem a usa.
 
-## 6. Gatilhos e serviço
+## 6. Gatilhos, serviço e app
 
 ```bash
 node instalacao/gatilhos.mjs          # só mostra o estado, não grava nada
-node instalacao/gatilhos.mjs --add    # pergunta DUAS coisas, uma por vez
+node instalacao/gatilhos.mjs --add    # pergunta TRÊS coisas, uma por vez
 ```
 
-O `--add` faz duas perguntas separadas, porque são coisas diferentes e quem quer uma não
+O `--add` faz três perguntas separadas, porque são coisas diferentes e quem quer uma não
 necessariamente quer a outra:
 
 1. **Instalar os gatilhos de qualidade? (recomendado)** — sem eles os markdown estão no disco e
@@ -123,8 +123,14 @@ necessariamente quer a outra:
 2. **Instalar o LaunchAgent?** — é o que mantém a tela no ar entre reboots e fechamentos de
    terminal. Sem ele, a tela só existe enquanto alguém segura um `npm start`.
 
-Rodar sem terminal interativo responde **não** às duas: é para nenhum agente instalar serviço na
-máquina de alguém por conta própria. `--sim` aceita as duas, `--porta=4200` muda a porta do serviço.
+3. **Instalar o app?** — a tela numa janela própria, em `~/Applications/Quality Gate.app`. Só no
+   macOS, e pede o `swiftc` das Command Line Tools: sem ele, **entregue `xcode-select --install` e
+   siga** — o app é opcional, a instalação não depende dele. `--app` reconstrói só o app, e é o que
+   a pessoa roda depois de trocar de node pelo nvm ou de porta.
+
+Rodar sem terminal interativo responde **não** às três: é para nenhum agente instalar serviço ou app
+na máquina de alguém por conta própria. `--sim` aceita as três, `--porta=4200` muda a porta do
+serviço e do app.
 
 ⚠️ O hook novo só vale na **próxima** sessão do Claude Code; a atual já leu o `settings.json`.
 Diga isso à pessoa, senão ela conclui que não funcionou.
@@ -162,6 +168,7 @@ Isso desfaz **tudo** o que este clone instalou fora de si mesmo, numa tacada:
 
 - os gatilhos no `settings.json` — **só** os deste clone: gatilho de outro clone fica de pé
 - o **LaunchAgent**, descarregado do `launchctl` e o plist apagado de `~/Library/LaunchAgents`
+- o **app de Mac** deste clone, e o que a janela guardou em `~/Library` sob o bundle id
 - as quatro rotinas plantadas, com `.bak` de cada uma antes — a pessoa provavelmente editou o texto,
   e apagar edição sem cópia não se desfaz
 

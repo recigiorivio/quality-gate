@@ -1,13 +1,13 @@
 // Liga e desliga o que este clone instala FORA de si mesmo: os gatilhos no `.claude/settings.json`,
-// o LaunchAgent que mantém a tela no ar, e as rotinas plantadas no workspace.
+// o LaunchAgent que mantém a tela no ar, o app de Mac, e as rotinas plantadas no workspace.
 //
 // Existe porque a instalação até aqui entregava os arquivos e deixava o acionamento por conta de
 // alguém lembrar de editar um JSON à mão — e rotina que depende de lembrar não é acionada. O par
 // `--remove` não é cortesia: a partir do momento em que a instalação escreve em três lugares,
 // instalação sem desinstalação deixa lixo que ninguém sabe de onde veio.
 //
-// As duas coisas são perguntas SEPARADAS, e não um pacote: gatilho é o que aciona a rotina, agente
-// é o que mantém a tela viva. Quem quer um não necessariamente quer o outro.
+// São perguntas SEPARADAS, e não um pacote: gatilho é o que aciona a rotina, agente é o que mantém
+// a tela viva, app é a janela. Quem quer um não necessariamente quer o outro.
 import { createInterface } from 'node:readline/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -19,13 +19,19 @@ import {
     jaRegistrados, outrosClones, plantados, removerPlantados, faltando, plantar, EVENTOS
 } from '../lib/gatilhos.mjs';
 import * as servico from '../lib/servico.mjs';
+import * as app from '../lib/app.mjs';
 
 const PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 const SETTINGS = caminhoSettings(WORKSPACE);
 const COMANDO_SUBIR = '/quality-subir-tela';
 const args = process.argv.slice(2);
 const tem = f => args.includes(f);
-const porta = Number((args.find(a => a.startsWith('--porta=')) || '').split('=')[1] || servico.PORTA_PADRAO);
+const portaPedida = (args.find(a => a.startsWith('--porta=')) || '').split('=')[1];
+const porta = Number(portaPedida || servico.PORTA_PADRAO);
+
+function portaDoApp() {
+    return portaPedida ? porta : app.portaDaTela(PROJETO);
+}
 
 function curto(caminho) {
     const r = relative(WORKSPACE, caminho);
@@ -67,8 +73,49 @@ function status() {
         }
     }
     console.log(`tela        ${telaNoAr() ? `no ar na ${porta}` : `fora do ar (${COMANDO_SUBIR} sobe)`}`);
+    const a = app.suportado() ? app.estado(PROJETO) : null;
+    console.log(`app         ${descreverApp(a)}`);
     console.log(`rotinas     ${md.length ? md.map(c => curto(c.absoluto)).join(', ') : 'nenhuma plantada'}`);
-    return { settings, meus, servicoEstado: s, md };
+    return { settings, meus, servicoEstado: s, appEstado: a, md };
+}
+
+// Cada aviso aqui é um jeito de o app abrir e não servir a tela, sem nada no app que explique antes.
+function descreverApp(a) {
+    if (!a) {
+        return 'indisponível (só macOS)';
+    }
+    if (!a.instalado) {
+        return 'não instalado';
+    }
+    if (!a.nosso) {
+        return `⚠ ${a.caminho} existe e não é o quality-gate`;
+    }
+    if (!a.meu) {
+        return `de outro clone: ${a.clone}`;
+    }
+    const avisos = [
+        a.nodeExiste === false && `⚠ o node gravado sumiu (${a.node}) — rode --app`,
+        a.porta !== a.portaDaTela && `⚠ o app abre a porta ${a.porta}, e a tela sobe na ${a.portaDaTela} — rode --app`,
+        a.desatualizado && `⚠ o fonte do app mudou desde a construção (de ${a.commit}) — rode --app`
+    ].filter(Boolean);
+    return [`${curto(a.caminho)} · porta ${a.porta}`, ...avisos].join('\n              ');
+}
+
+function construirApp() {
+    const portaApp = portaDoApp();
+    console.log(`  destino ${app.caminhoApp()}`);
+    console.log(`  node    ${process.execPath}`);
+    console.log(`  porta   ${portaApp}`);
+    console.log('  compilando…');
+    const r = app.construir(PROJETO, { porta: portaApp });
+    if (!r.ok) {
+        console.log(`  ⚠ ${r.erro}`);
+        return false;
+    }
+    console.log(`✓ ${r.caminho} em ${r.segundos}s${r.icone ? '' : ' (sem ícone: o sips não converteu o svg)'}`
+        + `${r.assinado ? '' : ' (sem assinatura ad-hoc)'}`);
+    console.log(`  abra pelo Launchpad/Spotlight, ou: open -a "${app.NOME}"`);
+    return true;
 }
 
 async function perguntar(pergunta, padraoSim = true) {
@@ -86,7 +133,7 @@ async function perguntar(pergunta, padraoSim = true) {
     return t === '' ? padraoSim : /^s/i.test(t);
 }
 
-async function adicionar({ settings, meus, servicoEstado }) {
+async function adicionar({ settings, meus, servicoEstado, appEstado }) {
     const eventosFaltando = EVENTOS.filter(e => !meus.includes(e.evento));
     console.log('\n── 1. Gatilhos de qualidade ───────────────────────────────────');
     if (!eventosFaltando.length) {
@@ -139,7 +186,31 @@ async function adicionar({ settings, meus, servicoEstado }) {
         }
     }
 
-    console.log('\n── 3. Rotinas que faltam no workspace ─────────────────────────');
+    console.log('\n── 3. App para Mac ────────────────────────────────────────────');
+    if (!app.suportado()) {
+        console.log('indisponível fora do macOS — pulando');
+    } else if (appEstado.instalado && appEstado.meu && !appEstado.desatualizado && appEstado.nodeExiste
+        && appEstado.porta === portaDoApp()) {
+        console.log(`já instalado (${curto(appEstado.caminho)}), nada a fazer — --app reconstrói`);
+    } else if (appEstado.instalado && !appEstado.nosso) {
+        console.log(`${appEstado.caminho} existe e não é o quality-gate — não mexo`);
+    } else if (!app.swiftc()) {
+        console.log('sem swiftc: instale as Command Line Tools (xcode-select --install) e rode --app');
+    } else {
+        console.log('A tela numa janela própria, com ícone no Dock, em vez de uma aba do navegador.');
+        console.log('Se a tela estiver fora do ar o app a sobe: pelo LaunchAgent, se houver; senão');
+        console.log('ele mesmo, e aí o servidor para quando o app fecha.');
+        if (appEstado.instalado && !appEstado.meu) {
+            console.log(`  ⚠ o app instalado é do clone ${appEstado.clone}, e passa a ser deste`);
+        }
+        if (await perguntar(`\n${appEstado.instalado ? 'Reconstruir' : 'Instalar'} o app?`)) {
+            construirApp();
+        } else {
+            console.log('· pulado');
+        }
+    }
+
+    console.log('\n── 4. Rotinas que faltam no workspace ─────────────────────────');
     const faltam = faltando(WORKSPACE);
     if (!faltam.length) {
         console.log('nenhuma — as quatro estão plantadas');
@@ -177,9 +248,10 @@ async function esperarTela(tentativas = 15) {
     return false;
 }
 
-async function remover({ settings, meus, servicoEstado, md }) {
+async function remover({ settings, meus, servicoEstado, appEstado, md }) {
     const temServico = servicoEstado?.instalado;
-    if (!meus.length && !temServico && !md.length) {
+    const temApp = appEstado?.instalado && appEstado.nosso && appEstado.meu;
+    if (!meus.length && !temServico && !temApp && !md.length) {
         console.log('\nnada deste clone para remover');
         return 0;
     }
@@ -189,6 +261,9 @@ async function remover({ settings, meus, servicoEstado, md }) {
     }
     if (temServico) {
         console.log(`  serviço  ${servicoEstado.rotulo} (a tela para de subir sozinha)`);
+    }
+    if (temApp) {
+        console.log(`  app      ${curto(appEstado.caminho)}`);
     }
     for (const c of md) {
         console.log(`  rotina   ${curto(c.absoluto)}  (guarda .bak antes de apagar)`);
@@ -205,6 +280,10 @@ async function remover({ settings, meus, servicoEstado, md }) {
         const r = servico.remover(PROJETO);
         console.log(`✓ serviço removido${r.descarregou ? '' : ' (launchctl já não o tinha carregado)'}`);
     }
+    if (temApp) {
+        const r = app.remover(PROJETO);
+        console.log(r.removido ? '✓ app removido' : `· app não removido: ${r.motivo}`);
+    }
     for (const rel of removerPlantados(WORKSPACE)) {
         console.log(`✓ ${rel} removido (cópia em ${rel}.bak)`);
     }
@@ -220,8 +299,12 @@ if (tem('--add')) {
     saida = await adicionar(atual);
 } else if (tem('--remove')) {
     saida = await remover(atual);
+} else if (tem('--app')) {
+    console.log('\n── App para Mac ───────────────────────────────────────────────');
+    saida = app.suportado() ? (construirApp() ? 0 : 1) : 1;
 } else {
-    console.log('\n--add para instalar (pergunta gatilhos e serviço separadamente)');
+    console.log('\n--add para instalar (pergunta gatilhos, serviço e app separadamente)');
+    console.log('--app (re)constrói só o app de Mac — depois de trocar de node pelo nvm, ou de porta');
     console.log('--remove para desfazer tudo deste clone · --sim aceita sem perguntar · --porta=4200');
 }
 process.exit(saida);

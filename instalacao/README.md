@@ -62,15 +62,16 @@ módulo resolver configuração, e antes disso ele era lido depois — então `Q
 gravado pela tela também não tinha efeito, o que era o defeito de verdade. O shell continua ganhando
 do arquivo, e o `PORT` do LaunchAgent continua ganhando dos dois.
 
-## 5. Os gatilhos e o serviço
+## 5. Os gatilhos, o serviço e o app
 
 ```bash
-node instalacao/gatilhos.mjs          # estado: gatilhos, serviço, tela e rotinas plantadas
-node instalacao/gatilhos.mjs --add    # pergunta as duas coisas, uma por vez
+node instalacao/gatilhos.mjs          # estado: gatilhos, serviço, tela, app e rotinas plantadas
+node instalacao/gatilhos.mjs --add    # pergunta as três coisas, uma por vez
+node instalacao/gatilhos.mjs --app    # (re)constrói só o app de Mac
 node instalacao/gatilhos.mjs --remove # desfaz TUDO deste clone
 ```
 
-O `--add` pergunta **duas** coisas separadas:
+O `--add` pergunta **três** coisas separadas:
 
 **1. Os gatilhos (recomendado).** Fazem a rotina de fim chegar sozinha quando você fala de commit,
 PR ou merge, e derrubam o cache da tela depois de um commit. Mescla só as três entradas **deste**
@@ -88,8 +89,14 @@ Duas coisas nele que quebram em silêncio se você escrever o plist à mão:
 - o **`PATH` assado** — o padrão do launchd é `/usr/bin:/bin:/usr/sbin:/sbin`, e o `gh` mora em
   `/opt/homebrew/bin`. Sem assar, a tela sobe e perde PR, base observada e checks, sem erro nenhum
 
-Rodar sem terminal interativo responde **não** às duas. `--sim` aceita as duas, `--porta=4200` muda
-a porta do serviço.
+**3. O app de Mac.** A tela numa janela própria, em `~/Applications/Quality Gate.app`, com ícone no
+Dock. Se a tela estiver fora do ar, o app a sobe: pelo LaunchAgent, se houver; senão ele mesmo, e
+aí o servidor para quando o app fecha. Pede o `swiftc` das Command Line Tools. Grava node, PATH,
+porta e o caminho do clone, então **trocar de node pelo nvm ou de porta exige `--app` de novo** — o
+estado (sem flag) e o `verificar.mjs` avisam. Detalhes no [README](../README.md#app-para-mac).
+
+Rodar sem terminal interativo responde **não** às três. `--sim` aceita as três, `--porta=4200` muda
+a porta do serviço e do app.
 
 ⚠️ Hook novo só vale na **próxima** sessão do Claude Code — a atual já leu o `settings.json`.
 
@@ -154,9 +161,10 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-136 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+157 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
 e o comportamento do cache, roda cada ferramenta de linha de comando, valida o de-para do
-`doutrina.json`, e cobre o registro dos gatilhos no `settings.json` e o plist do LaunchAgent.
+`doutrina.json`, e cobre o registro dos gatilhos no `settings.json`, o plist do LaunchAgent e o
+Info.plist do app (com o fonte Swift compilando, quando há `swiftc`).
 
 ```bash
 node ferramentas/checar-diff.mjs --autoteste

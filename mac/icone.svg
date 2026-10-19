@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Grade de ícone do macOS: corpo de 824 px num canvas de 1024. O painel antes|depois e o selo
+       são o mesmo par do favicon (a divisória e o check), com volume para aguentar o Dock. -->
+  <!-- Sombra em camadas, e não `feDropShadow`: o renderizador de SVG do `sips` ignora filtro. -->
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2=".55" y2="1">
+      <stop offset="0" stop-color="#8F82F3"/>
+      <stop offset=".55" stop-color="#6A58E2"/>
+      <stop offset="1" stop-color="#4632C2"/>
+    </linearGradient>
+    <radialGradient id="luz" cx=".28" cy=".12" r=".75">
+      <stop offset="0" stop-color="#fff" stop-opacity=".30"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="painel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#ECE9FB"/>
+    </linearGradient>
+    <linearGradient id="selo" x1="0" y1="0" x2=".4" y2="1">
+      <stop offset="0" stop-color="#46E3A2"/>
+      <stop offset="1" stop-color="#0E9E5E"/>
+    </linearGradient>
+    <linearGradient id="aro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E7E4F8"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="#1A0F55">
+    <rect x="104" y="112" width="816" height="816" rx="185" opacity=".10"/>
+    <rect x="106" y="118" width="812" height="812" rx="185" opacity=".08"/>
+  </g>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#fundo)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#luz)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="3"/>
+
+  <g fill="#1E0F70" opacity=".055">
+    <rect x="214" y="242" width="596" height="512" rx="60"/>
+    <rect x="213" y="246" width="598" height="514" rx="61"/>
+    <rect x="212" y="250" width="600" height="516" rx="62"/>
+    <rect x="211" y="255" width="602" height="518" rx="63"/>
+    <rect x="210" y="260" width="604" height="520" rx="64"/>
+    <rect x="208" y="266" width="608" height="522" rx="66"/>
+  </g>
+  <rect x="214" y="236" width="596" height="512" rx="60" fill="url(#painel)"/>
+  <rect x="509" y="284" width="6" height="416" rx="3" fill="#DCD8F3"/>
+
+  <rect x="262" y="300" width="196" height="34" rx="17" fill="#D9D5EF"/>
+  <rect x="262" y="372" width="214" height="34" rx="17" fill="#F28B8B"/>
+  <rect x="262" y="444" width="150" height="34" rx="17" fill="#D9D5EF"/>
+  <rect x="262" y="516" width="182" height="34" rx="17" fill="#D9D5EF"/>
+  <rect x="262" y="588" width="120" height="34" rx="17" fill="#D9D5EF"/>
+
+  <rect x="548" y="300" width="196" height="34" rx="17" fill="#D9D5EF"/>
+  <rect x="548" y="372" width="214" height="34" rx="17" fill="#6BD6A4"/>
+  <rect x="548" y="444" width="170" height="34" rx="17" fill="#6BD6A4"/>
+
+  <g fill="#1E0F70" opacity=".06">
+    <circle cx="718" cy="708" r="158"/>
+    <circle cx="718" cy="712" r="159"/>
+    <circle cx="718" cy="717" r="160"/>
+    <circle cx="718" cy="722" r="161"/>
+    <circle cx="718" cy="728" r="162"/>
+  </g>
+  <circle cx="718" cy="704" r="158" fill="url(#aro)"/>
+  <circle cx="718" cy="704" r="132" fill="url(#selo)"/>
+  <path d="M652 710 L700 757 L786 660" fill="none" stroke="#0B7A48" stroke-opacity=".35" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round" transform="translate(0 6)"/>
+  <path d="M652 710 L700 757 L786 660" fill="none" stroke="#fff" stroke-width="44"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

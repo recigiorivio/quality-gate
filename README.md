@@ -38,12 +38,14 @@ detectou, dizendo quantos repos git achou) e as rotinas — os padrões genéric
 apontado no lugar de cada um. As duas se trocam depois, pela aba Configurações. Arquivo que já
 existe **nunca** é sobrescrito.
 
-Falta um passo depois dela, e ele pergunta duas coisas separadas: os **gatilhos** (o que faz a
-rotina ser *acionada* em vez de só estar no disco) e o **LaunchAgent** (o que mantém a tela no ar —
-sem ele nada a sobe sozinha, e `npm start` num terminal morre com o terminal):
+Falta um passo depois dela, e ele pergunta três coisas separadas: os **gatilhos** (o que faz a
+rotina ser *acionada* em vez de só estar no disco), o **LaunchAgent** (o que mantém a tela no ar —
+sem ele nada a sobe sozinha, e `npm start` num terminal morre com o terminal) e o **[app de
+Mac](#app-para-mac)** (a tela numa janela própria, com ícone no Dock):
 
 ```bash
-node instalacao/gatilhos.mjs --add    # pergunta os dois; --remove desfaz tudo deste clone
+node instalacao/gatilhos.mjs --add    # pergunta os três; --remove desfaz tudo deste clone
+node instalacao/gatilhos.mjs --app    # (re)constrói só o app
 ```
 
 E **`/quality-subir-tela`** sobe a tela a qualquer momento, ou devolve o link se ela já estiver no ar.
@@ -223,6 +225,102 @@ o 🔗 no cabeçalho — e mandar para alguém. Com token, o `?t=` continua na U
 
 Para acesso de fora da LAN, **não** exponha na internet: túnel SSH
 (`ssh -L 4100:localhost:4100 <máquina>`) ou Tailscale, que autenticam antes de chegar aqui.
+
+## App para Mac
+
+A mesma tela numa janela própria, com ícone no Dock e no Launchpad, em vez de uma aba perdida entre
+outras no navegador. **Não é uma segunda tela**: é uma janela nativa (`WKWebView`) que carrega
+`http://127.0.0.1:<porta>/`, e quem serve continua sendo o `server.mjs`. Nada do que a tela faz foi
+reescrito.
+
+```bash
+node instalacao/gatilhos.mjs --app    # constrói e instala em ~/Applications/Quality Gate.app
+open -a "Quality Gate"
+```
+
+O `--add` também pergunta, como terceira pergunta. Pede o `swiftc`, que vem com as Command Line
+Tools (`xcode-select --install`), as mesmas que o `git` do macOS já exige. A primeira compilação
+leva uns 10 s; as seguintes, 1 a 2 s.
+
+**Swift e não Electron**, pela regra nº 1 do projeto: Electron é dependência de runtime e uns 200 MB
+por app. O `Quality Gate.app` tem **cerca de 1 MB** — 190 KB de binário, o resto é o ícone —, e o
+fonte é um arquivo só, `mac/QualityGate.swift`.
+
+### Quem sobe a tela
+
+Ao abrir, o app pergunta à porta se a tela está no ar, e o subtítulo da janela diz qual caso é:
+
+| Situação | O que o app faz | Subtítulo |
+|---|---|---|
+| a tela já responde | só carrega | `porta 4100` (ou `· LaunchAgent`, se for ele) |
+| fora do ar, com o LaunchAgent deste clone carregado | `launchctl kickstart` e espera | `porta 4100 · LaunchAgent` |
+| fora do ar, sem LaunchAgent | sobe o próprio `node server.mjs` | `… servidor deste app — para quando o app fecha` |
+
+Fechar o app derruba **só** o servidor que ele mesmo subiu, nunca o do LaunchAgent. O par
+recomendado é **LaunchAgent + app**: o hook continua entregando o link da tela com o app fechado.
+
+"Está no ar" é conferido pelo `/favicon.svg`, que é público e carrega o nome do projeto: com outro
+programa na porta, o app diz isso em vez de mostrar a página do outro programa.
+
+### O que o app acrescenta, e por quê
+
+Um `WKWebView` sozinho falha **calado** em quatro coisas que a tela usa, e cada uma tem a sua
+resposta no app:
+
+| Sem o app | Onde dói | No app |
+|---|---|---|
+| `confirm()` devolve `false` sem mostrar nada | a PR de release nunca abre | folha nativa com OK/Cancelar |
+| `<input type=file>` não abre seletor | o `escolher .md…` da primeira abertura | painel de abrir arquivo |
+| `target=_blank` não navega | links do GitHub e do Linear | abrem no navegador padrão |
+| sem menu Editar, ⌘C/⌘V não chegam aos campos | colar a raiz, copiar trecho do diff | menu Editar completo |
+
+E o menu Visualizar: **⌘R** recarrega (e, numa página de erro, tenta subir de novo), **⇧⌘O** abre a
+mesma URL no navegador, **⌘+ / ⌘− / ⌘0** controlam o zoom. Botão direito → Inspecionar Elemento
+funciona.
+
+### O que fica gravado no app, e quando reconstruir
+
+A construção grava no `Info.plist` o caminho deste clone, o **node por caminho absoluto**, o
+**PATH** de quem construiu e a **porta**. São os mesmos motivos do plist do LaunchAgent: app aberto
+pelo Finder herda o PATH mínimo do launchd, sem `nvm` e sem homebrew.
+
+A porta é a do LaunchAgent deste clone quando ele existe; senão a do `PORT` (shell ou `.env`); senão
+4100. `--porta=` ganha de todas.
+
+Rode `--app` de novo depois de **trocar de node pelo nvm**, **mudar a porta**, **mover o clone** ou
+dar um `git pull` que mexa em `mac/`. O `gatilhos.mjs` (sem flag) e o `verificar.mjs` acusam três
+desses: o node gravado que não existe mais, a porta do app diferente da porta em que a tela sobe, e
+o fonte do app mudado desde a construção. Clone movido aparece como "app de outro clone".
+
+"Fonte mudado" é por **hash do que entra no bundle** (o Swift, o ícone e o modelo do Info.plist),
+não por commit: construído de uma árvore com mudança não commitada, o `git diff` contra o commit
+dizia "desatualizado" num app recém-construído — e aviso falso ensina a ignorar o aviso. E se o app abrir quebrado mesmo assim, a página de erro dele diz qual é o caso e o comando
+para resolver.
+
+### Armadilhas medidas na construção
+
+- **`swiftc` chamado pelo caminho absoluto** que o `xcrun --find` devolve falha com
+  `unable to load standard library`: ele não acha o SDK. Compila-se por `xcrun swiftc`.
+- **O LaunchServices guarda o `Info.plist` em cache por caminho**, e só relê quando a data do bundle
+  muda. Reconstruir com outra porta abria o app na porta **antiga**. A construção agora toca o bundle
+  e o registra de novo (`lsregister -f`).
+- **`kill` não passa pelo `applicationWillTerminate`**: o servidor filho ficava órfão na porta, com o
+  pid 1 como pai. O app trata o SIGTERM e encerra pelo caminho normal.
+- **O `Info.plist` se lê pelo `plutil`, não por regex.** Qualquer ferramenta que o regrave muda a
+  formatação, e a regex deixava de reconhecer o app como nosso: a reconstrução se recusava a
+  sobrescrever o próprio app.
+- **O renderizador de SVG do `sips` ignora `<filter>`.** As sombras do `mac/icone.svg` são camadas
+  translúcidas, e um teste cobra isso. O ícone é convertido na hora da construção: nenhum binário
+  derivado entra no git.
+
+### O que ele não faz
+
+O link que o hook entrega (`http://localhost:4100/…`) continua abrindo no **navegador**: um app não
+tem como se apropriar de `http://` de um host. Para o link cair no app seria preciso um esquema
+próprio (`quality-gate://`) e o hook passar a usá-lo. Fica para quando fizer falta.
+
+`--remove` leva o app junto com o resto, e também o que o `WKWebView` guardou (o `localStorage` da
+janela), que fica em `~/Library` sob o bundle id.
 
 ## O que a tela mostra, e o que ela deliberadamente não mostra
 

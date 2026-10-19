@@ -9,6 +9,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aplicarEnv } from '../lib/env.mjs';
 import { caminhoSettings, lerSettings, jaRegistrados, outrosClones } from '../lib/gatilhos.mjs';
+import * as app from '../lib/app.mjs';
 
 // O `.env` entra antes de resolver a raiz: é lá que o portão da primeira abertura grava a pasta
 // escolhida, e sem isto o verificador conferia uma raiz diferente da que a tela usa.
@@ -147,6 +148,29 @@ class Verificar {
         return [AVISO, meus.length ? `hook parcial (${meus.length}/3)` : 'hook não registrado', detalhe];
     }
 
+    // O app guarda node, clone e commit no Info.plist: trocar de node ou dar `git pull` não o atualiza.
+    app() {
+        if (!app.suportado()) {
+            return [OK, 'app de Mac', 'só macOS — fora dele a tela abre no navegador'];
+        }
+        const e = app.estado(RAIZ);
+        if (!e.instalado || !e.meu) {
+            return [AVISO, e.instalado ? `app de Mac de outro clone (${e.clone})` : 'app de Mac não instalado',
+                app.swiftc() ? 'opcional: node instalacao/gatilhos.mjs --app'
+                    : 'opcional: pede o swiftc das Command Line Tools (xcode-select --install)'];
+        }
+        if (e.nodeExiste === false) {
+            return [AVISO, 'app de Mac', `o node gravado nele sumiu (${e.node}): node instalacao/gatilhos.mjs --app`];
+        }
+        if (e.porta !== e.portaDaTela) {
+            return [AVISO, 'app de Mac', `abre a porta ${e.porta}, e a tela sobe na ${e.portaDaTela}: node instalacao/gatilhos.mjs --app`];
+        }
+        if (e.desatualizado) {
+            return [AVISO, 'app de Mac', `o fonte do app mudou desde a construção (de ${e.commit}): node instalacao/gatilhos.mjs --app`];
+        }
+        return [OK, `app de Mac · porta ${e.porta}`, ''];
+    }
+
     porta() {
         const usada = this.cmd('lsof', ['-nP', '-iTCP:4100', '-sTCP:LISTEN']);
         return [usada ? AVISO : OK, 'porta 4100',
@@ -158,7 +182,7 @@ class Verificar {
             ['obrigatório', this.node()], ['obrigatório', this.git()], ['obrigatório', this.acorn()],
             ['obrigatório', this.workspace()],
             ['recomendado', this.gh()], ['recomendado', this.linters()],
-            ['opcional', this.envStg()], ['opcional', this.hook()], ['opcional', this.porta()]
+            ['opcional', this.envStg()], ['opcional', this.hook()], ['opcional', this.app()], ['opcional', this.porta()]
         ];
         let faltando = 0;
         let grupo = '';
