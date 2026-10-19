@@ -677,8 +677,22 @@ quê, o fluxo de decisões desenhado e o caminho antes × depois. **Sem o códig
 - **Qual aba abre:** a Whiteboard é a primeira e já nasce ativa, com ou sem quadro; clicar numa aba
   grava a escolha (`/api/preferencia`, chave `pref:aba-conteudo` na `meta` do `qualidade.db`), e a
   próxima abertura nasce nela. No banco e não no `localStorage` para valer igual no navegador e no app
-  do Mac, e embutida na casca para a página não piscar na outra aba. O traço anima uma vez por versão
-  do quadro, e só com a aba à vista.
+  do Mac, e embutida na casca para a página não piscar na outra aba.
+- **Animação:** cada parte pousa **quando entra na tela** (`IntersectionObserver`), e o diagrama só
+  então se desenha nó a nó. Disparada no carregamento, medida em 19/10: 66 animações rodavam com o
+  diagrama a 2.870 px do topo numa janela de 900, e tinham acabado quando alguém chegava nele. Uma vez
+  por versão do quadro; com "reduzir movimento" no sistema, nada anima. O fundo atrás do texto é liso
+  (o pontilhado atrapalhava a leitura); a grade fica só na área do diagrama.
+
+## Aviso quando o mago ou o juiz termina
+
+São minutos de corrida, e a tela costuma ficar atrás de outra janela. No fim de cada uma, o servidor
+mostra uma **notificação do macOS com som** ("🧙 O mago terminou", "⚖️ The Judge terminou", com o
+chamado e o veredito). Fica no servidor (`lib/notificacao.mjs`, chamado pelo `avisar()`) e não na
+página porque o navegador bloqueia som sem um clique recente. O texto do agente vai como argumento do
+`osascript`, nunca dentro do AppleScript. Fora do Mac não faz nada; `QUALIDADE_SEM_AVISO_DO_SISTEMA=1`
+desliga, e o `npm test` já liga isso. A primeira notificação pode pedir permissão em Ajustes →
+Notificações (aparece como "Script Editor").
 
 ## O estado fica num `qualidade.db`, não mais em JSON
 

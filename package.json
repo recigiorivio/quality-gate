@@ -12,7 +12,7 @@
     "indices": "node ferramentas/indices.mjs",
     "log": "node ferramentas/log.mjs",
     "banco": "node --disable-warning=ExperimentalWarning ferramentas/banco.mjs",
-    "test": "D=$(mktemp -d) && trap \"rm -rf $D\" EXIT INT TERM && QUALIDADE_ESTADO=$D node --disable-warning=ExperimentalWarning --test teste/*.mjs",
+    "test": "D=$(mktemp -d) && trap \"rm -rf $D\" EXIT INT TERM && QUALIDADE_ESTADO=$D QUALIDADE_SEM_AVISO_DO_SISTEMA=1 node --disable-warning=ExperimentalWarning --test teste/*.mjs",
     "tela": "playwright test",
     "tela-ui": "playwright test --ui",
     "tudo": "npm test && npm run tela"

@@ -26,6 +26,7 @@ import builds from './lib/builds.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { lerQuadro, abrirNoApp } from './lib/whiteboard.mjs';
+import { avisoDoSistema } from './lib/notificacao.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
 import { CONFIGS, comCaminhos } from './lib/configs.mjs';
@@ -564,6 +565,7 @@ class Servidor {
 
     // SSE: a tela aberta descobre sozinha que o diff mudou, sem ficar perguntando de 5 em 5 segundos.
     avisar(dados) {
+        avisoDoSistema(dados);
         const corpo = `data: ${JSON.stringify(dados)}\n\n`;
         for (const res of this.ouvintes) {
             try {

@@ -76,14 +76,22 @@ details.q-secao>summary{cursor:pointer;list-style:none}
 .q-sequencia ol,.q-dados ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px}
 .q-ator{font-weight:600}.q-seq-seta{margin:0 6px;color:var(--fraco)}.q-seq-rotulo{margin-left:8px;color:var(--fraco)}
 
-/* Chegada e traço, só na primeira vez que esta versão do quadro aparece. */
+/* Cada parte pousa quando entra na tela, e o diagrama se desenha nó a nó só então: disparado no
+   carregamento, o diagrama três telas abaixo já tinha terminado quando alguém chegava nele. */
 @media(prefers-reduced-motion:no-preference){
-  .q-anim .q-bloco{animation:q-pousa var(--q-pouso) var(--q-entrada) both;animation-delay:var(--d,0ms)}
-  .q-anim .q-no .q-no-forma{stroke-dasharray:1;animation:q-traca var(--q-traco) var(--q-entrada) both;animation-delay:var(--d,0ms)}
-  .q-anim .q-no .q-no-texto{animation:q-surge var(--q-rotulo) ease both;animation-delay:calc(var(--d,0ms) + 220ms)}
-  .q-anim .q-aresta:not(.q-tracejada){stroke-dasharray:1;animation:q-traca var(--q-linha-t) var(--q-entrada) both;animation-delay:var(--d,0ms)}
-  .q-anim .q-tracejada,.q-anim .q-rotulo-aresta{animation:q-surge var(--q-rotulo) ease both;animation-delay:var(--d,0ms)}
+  .q-espera{opacity:0}
+  .q-desenhar{animation:q-pousa var(--q-pouso) var(--q-entrada) both;animation-delay:var(--q-entra,0ms)}
+  .q-fluxo.q-desenhar{animation-duration:var(--q-traco)}
+  .q-desenhar .q-no .q-no-forma{stroke-dasharray:1;animation:q-traca var(--q-traco) var(--q-entrada) both;
+    animation-delay:calc(var(--q-entra,0ms) + var(--d,0ms))}
+  .q-desenhar .q-no .q-no-texto{animation:q-surge var(--q-rotulo) ease both;animation-delay:calc(var(--q-entra,0ms) + var(--d,0ms) + 220ms)}
+  .q-desenhar .q-aresta:not(.q-tracejada){stroke-dasharray:1;animation:q-linha var(--q-linha-t) var(--q-entrada) both;
+    animation-delay:calc(var(--q-entra,0ms) + var(--d,0ms))}
+  .q-desenhar .q-tracejada,.q-desenhar .q-rotulo-aresta{animation:q-surge var(--q-rotulo) ease both;
+    animation-delay:calc(var(--q-entra,0ms) + var(--d,0ms))}
 }
-@keyframes q-pousa{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes q-pousa{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 @keyframes q-traca{from{stroke-dashoffset:1;fill-opacity:0;opacity:.4}60%{fill-opacity:0}to{stroke-dashoffset:0;fill-opacity:1;opacity:1}}
 @keyframes q-surge{from{opacity:0}to{opacity:1}}
+/* A ponta da seta é marcador da própria linha: invisível até o traço começar, senão flutuava solta. */
+@keyframes q-linha{from{stroke-dashoffset:1;opacity:0}8%{opacity:1}to{stroke-dashoffset:0;opacity:1}}

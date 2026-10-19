@@ -293,9 +293,6 @@ function bloco(c, ctx) {
 
 export function quadroParaHtml(documento, { animar = false, linkDoId } = {}) {
     const ctx = { animar, linkDoId, fluxos: 0 };
-    const blocos = (Array.isArray(documento) ? documento : []).map((c, i) => {
-        const atraso = animar ? ` style="--d:${i * TEMPOS.tique}ms"` : '';
-        return `<div class="q-bloco"${atraso}>${bloco(c, ctx)}</div>`;
-    }).join('');
+    const blocos = (Array.isArray(documento) ? documento : []).map(c => bloco(c, ctx)).join('');
     return `<article class="quadro${animar ? ' q-anim' : ''}">${blocos}</article>`;
 }

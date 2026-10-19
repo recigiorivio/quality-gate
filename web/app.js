@@ -973,6 +973,26 @@ function pintarQuadro() {
     + (r.estado === 'app-fechado' ? '<button type="button" onclick="abrirWhiteboard(false)">Atualizar</button>' : '')
     + '<button type="button" onclick="abrirWhiteboard(true)">Abrir no Whiteboard ↗</button></div>'
     + quadroParaHtml(q.document, { animar, linkDoId: id => (window.LINEAR ? urlDoLinear(id) : null) });
+  if (animar) { revelarAoRolar(painel); }
+}
+
+const UNIDADES_DO_QUADRO = '.q-secao-titulo,.q-md,.q-aviso,.q-trecho,.q-codigo,.q-fluxo,.q-pilhas,.q-sequencia,.q-dados';
+
+// Cada parte anima ao entrar na tela; as que entram juntas chegam uma depois da outra.
+function revelarAoRolar(painel) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) { return; }
+  const observador = new IntersectionObserver(entradas => {
+    let ordem = 0;
+    for (const e of entradas.filter(x => x.isIntersecting)) {
+      e.target.style.setProperty('--q-entra', `${ordem++ * 90}ms`);
+      e.target.classList.replace('q-espera', 'q-desenhar');
+      observador.unobserve(e.target);
+    }
+  }, { threshold: 0.15 });
+  for (const unidade of painel.querySelectorAll(UNIDADES_DO_QUADRO)) {
+    unidade.classList.add('q-espera');
+    observador.observe(unidade);
+  }
 }
 
 // Sem foco, sobe o app em segundo plano e relê; com foco, abre este quadro na frente.
