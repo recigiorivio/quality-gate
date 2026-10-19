@@ -25,7 +25,7 @@ import sessoes from './lib/sessoes.mjs';
 import builds from './lib/builds.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
-import { lerQuadro, abrirNoApp, lerImagemGuardada } from './lib/whiteboard.mjs';
+import { lerQuadro, abrirNoApp } from './lib/whiteboard.mjs';
 import { avisoDoSistema } from './lib/notificacao.mjs';
 import { Dependencias } from './lib/dependencias.mjs';
 import { pagina } from './web/pagina.mjs';
@@ -1426,15 +1426,6 @@ class Servidor {
             }
             return this.emCacheAsync('dependencias', () => new Dependencias({ raiz: RAIZ, workspace: WORKSPACE, naTela: true }).listar(), 60000)
                 .then(r => this.json(res, r));
-        }
-        if (url.pathname === '/api/whiteboard-imagem') {
-            const imagem = lerImagemGuardada(q.get('id'));
-            if (!imagem) {
-                res.writeHead(404, { 'content-type': 'text/plain' });
-                return res.end('não encontrado');
-            }
-            res.writeHead(200, { 'content-type': imagem.tipo, 'cache-control': 'max-age=86400' });
-            return res.end(imagem.conteudo);
         }
         if (url.pathname === '/api/whiteboard-abrir') {
             const sessao = q.get('sessao') || '';
