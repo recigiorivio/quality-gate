@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { tmpdir } from 'node:os';
+import { tmpdir, devNull } from 'node:os';
 import { WORKSPACE } from '../lib/diff.mjs';
 import { ROTINA_FIM } from '../lib/configs.mjs';
 import { ehFimDeTrabalho } from '../lib/gatilhos.mjs';
@@ -93,10 +93,11 @@ class Gate {
     }
 
     // Se a tela local está no ar, o link basta e não sobra arquivo nenhum. Só cai para o HTML
-    // temporário quando o servidor não está rodando.
+    // temporário quando o servidor não está rodando. `curl` e não `nc`: o Windows não tem `nc`.
     _telaNoAr() {
         try {
-            execFileSync('nc', ['-z', '127.0.0.1', String(PORTA_TELA)], { timeout: 1500, stdio: 'ignore' });
+            execFileSync('curl', ['-s', '-o', devNull, '-m', '1.5', `http://127.0.0.1:${PORTA_TELA}/favicon.svg`],
+                { timeout: 2500, stdio: 'ignore' });
             return true;
         } catch {
             return false;

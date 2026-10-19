@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { devNull } from 'node:os';
 import { WORKSPACE } from '../lib/diff.mjs';
 import {
     caminhoSettings, lerSettings, gravarSettings, comGatilhos, semGatilhos,
@@ -20,6 +21,7 @@ import {
 } from '../lib/gatilhos.mjs';
 import * as servico from '../lib/servico.mjs';
 import * as app from '../lib/app.mjs';
+import * as appWindows from '../lib/app-windows.mjs';
 
 const PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 const SETTINGS = caminhoSettings(WORKSPACE);
@@ -28,6 +30,9 @@ const args = process.argv.slice(2);
 const tem = f => args.includes(f);
 const portaPedida = (args.find(a => a.startsWith('--porta=')) || '').split('=')[1];
 const porta = Number(portaPedida || servico.PORTA_PADRAO);
+
+// Mesma interface nos dois: Swift + WebKit no Mac, lançador PowerShell + Edge em modo app no Windows.
+const appDaPlataforma = appWindows.suportado() ? appWindows : app;
 
 function portaDoApp() {
     return portaPedida ? porta : app.portaDaTela(PROJETO);
@@ -38,9 +43,11 @@ function curto(caminho) {
     return r.startsWith('..') ? caminho : r;
 }
 
+// `curl` e não `nc`: o Windows não tem `nc`, e o `curl` vem nele desde o Windows 10.
 function telaNoAr() {
     try {
-        execFileSync('nc', ['-z', '127.0.0.1', String(porta)], { timeout: 2000, stdio: 'ignore' });
+        execFileSync('curl', ['-s', '-o', devNull, '-m', '1.5', `http://127.0.0.1:${porta}/favicon.svg`],
+            { timeout: 2500, stdio: 'ignore' });
         return true;
     } catch {
         return false;
@@ -73,7 +80,7 @@ function status() {
         }
     }
     console.log(`tela        ${telaNoAr() ? `no ar na ${porta}` : `fora do ar (${COMANDO_SUBIR} sobe)`}`);
-    const a = app.suportado() ? app.estado(PROJETO) : null;
+    const a = appDaPlataforma.suportado() ? appDaPlataforma.estado(PROJETO) : null;
     console.log(`app         ${descreverApp(a)}`);
     console.log(`rotinas     ${md.length ? md.map(c => curto(c.absoluto)).join(', ') : 'nenhuma plantada'}`);
     return { settings, meus, servicoEstado: s, appEstado: a, md };
@@ -82,7 +89,7 @@ function status() {
 // Cada aviso aqui é um jeito de o app abrir e não servir a tela, sem nada no app que explique antes.
 function descreverApp(a) {
     if (!a) {
-        return 'indisponível (só macOS)';
+        return 'indisponível neste sistema (há app para macOS e Windows)';
     }
     if (!a.instalado) {
         return 'não instalado';
@@ -103,18 +110,18 @@ function descreverApp(a) {
 
 function construirApp() {
     const portaApp = portaDoApp();
-    console.log(`  destino ${app.caminhoApp()}`);
+    console.log(`  destino ${appDaPlataforma.caminhoInstalado()}`);
     console.log(`  node    ${process.execPath}`);
     console.log(`  porta   ${portaApp}`);
     console.log('  compilando…');
-    const r = app.construir(PROJETO, { porta: portaApp });
+    const r = appDaPlataforma.construir(PROJETO, { porta: portaApp });
     if (!r.ok) {
         console.log(`  ⚠ ${r.erro}`);
         return false;
     }
     console.log(`✓ ${r.caminho} em ${r.segundos}s${r.icone ? '' : ' (sem ícone: o sips não converteu o svg)'}`
         + `${r.assinado ? '' : ' (sem assinatura ad-hoc)'}`);
-    console.log(`  abra pelo Launchpad/Spotlight, ou: open -a "${app.NOME}"`);
+    console.log(`  ${appDaPlataforma.COMO_ABRIR}`);
     return true;
 }
 
@@ -186,18 +193,18 @@ async function adicionar({ settings, meus, servicoEstado, appEstado }) {
         }
     }
 
-    console.log('\n── 3. App para Mac ────────────────────────────────────────────');
-    if (!app.suportado()) {
-        console.log('indisponível fora do macOS — pulando');
+    console.log('\n── 3. App (macOS ou Windows) ──────────────────────────────────');
+    if (!appDaPlataforma.suportado()) {
+        console.log('indisponível neste sistema — há app para macOS e Windows; pulando');
     } else if (appEstado.instalado && appEstado.meu && !appEstado.desatualizado && appEstado.nodeExiste
         && appEstado.porta === portaDoApp()) {
         console.log(`já instalado (${curto(appEstado.caminho)}), nada a fazer — --app reconstrói`);
     } else if (appEstado.instalado && !appEstado.nosso) {
         console.log(`${appEstado.caminho} existe e não é o quality-gate — não mexo`);
-    } else if (!app.swiftc()) {
-        console.log('sem swiftc: instale as Command Line Tools (xcode-select --install) e rode --app');
+    } else if (appDaPlataforma.requisitoFaltando()) {
+        console.log(`${appDaPlataforma.requisitoFaltando()} — resolva e rode --app`);
     } else {
-        console.log('A tela numa janela própria, com ícone no Dock, em vez de uma aba do navegador.');
+        console.log('A tela numa janela própria, com ícone (Dock ou menu Iniciar), em vez de uma aba do navegador.');
         console.log('Se a tela estiver fora do ar o app a sobe: pelo LaunchAgent, se houver; senão');
         console.log('ele mesmo, e aí o servidor para quando o app fecha.');
         if (appEstado.instalado && !appEstado.meu) {
@@ -281,7 +288,7 @@ async function remover({ settings, meus, servicoEstado, appEstado, md }) {
         console.log(`✓ serviço removido${r.descarregou ? '' : ' (launchctl já não o tinha carregado)'}`);
     }
     if (temApp) {
-        const r = app.remover(PROJETO);
+        const r = appDaPlataforma.remover(PROJETO);
         console.log(r.removido ? '✓ app removido' : `· app não removido: ${r.motivo}`);
     }
     for (const rel of removerPlantados(WORKSPACE)) {
@@ -301,7 +308,7 @@ if (tem('--add')) {
     saida = await remover(atual);
 } else if (tem('--app')) {
     console.log('\n── App para Mac ───────────────────────────────────────────────');
-    saida = app.suportado() ? (construirApp() ? 0 : 1) : 1;
+    saida = appDaPlataforma.suportado() ? (construirApp() ? 0 : 1) : 1;
 } else {
     console.log('\n--add para instalar (pergunta gatilhos, serviço e app separadamente)');
     console.log('--app (re)constrói só o app de Mac — depois de trocar de node pelo nvm, ou de porta');

@@ -10,7 +10,7 @@
 // uso:
 //   node ferramentas/comparacao.mjs listar [CHAMADO]
 //   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --pr=856 [--resolvido|--aberto]
-//   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --stage [--branch=X]
+//   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --stage [--branch=X]   (contra a integração: develop, stage…)
 //   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --branch=X --base=origin/main
 //   node ferramentas/comparacao.mjs remover <CHAMADO> <projeto>
 
@@ -80,7 +80,7 @@ if (acao === 'listar') {
             morrer(`não consegui ler a PR #${pr} em ${projeto}: ${(e.stderr || e.message).toString().trim().split('\n')[0]}`);
         }
     } else {
-        decisao = { via: contraStage ? 'stage' : 'branch', branch: branch || chamado, base: flag('base') || 'origin/stage' };
+        decisao = { via: contraStage ? 'stage' : 'branch', branch: branch || chamado, base: flag('base') || comparacao.integracao(projeto) };
     }
     // Sem `--resolvido`/`--aberto`, o estado da PR responde; fora da PR não há o que inferir, então
     // fica `aberto` — dizer "resolvido" sem ninguém ter dito é o palpite que a gente tirou daqui.
@@ -111,7 +111,7 @@ if (acao === 'listar') {
     console.log(`uso:
   node ferramentas/comparacao.mjs listar [CHAMADO]
   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --pr=856 [--resolvido|--aberto]
-  node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --stage [--branch=X] [--aberto]
+  node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --stage [--branch=X] [--aberto]   (contra a integração do repo)
   node ferramentas/comparacao.mjs definir <CHAMADO> <projeto> --branch=X --base=origin/main
      --nota="por que esta é a comparação certa"
   node ferramentas/comparacao.mjs remover <CHAMADO> <projeto>

@@ -679,8 +679,8 @@ async function abrirChamado(chamado, projetoPedido = null) {
          Aqui a tela é para ver — as decisões já gravadas valem igual.</div>`
     : `<button class="tr-agente" id="btn-agente" onclick="pedirAoAgente('${chamado}')"
               title="roda o Claude para decidir a comparação certa de cada repo e recarrega o chamado — leva minutos">
-        <span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>
-      </button>`}
+        <span class="tr-cog" aria-hidden="true">🧙</span><span>Pergunte ao mago</span>
+      </button>${botaoJuiz(chamado)}`}
     </div>`;
   for (const [secao, id] of [['branches', 'tr-dobra-branches'], ['prs', 'tr-prs']]) {
     const el = document.getElementById(id);
@@ -1178,6 +1178,9 @@ function escutarEventos() {
       avisarNaTela('versão nova da tela — recarregando');
       return setTimeout(() => location.reload(), 400);
     }
+    if (dados.tipo === 'juiz') {
+      return aoEventoDoJuiz(dados);
+    }
     if (dados.tipo === 'agente') {
       const p = document.getElementById('pa-passo');
       if (p && dados.passo) { p.textContent = `passo ${dados.passo}`; }
@@ -1285,7 +1288,7 @@ function renderModalEstado(c) {
     const marca = { ok: '✓', aberto: '●', nada: '✗' }[st];
     const onde = !d ? '<i>sem decisão — a tela usa o palpite local</i>'
       : d.via === 'pr' ? `PR <b>#${d.pr}</b> → ${esc(d.destino || 'base')}`
-        : `${esc(d.branch || '')} × ${esc(d.base || 'origin/stage')}`;
+        : `${esc(d.branch || '')} × ${esc(d.base || 'a integração')}`;
     return `<tr class="me-${st}" onclick="irParaRepo('${r.projeto}');document.getElementById('modal-estado').close()">
       <td class="me-marca">${marca}</td>
       <td class="me-repo">${esc(r.projeto)}<div class="me-branch">${esc(r.branch || c.chamado)}</div></td>
@@ -1362,7 +1365,7 @@ function redesenharAgenteNoTopo(fim = null) {
   if (!alvo) { return; }
   if (estadoAgente.rodando) {
     alvo.className = 'cab-agente';
-    alvo.innerHTML = `<span class="giro" aria-hidden="true"></span>agente decidindo${
+    alvo.innerHTML = `<span class="giro" aria-hidden="true"></span>mago decidindo${
       estadoAgente.passos ? ` · passo ${estadoAgente.passos}` : ''}`;
     return;
   }
@@ -1391,7 +1394,7 @@ async function pedirAoAgente(chamado) {
   if (b?.classList.contains('rodando')) { return; }
   if (b) {
     b.classList.add('rodando');
-    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>agente decidindo…</span>';
+    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>mago decidindo…</span>';
   }
   estadoAgente = { rodando: chamado, passos: 0 };
   redesenharEstado();
@@ -1412,7 +1415,7 @@ function marcarBotaoAgenteRodando() {
   const b = document.getElementById('btn-agente');
   if (b && !b.classList.contains('rodando')) {
     b.classList.add('rodando');
-    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>agente decidindo…</span>';
+    b.innerHTML = '<span class="giro" aria-hidden="true"></span><span>mago decidindo…</span>';
   }
 }
 
@@ -1420,8 +1423,184 @@ function pararBotaoAgente() {
   const b = document.getElementById('btn-agente');
   if (b) {
     b.classList.remove('rodando');
-    b.innerHTML = '<span class="tr-cog" aria-hidden="true">🧙</span><span>pedir ao agente</span>';
+    b.innerHTML = '<span class="tr-cog" aria-hidden="true">🧙</span><span>Pergunte ao mago</span>';
   }
+}
+
+// ---------- The Judge: a skill the-judge sobre a PR do repo aberto, sem publicar nada ----------
+
+// O que o modal mostra: a corrida viva (passos pelo SSE) ou o último julgamento gravado do par
+// chamado × repo. Abrir mostra o gravado antes de rodar de novo — são minutos de modelo.
+let juizAberto = null;
+
+const VEREDITOS = {
+  APPROVE: ['aprova', 'ok'],
+  COMMENT: ['comenta', 'aviso'],
+  REQUEST_CHANGES: ['pede mudanças', 'erro']
+};
+
+function botaoJuiz(chamado) {
+  return window.JUIZ ? `<button class="tr-agente tr-juiz" id="btn-juiz" onclick="perguntarAoJuiz('${chamado}')"
+      title="revisa a PR do repo aberto com a skill the-judge e mostra aqui — nada é publicado nem commitado">
+      <span class="tr-cog" aria-hidden="true">⚖️</span><span>Pergunte ao The Judge</span></button>` : '';
+}
+
+function marcarBotaoJuiz(rodando) {
+  const b = document.getElementById('btn-juiz');
+  if (b) {
+    b.classList.toggle('rodando', rodando);
+    b.innerHTML = rodando
+      ? '<span class="giro" aria-hidden="true"></span><span>juiz julgando…</span>'
+      : '<span class="tr-cog" aria-hidden="true">⚖️</span><span>Pergunte ao The Judge</span>';
+  }
+}
+
+async function perguntarAoJuiz(chamado) {
+  const projeto = atual?.projeto;
+  if (!projeto) {
+    return avisarNaTela('abra um repo do chamado primeiro');
+  }
+  juizAberto = { chamado, projeto, carregando: true };
+  abrirModalJuiz();
+  const r = await api('/api/juiz-resultado', { chamado, projeto });
+  const meu = r.rodando && r.rodando.chamado === chamado && r.rodando.projeto === projeto;
+  juizAberto = {
+    chamado, projeto, rodando: Boolean(meu), outro: r.rodando && !meu ? r.rodando : null,
+    eventos: r.eventos || [], resultado: r.resultado
+  };
+  if (!juizAberto.rodando && !juizAberto.outro && !juizAberto.resultado) {
+    return julgarDeNovo();
+  }
+  desenharModalJuiz();
+}
+
+async function julgarDeNovo() {
+  const { chamado, projeto } = juizAberto;
+  juizAberto = { ...juizAberto, rodando: true, eventos: [], erro: null };
+  desenharModalJuiz();
+  marcarBotaoJuiz(true);
+  const r = await api('/api/juiz', { chamado, projeto });
+  if (!r.ok) {
+    juizAberto = { ...juizAberto, rodando: false, erro: r.erro };
+    marcarBotaoJuiz(false);
+    desenharModalJuiz();
+  }
+}
+
+function aoEventoDoJuiz(d) {
+  marcarBotaoJuiz(d.fase !== 'fim');
+  const meu = juizAberto && juizAberto.chamado === d.chamado && juizAberto.projeto === d.projeto;
+  if (!meu || !document.getElementById('modal-juiz')) {
+    if (d.fase === 'fim') {
+      avisarNaTela(d.ok ? `The Judge terminou ${d.projeto}: ${d.veredito}` : `The Judge: ${d.texto}`);
+    }
+    return;
+  }
+  if (d.fase === 'fim') {
+    api('/api/juiz-resultado', { chamado: d.chamado, projeto: d.projeto }).then(r => {
+      juizAberto = { ...juizAberto, rodando: false, eventos: [], resultado: r.resultado, erro: d.ok ? null : d.texto };
+      desenharModalJuiz();
+    });
+    return;
+  }
+  juizAberto.rodando = true;
+  juizAberto.eventos = (juizAberto.eventos || []).concat({ passo: d.passo, ferramenta: d.ferramenta, texto: d.texto });
+  desenharModalJuiz();
+}
+
+function abrirModalJuiz() {
+  document.getElementById('modal-juiz')?.remove();
+  const m = document.createElement('dialog');
+  m.id = 'modal-juiz';
+  m.addEventListener('click', e => { if (e.target === m) { m.close(); } });
+  m.addEventListener('close', () => m.remove());
+  document.body.appendChild(m);
+  desenharModalJuiz();
+  m.showModal();
+}
+
+function desenharModalJuiz() {
+  const m = document.getElementById('modal-juiz');
+  if (!m || !juizAberto) {
+    return;
+  }
+  m.innerHTML = renderModalJuiz(juizAberto);
+  const log = m.querySelector('.ju-log');
+  if (log) {
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function renderModalJuiz(j) {
+  const r = j.resultado;
+  const f = !j.rodando && r?.ok ? r.findings : null;
+  const v = f && VEREDITOS[f.verdict];
+  let corpo;
+  if (j.carregando) {
+    corpo = girando(120);
+  } else if (j.outro) {
+    corpo = `<p class="vazio">O juiz está julgando ${esc(j.outro.chamado)} em ${esc(j.outro.projeto)}. Uma corrida por vez — abra de novo quando terminar.</p>`;
+  } else if (j.rodando) {
+    corpo = renderProgressoJuiz(j.eventos || []);
+  } else if (j.erro || (r && !r.ok)) {
+    corpo = `<p class="ju-erro">${esc(j.erro || r.erro)}</p>`;
+  } else if (f) {
+    corpo = renderJulgamento(r);
+  } else {
+    corpo = '<p class="vazio">Nenhum julgamento ainda.</p>';
+  }
+  const meta = r && !j.rodando
+    ? [`PR #${r.pr.numero}`, r.pr.estado?.toLowerCase(), `${r.segundos}s`, esc(r.modelo || ''),
+      new Date(r.fim).toLocaleString('pt-BR')].filter(Boolean).join(' · ')
+    : 'a PR do chamado neste repo, revisada pela skill the-judge';
+  return `<div class="me-cabeca">
+      <div><div class="me-titulo">⚖️ The Judge${v ? ` <span class="ju-veredito v-${v[1]}">${v[0]} · ${esc(f.verdict)}</span>` : ''}</div>
+        <div class="me-sub">${esc(j.projeto)} · ${meta}</div></div>
+      <button class="pa-fechar" onclick="document.getElementById('modal-juiz').close()" title="fechar (Esc)">×</button>
+    </div>
+    <div class="ma-corpo">${corpo}</div>
+    <div class="ma-pe">
+      <span>Nada foi publicado no GitHub nem commitado: o juiz roda só com leitura.</span>
+      ${f ? '<button class="me-copiar" onclick="copiarJulgamento()">copiar</button>' : ''}
+      ${j.rodando || j.outro || j.carregando ? '' : '<button class="me-copiar" onclick="julgarDeNovo()">julgar de novo</button>'}
+    </div>`;
+}
+
+function renderProgressoJuiz(eventos) {
+  return `<div class="ju-andando"><span class="giro" aria-hidden="true"></span>julgando — leva alguns minutos; os passos aparecem aqui</div>
+    <div class="me-log ju-log">${eventos.map(e => `<div class="me-ev">
+      <span class="me-ev-passo">${e.passo || ''}</span>
+      ${e.ferramenta ? `<span class="me-ev-ferr">${esc(e.ferramenta)}</span>` : '<span></span>'}
+      <pre class="me-ev-texto">${esc(e.texto || '')}</pre></div>`).join('')}</div>`;
+}
+
+function renderJulgamento(r) {
+  const f = r.findings;
+  const linkDoId = id => (window.LINEAR ? urlDoLinear(id) : null);
+  const portao = !r.gate ? ''
+    : r.gate.ok ? '<div class="ju-gate ok">✓ passou no portão da skill</div>'
+      : `<details class="ju-gate erro"><summary>✗ o portão da skill reprovou, depois de ${r.gate.tentativas} tentativa(s)</summary>
+           <pre>${esc(r.gate.saida)}</pre></details>`;
+  const achados = (f.findings || []).map(a => `<div class="ju-achado">
+      <div class="ju-onde">${a.id ? `<b>${esc(a.id)}</b>` : ''}<code>${esc(a.path || '')}${a.line ? `:${a.line}` : ''}</code>
+        <span class="ju-sev">${esc(a.severity || '')}</span></div>
+      <div class="ma-texto">${mdParaHtml(a.body || '', linkDoId)}</div>
+      ${(a.evidence || []).length ? `<div class="ju-evid">${a.evidence.map(ev => /^https:\/\//.test(ev.ref || '')
+    ? `<a href="${esc(ev.ref)}" target="_blank" rel="noopener">${esc(ev.ref)}</a>`
+    : `<code>${esc(ev.type || '')}: ${esc(ev.ref || '')}</code>`).join(' · ')}</div>` : ''}
+    </div>`).join('');
+  return `${portao}<div class="ma-texto">${mdParaHtml(f.summary || '', linkDoId)}</div>
+    ${achados ? `<h3 class="ju-titulo">Comentários de linha (${f.findings.length})</h3>${achados}` : ''}`;
+}
+
+async function copiarJulgamento() {
+  const f = juizAberto?.resultado?.findings;
+  if (!f) {
+    return;
+  }
+  const linhas = (f.findings || []).map(a => `- ${a.path || ''}${a.line ? `:${a.line}` : ''} — ${a.body || ''}`);
+  await navigator.clipboard.writeText([f.summary || '', linhas.length ? '\n## Comentários de linha\n' : '', ...linhas].join('\n'));
+  avisarNaTela('julgamento copiado');
 }
 
 // Console de progresso. Sem ele o único retorno seria a tela mudando lá na frente, sem explicação.
@@ -1635,7 +1814,7 @@ boasVindas().then(pendente => {
   }
 });
 
-// ---------- implantação: o que vai de stage para main ----------
+// ---------- implantação: o que vai da integração para produção ----------
 
 const urlDoLinear = id => (window.LINEAR ? `https://linear.app/${window.LINEAR}/issue/${id}` : '#');
 
@@ -1673,7 +1852,7 @@ async function carregarImplantacao() {
   }
 }
 
-// A fila inteira sai de `origin/main` e `origin/stage`, que são cópias locais. Enquanto ninguém
+// A fila inteira sai dos dois refs do par de cada repo, que são cópias locais. Enquanto ninguém
 // buscar, ela é fiel ao `.git` e mentirosa sobre o GitHub — e as duas coisas têm exatamente a mesma
 // aparência. Este carimbo é a única diferença visível entre elas.
 function carimboDaBusca() {
@@ -1835,7 +2014,7 @@ async function detalharRepo(projeto) {
 }
 
 // Reusa o visualizador de diff inteiro: ele já aceita base e alvo arbitrários, então o release é
-// só outra comparação — merge-base(main, stage) contra stage.
+// só outra comparação — merge-base(destino, origem) contra a origem.
 // O resumo do release vai para a trilha, como o metadado do chamado vai na outra visão: o centro
 // fica com os commits e o diff, que é o que precisa de largura.
 function desenharTrilhaImplantacao(d) {
@@ -1950,7 +2129,8 @@ async function copiarAnalise() {
 async function abrirPrDeRelease(projeto) {
   const d = filaImplantacao.find(f => f.projeto === projeto)?.detalhe;
   const resumo = d ? `${d.commits} commits, ${d.arquivos} arquivos, ${d.ids.length} chamado(s)` : '';
-  if (!confirm(`Abrir a PR de release em ${projeto}?\n\nstage → main\n${resumo}\n\n`
+  const par = d ? `${d.origem} → ${d.destino}`.replace(/origin\//g, '') : '';
+  if (!confirm(`Abrir a PR de release em ${projeto}?\n\n${par}\n${resumo}\n\n`
       + 'Isto cria uma pull request de verdade no GitHub.')) {
     return;
   }
@@ -2078,10 +2258,10 @@ async function analisarImplantacao() {
 // ---------- as duas seções da barra ----------
 
 // Três visões na mesma barra: chamados (o trabalho de agora), implantação (o acumulado indo para
-// main) e configurações. O título e o pé acompanham, e a trilha só existe na de chamados.
+// produção) e configurações. O título e o pé acompanham, e a trilha só existe na de chamados.
 const TITULOS = {
   chamados: ['🧙', 'Magias do Mago', 'conferência por chamado'],
-  implantacao: ['🚀', 'Implantação', 'o que vai de stage para main'],
+  implantacao: ['🚀', 'Implantação', 'o que vai para produção'],
   config: ['⚙', 'Configurações', 'as rotinas que eu sigo']
 };
 
@@ -2320,7 +2500,7 @@ function desenharRepos(detectadoEm) {
     <div class="repos-novo">
       <span class="rn-rot">Adicionar à mão</span>
       <input id="novo-repo" placeholder="pasta do repositório" spellcheck="false">
-      <input id="novo-origem" placeholder="origin/stage" spellcheck="false">
+      <input id="novo-origem" placeholder="origin/develop" spellcheck="false">
       <span class="rn-seta" aria-hidden="true">→</span>
       <input id="novo-destino" placeholder="origin/main" spellcheck="false">
       <button onclick="adicionarRepo()">adicionar</button>
@@ -2341,7 +2521,7 @@ function linhaDeRepo(r, i) {
     <td class="c-nome">${esc(r.projeto)}</td>
     <td class="c-par">
       <span class="par-campos">
-        <input value="${esc(r.origem || '')}" placeholder="origin/stage" spellcheck="false"
+        <input value="${esc(r.origem || '')}" placeholder="origin/develop" spellcheck="false"
           onchange="mexerNoRepo(${i}, 'origem', this.value)">
         <span class="par-seta" aria-hidden="true">→</span>
         <input value="${esc(r.destino || '')}" placeholder="origin/main" spellcheck="false"
@@ -2431,7 +2611,7 @@ function adicionarRepo() {
   if (catalogoRepos.some(r => r.projeto === projeto)) {
     return avisarNaTela(`${projeto} já está na lista`);
   }
-  const origem = document.getElementById('novo-origem').value.trim() || 'origin/stage';
+  const origem = document.getElementById('novo-origem').value.trim() || 'origin/develop';
   const destino = document.getElementById('novo-destino').value.trim() || 'origin/main';
   catalogoRepos.push({ projeto, origem, destino, fonte: 'manual', ativo: true, motivo: null, jaSalvo: false });
   reposEditados.add(projeto);
@@ -2751,6 +2931,7 @@ async function salvarBoasVindas() {
 Object.assign(window, {
   abrir, abrirChamado, alternarMenu, pintar, verInteiro,
   recarregar, ocultar, mostrar, tirarPonto, pedirAoAgente, irParaRepo, abrirModalEstado, copiarCorrida,
+  perguntarAoJuiz, julgarDeNovo, copiarJulgamento,
   alternarRepo, abrirImplantacao, analisarImplantacao, abrirPrDeRelease, verCommit, verRelease,
   abrirModalAnalise, copiarAnalise, atualizarImplantacao,
   copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,

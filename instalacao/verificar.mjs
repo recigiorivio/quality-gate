@@ -9,7 +9,8 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aplicarEnv } from '../lib/env.mjs';
 import { caminhoSettings, lerSettings, jaRegistrados, outrosClones } from '../lib/gatilhos.mjs';
-import * as app from '../lib/app.mjs';
+import * as appMac from '../lib/app.mjs';
+import * as appWindows from '../lib/app-windows.mjs';
 
 // O `.env` entra antes de resolver a raiz: é lá que o portão da primeira abertura grava a pasta
 // escolhida, e sem isto o verificador conferia uma raiz diferente da que a tela usa.
@@ -148,30 +149,34 @@ class Verificar {
         return [AVISO, meus.length ? `hook parcial (${meus.length}/3)` : 'hook não registrado', detalhe];
     }
 
-    // O app guarda node, clone e commit no Info.plist: trocar de node ou dar `git pull` não o atualiza.
+    // O app guarda node, clone e porta na construção: trocar de node ou dar `git pull` não o atualiza.
     app() {
+        const app = appWindows.suportado() ? appWindows : appMac;
         if (!app.suportado()) {
-            return [OK, 'app de Mac', 'só macOS — fora dele a tela abre no navegador'];
+            return [OK, 'app', 'há app para macOS e Windows — aqui a tela abre no navegador'];
         }
         const e = app.estado(RAIZ);
         if (!e.instalado || !e.meu) {
-            return [AVISO, e.instalado ? `app de Mac de outro clone (${e.clone})` : 'app de Mac não instalado',
-                app.swiftc() ? 'opcional: node instalacao/gatilhos.mjs --app'
-                    : 'opcional: pede o swiftc das Command Line Tools (xcode-select --install)'];
+            const falta = app.requisitoFaltando();
+            return [AVISO, e.instalado ? `app de outro clone (${e.clone})` : 'app não instalado',
+                falta ? `opcional: ${falta}` : 'opcional: node instalacao/gatilhos.mjs --app'];
         }
         if (e.nodeExiste === false) {
-            return [AVISO, 'app de Mac', `o node gravado nele sumiu (${e.node}): node instalacao/gatilhos.mjs --app`];
+            return [AVISO, 'app', `o node gravado nele sumiu (${e.node}): node instalacao/gatilhos.mjs --app`];
         }
         if (e.porta !== e.portaDaTela) {
-            return [AVISO, 'app de Mac', `abre a porta ${e.porta}, e a tela sobe na ${e.portaDaTela}: node instalacao/gatilhos.mjs --app`];
+            return [AVISO, 'app', `abre a porta ${e.porta}, e a tela sobe na ${e.portaDaTela}: node instalacao/gatilhos.mjs --app`];
         }
         if (e.desatualizado) {
-            return [AVISO, 'app de Mac', `o fonte do app mudou desde a construção (de ${e.commit}): node instalacao/gatilhos.mjs --app`];
+            return [AVISO, 'app', `o fonte do app mudou desde a construção (de ${e.commit}): node instalacao/gatilhos.mjs --app`];
         }
-        return [OK, `app de Mac · porta ${e.porta}`, ''];
+        return [OK, `app · porta ${e.porta}`, ''];
     }
 
     porta() {
+        if (process.platform === 'win32') {
+            return [OK, 'porta 4100', 'não conferida no Windows (sem lsof) — se estiver ocupada, a tela avisa ao subir'];
+        }
         const usada = this.cmd('lsof', ['-nP', '-iTCP:4100', '-sTCP:LISTEN']);
         return [usada ? AVISO : OK, 'porta 4100',
             usada ? 'já em uso: suba com PORT=4200 npm start' : ''];

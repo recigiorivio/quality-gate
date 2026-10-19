@@ -9,6 +9,7 @@ import { readdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WORKSPACE } from '../lib/diff.mjs';
+import { INTEGRACAO, PRODUCAO, INTERMEDIARIAS } from '../lib/branches.mjs';
 
 const RAIZ_PROJETO = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -16,7 +17,6 @@ const PADRAO_CHAMADO = /^[A-Z]{2,5}-\d+$/;
 // A base de cada repo é OBSERVADA (para onde os PRs recentes mesclaram). Este mapa é só a queda
 // quando não há PR mesclado para consultar, e vive num arquivo porque é do seu time, não do projeto:
 // `bases.json` no formato { "nome-do-repo": "branch-base" }.
-const BASE_PADRAO = process.env.QUALIDADE_BASE_PADRAO || 'main';
 const BASE_POR_PROJETO = (() => {
     try {
         return JSON.parse(readFileSync(join(RAIZ_PROJETO, 'bases.json'), 'utf8'));
@@ -53,13 +53,13 @@ class Contexto {
             .map(d => d.name);
     }
 
-    // A base varia por projeto e não deve ser presumida: vale para onde os PRs recentes mesclaram.
-    // O mapa fixo é só a queda quando não há PR mesclado para consultar.
+    // A base varia por projeto e não deve ser presumida: vale para onde as branches de CHAMADO
+    // mesclaram. PR de manutenção e base apagada ficam fora — ver `_contaParaBase`.
     baseDe(projeto) {
-        const bruto = this.cmd('gh', ['pr', 'list', '--state', 'merged', '--limit', '8',
-            '--json', 'baseRefName'], join(WORKSPACE, projeto));
+        const bruto = this.cmd('gh', ['pr', 'list', '--state', 'merged', '--limit', '30',
+            '--json', 'baseRefName,headRefName'], join(WORKSPACE, projeto));
         try {
-            const lista = bruto ? JSON.parse(bruto) : [];
+            const lista = (bruto ? JSON.parse(bruto) : []).filter(p => this._contaParaBase(projeto, p)).slice(0, 8);
             if (lista.length) {
                 const contagem = {};
                 for (const { baseRefName } of lista) {
@@ -79,13 +79,26 @@ class Contexto {
         } catch {
             // sem gh ou sem PR: cai no mapa
         }
-        const preferida = BASE_POR_PROJETO[projeto] || BASE_PADRAO;
-        for (const b of [preferida, BASE_PADRAO, 'stage', 'main', 'master']) {
-            if (this.git(projeto, 'rev-parse', '--verify', `origin/${b}`)) {
-                return { nome: b, origem: 'presumida — sem PR mesclado para conferir' };
+        const quedas = [BASE_POR_PROJETO[projeto], process.env.QUALIDADE_BASE_PADRAO, ...INTEGRACAO, ...PRODUCAO].filter(Boolean);
+        for (const b of quedas) {
+            if (this._existe(projeto, b)) {
+                return { nome: b, origem: 'presumida — sem PR de chamado mesclado para conferir' };
             }
         }
         return null;
+    }
+
+    // Só branch de chamado SEM sufixo de destino: `UND-2030-main` é hotfix mandado de propósito, e
+    // `chore/rename-stage-develop-main` (a migração de 19/10/2026) foi para `main` e `develop` juntos.
+    _contaParaBase(projeto, pr) {
+        const head = pr.headRefName || '';
+        const deChamado = /(^|\/)[A-Za-z]{2,5}-\d{2,}(-|\/|$)/.test(head);
+        const comDestino = [...INTEGRACAO, ...PRODUCAO, ...INTERMEDIARIAS].some(b => head.toLowerCase().endsWith(`-${b}`));
+        return deChamado && !comDestino && this._existe(projeto, pr.baseRefName);
+    }
+
+    _existe(projeto, branch) {
+        return Boolean(branch) && this.git(projeto, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`) !== null;
     }
 
     // Descobre o chamado pelas branches: só entra no relatório repo que está na branch dele.

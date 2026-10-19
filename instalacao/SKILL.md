@@ -123,9 +123,10 @@ necessariamente quer a outra:
 2. **Instalar o LaunchAgent?** — é o que mantém a tela no ar entre reboots e fechamentos de
    terminal. Sem ele, a tela só existe enquanto alguém segura um `npm start`.
 
-3. **Instalar o app?** — a tela numa janela própria, em `~/Applications/Quality Gate.app`. Só no
-   macOS, e pede o `swiftc` das Command Line Tools: sem ele, **entregue `xcode-select --install` e
-   siga** — o app é opcional, a instalação não depende dele. `--app` reconstrói só o app, e é o que
+3. **Instalar o app?** — a tela numa janela própria. No macOS é `~/Applications/Quality Gate.app` e
+   pede o `swiftc` das Command Line Tools: sem ele, **entregue `xcode-select --install` e siga**. No
+   Windows é um atalho no menu Iniciar que abre o Edge em modo app. O app é opcional; a instalação
+   não depende dele. `--app` reconstrói só o app, e é o que
    a pessoa roda depois de trocar de node pelo nvm ou de porta.
 
 Rodar sem terminal interativo responde **não** às três: é para nenhum agente instalar serviço ou app

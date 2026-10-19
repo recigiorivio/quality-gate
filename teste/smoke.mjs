@@ -1062,16 +1062,16 @@ test('a detecção acha par de branches fora do stage→main', async () => {
     assert.equal(um.origem, 'origin/desenv', 'o par deste repo não é stage→main, e a detecção tem que ver isso');
 });
 
-// `origin/HEAD` é o padrão declarado pelo remoto, mas em 4 repos daqui ele aponta para `stage`.
-// Aceitar isso fazia a branch de integração virar DESTINO, e aí não sobrava origem: o repo sumia.
+// `origin/HEAD` é o padrão declarado pelo remoto, e no jungle-monorepo ele aponta para a branch de
+// integração (`develop` desde 19/10/2026). Aceitar isso fazia ela virar DESTINO, e o repo sumia.
 test('branch de integração não vira destino, mesmo sendo a padrão do remoto', async () => {
     const impl = new Implantacao();
     const um = await impl.catalogo.detectarUm('jungle-monorepo');
     if (!um.origem && /git não respondeu/.test(um.motivo || '')) {
         return;
     }
-    assert.equal(um.origem, 'origin/stage');
-    assert.equal(um.destino, 'origin/main', 'origin/HEAD aponta para stage neste repo — não pode ser o destino');
+    assert.equal(um.origem, 'origin/develop');
+    assert.equal(um.destino, 'origin/main', 'origin/HEAD aponta para develop neste repo — não pode ser o destino');
 });
 
 test('edição manual sobrevive à detecção; linha detectada é recalculada', async () => {

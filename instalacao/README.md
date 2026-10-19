@@ -89,9 +89,10 @@ Duas coisas nele que quebram em silêncio se você escrever o plist à mão:
 - o **`PATH` assado** — o padrão do launchd é `/usr/bin:/bin:/usr/sbin:/sbin`, e o `gh` mora em
   `/opt/homebrew/bin`. Sem assar, a tela sobe e perde PR, base observada e checks, sem erro nenhum
 
-**3. O app de Mac.** A tela numa janela própria, em `~/Applications/Quality Gate.app`, com ícone no
-Dock. Se a tela estiver fora do ar, o app a sobe: pelo LaunchAgent, se houver; senão ele mesmo, e
-aí o servidor para quando o app fecha. Pede o `swiftc` das Command Line Tools. Grava node, PATH,
+**3. O app.** A tela numa janela própria, com ícone. No Mac é `~/Applications/Quality Gate.app`
+(Swift, pede o `swiftc` das Command Line Tools); no Windows, um atalho no menu Iniciar que abre o Edge
+em modo app (pede o Edge, que vem no Windows 10/11). Se a tela estiver fora do ar, o app a sobe: pelo
+LaunchAgent, se houver; senão ele mesmo, e aí o servidor para quando o app fecha. Grava node, PATH,
 porta e o caminho do clone, então **trocar de node pelo nvm ou de porta exige `--app` de novo** — o
 estado (sem flag) e o `verificar.mjs` avisam. Detalhes no [README](../README.md#app-para-mac).
 
@@ -161,7 +162,7 @@ Sem elas ele abre vazio, e nenhuma é configurável hoje:
 npm test
 ```
 
-157 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
+176 casos: sobe o servidor numa porta aleatória, bate em todas as rotas, confere a forma das respostas
 e o comportamento do cache, roda cada ferramenta de linha de comando, valida o de-para do
 `doutrina.json`, e cobre o registro dos gatilhos no `settings.json`, o plist do LaunchAgent e o
 Info.plist do app (com o fonte Swift compilando, quando há `swiftc`).

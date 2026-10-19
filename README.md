@@ -322,6 +322,98 @@ próprio (`quality-gate://`) e o hook passar a usá-lo. Fica para quando fizer f
 `--remove` leva o app junto com o resto, e também o que o `WKWebView` guardou (o `localStorage` da
 janela), que fica em `~/Library` sob o bundle id.
 
+### E no Windows
+
+O mesmo `node instalacao/gatilhos.mjs --app`, rodado no Windows, monta o par do app de Mac. Não é um
+executável compilado: é o **Edge em modo app** (`msedge --app=…`), que vem em todo Windows 10/11 e abre
+a tela numa janela própria, sem barra de endereço. `confirm()`, seletor de arquivo e área de
+transferência funcionam de fábrica, ou seja, os quatro buracos que o app de Mac tapa à mão não existem
+ali. Compilar teria custo sem ganho: WebView2 pede o SDK (dependência), e o controle WebBrowser do .NET
+Framework é o motor do Internet Explorer.
+
+| O que a construção faz | Onde |
+|---|---|
+| copia o lançador [`windows/QualityGate.ps1`](windows/QualityGate.ps1), **com BOM** | `%LOCALAPPDATA%\QualityGate\` |
+| grava `config.json`: clone, node absoluto, porta | mesma pasta |
+| gera o `.ico` (256/48/32/16) a partir do `mac/icone.svg`, pelo próprio Edge sem cabeça | mesma pasta |
+| cria o atalho, que roda o lançador escondido | menu Iniciar (`…\Start Menu\Programs\Quality Gate.lnk`) |
+
+O lançador segue o contrato do app de Mac: sonda o `/favicon.svg`; com a tela no ar só abre a janela;
+fora do ar sobe `node server.mjs` escondido e o derruba quando a janela fecha. O Edge roda com **perfil
+próprio** (`--user-data-dir`): sem ele a janela vira mais uma do Edge que já está aberto, o processo
+lançado sai na hora, e não há como saber quando a janela fechou. Erros saem numa caixa de diálogo
+com o que fazer (porta ocupada, node que sumiu, clone que mudou de lugar, fim do log do servidor).
+
+**Armadilhas já tratadas:**
+- O PowerShell 5.1, que é o que vem no Windows, lê `.ps1` sem BOM como Windows-1252: os acentos
+  das mensagens saíam quebrados. O repo guarda o arquivo sem BOM, por causa do diff, e a instalação
+  grava a cópia com BOM. Um teste cobra isso.
+- O Chromium aberto direto num SVG não o encaixa na janela, e a imagem saía deslocada e cortada. O
+  ícone é renderizado numa página de tamanho fixo, que também recorta a margem da grade do macOS
+  (ícone de Windows ocupa mais o quadro).
+
+**Para o servidor rodar no Windows**, cinco pontos quebravam em silêncio e foram trocados:
+
+| Antes | No Windows | Agora |
+|---|---|---|
+| `nc -z` no hook e no `gatilhos.mjs` | não existe: o hook achava sempre "tela fora do ar" | `curl` no `/favicon.svg` (vem desde o Windows 10) |
+| `npx eslint` no cartão de lint | é `npx.cmd`, que o Node não roda sem shell | `node node_modules/eslint/bin/eslint.js` |
+| ruff em `.venv/bin` | o venv do Windows usa `.venv\Scripts` | os dois caminhos |
+| `python3` no juiz | costuma ser o atalho da Microsoft Store, que abre a loja | `python` no Windows |
+| `lsof` no `verificar.mjs` | não existe | a checagem de porta diz que não confere ali |
+
+⚠️ **O que não foi testado num Windows de verdade**, porque foi escrito num Mac sem PowerShell: o
+lançador e a criação do atalho. O `.ico`, a renderização do ícone e a construção inteira até o
+atalho rodaram aqui, com o Chrome no lugar do Edge (mesmo motor, mesmas flags). Dois pontos para
+olhar na primeira instalação: o `Start-Process -WindowStyle Hidden` com saída redirecionada (o
+servidor tem de subir sem janela de console), e um `claude` instalado pelo npm, que no Windows é
+`claude.cmd` e não sobe pelo `spawn` (o instalador nativo, que é `claude.exe`, sobe).
+
+Sem LaunchAgent no Windows: lá quem sobe a tela é o próprio app ao abrir. O hook continua entregando
+o link quando a tela está no ar.
+
+## Pergunte ao The Judge
+
+Com a skill **the-judge** instalada (CC-BY-4.0, de github.com/felipfr) (em `<workspace>/.claude/skills/the-judge`
+ou em `~/.claude/skills/the-judge`), a trilha ganha um segundo botão, embaixo do **Pergunte ao mago**:
+**⚖️ Pergunte ao The Judge**. Ele revisa a PR do chamado no repo aberto e mostra o resultado num
+modal: o veredito (aprova, comenta, pede mudanças), o resumo, os comentários de linha com
+`arquivo:linha` e as evidências. Sem a skill o botão não aparece.
+
+**Nada é publicado nem commitado.** A skill termina publicando a revisão no GitHub (passo 7, o
+`post_review.py`); aqui ela para no passo 6, e a garantia não depende do prompt:
+
+| Camada | O que faz |
+|---|---|
+| `claude -p --restricted --tools Read,Grep,Glob,WebSearch,WebFetch` | não existe Bash nem ferramenta de escrita na sessão |
+| `--strict-mcp-config` | nenhum conector (nada de Slack, Linear, GitHub por MCP) |
+| `--permission-prompts none` | o que pediria aprovação é negado na hora, sem travar |
+| `--add-dir` só da skill e da pasta da corrida | leitura fora delas é recusada |
+| o prompt | diz que o passo 7 não existe nesta corrida |
+
+Medido antes de virar código: com `--allowedTools` a escrita passou mesmo assim (o modo padrão do
+usuário libera edição no diretório), e com `--permission-mode default` a corrida ficou 3 min esperando
+uma aprovação que não vinha. Com `--restricted`, Write e Bash "indisponíveis", leitura fora das pastas
+recusada, nada trava. Um teste trava a forma da linha de comando.
+
+O que a skill faz com comando roda **no servidor**, antes, e vai pronto no prompt: dados da PR, diff,
+cópia dos arquivos na head da PR (o clone pode estar em outra branch), revisões anteriores suas (a
+rodada), a varredura `scan_bypasses.py` e o lint do próprio repo. O lint só roda se o checkout estiver
+na head da PR, porque fora dela julgaria outro código. Depois, o servidor roda o portão
+`review_gate.py` sobre o JSON devolvido; se reprovar, devolve as violações ao juiz na mesma sessão, até
+duas vezes. **Teste do repo não roda**: o `npm test` do migrate-mongo apaga o banco local, e o juiz
+roda em qualquer repo.
+
+A primeira corrida real (PR #172 do UND-2304) voltou com "WebFetch e WebSearch foram negados": web
+pede aprovação, e com `--permission-prompts none` ninguém aprova. O passo 2 da skill (pesquisa
+obrigatória) ficou vazio. Agora as duas, e só as duas, vão em `--allowedTools`; na segunda corrida o
+juiz citou a documentação do `jsonwebtoken` e do Keycloak. 122 s, portão aprovado na primeira tentativa.
+
+Abrir o modal mostra o **último julgamento** daquele chamado × repo, se houver, com **julgar de novo**
+no rodapé: são minutos de modelo. Uma corrida por vez, só da máquina do servidor, como a do mago.
+Cada corrida fica em `corridas/juiz/<chamado>__<repo>__<data>/` (fora do git), com o diff, a cópia dos
+arquivos, o `findings.json` e o resultado.
+
 ## O que a tela mostra, e o que ela deliberadamente não mostra
 
 **Fora da tela**, porque são corrigidos: comentário acima de `class`, comentário dentro do
@@ -364,7 +456,7 @@ o aviso. Agora só o problema leva esse rótulo, e ele vem com contorno tracejad
 ### Quem decide qual é o diff certo é o agente
 #### O botão que roda o agente
 
-`🧙 pedir ao agente` na trilha roda um `claude -p` de verdade, com o prompt **fixo no servidor** — o
+`🧙 Pergunte ao mago` na trilha roda um `claude -p` de verdade, com o prompt **fixo no servidor** — o
 cliente só manda o ID, validado contra o padrão de chamado, porque página local montando prompt é
 injeção de prompt. As ferramentas dele são restritas a `Bash(node|gh|curl|cd)`, `Read`, `Grep` e
 `Glob`: sem Write, sem Edit, sem commit.
@@ -428,7 +520,7 @@ node --disable-warning=ExperimentalWarning qualidade/ferramentas/comparacao.mjs 
 | Fonte | Quando | Base usada |
 |---|---|---|
 | `--pr=N` | existe PR | `baseRefOid…headRefOid` — a mesma comparação do GitHub |
-| `--stage` | ainda não há PR | branch × `origin/stage` |
+| `--stage` | ainda não há PR | branch × a integração do repo (`origin/develop`; `origin/stage` onde não migrou) |
 | `--branch=X --base=Y` | base que não é a de sempre | o que você disser |
 
 `situacao` é `resolvido` ou `aberto`, e vem do estado da PR **a menos que** você diga o contrário com
@@ -444,8 +536,9 @@ Onde a decisão para, e como olhar o que está gravado: [O estado fica num
 
 ### Branch já mesclada: topologia primeiro, merge-tree depois
 
-A base não vem de ordem fixa de nomes, vem de **topologia**: entre `origin/desenv`, `origin/stage`,
-`origin/main` e `origin/master`, ganha a que já **contém** a branch; empatando, o merge-base mais
+A base não vem de ordem fixa de nomes, vem de **topologia**: entre as branches de longa vida de
+[`lib/branches.mjs`](lib/branches.mjs) (`develop`, `stage`, `desenv`, `main`, `master`…), ganha a que
+já **contém** a branch; empatando, o merge-base mais
 recente. Com base errada, uma branch mesclada em `main` mostrava 17 arquivos de diff falso.
 
 Só que topologia não vê **merge por squash**: o commit da branch não fica ancestral de ninguém, e o
@@ -892,6 +985,44 @@ trabalhou muito ele fica longe do fim: medido, 502 KB atrás num transcript de 8
 versão lia uma janela fixa e mostrava `—` — indistinguível de "não pediu nada".
 
 **Só leitura.** A tela não fala com essas sessões, não manda mensagem e não encerra nenhuma.
+
+## Branches: `develop` no lugar de `stage`, desde 19/10/2026
+
+A branch de integração passou a ser **`develop`**: o PR do chamado vai para ela, e a implantação
+segue `develop → stg → main`. Os nomes de branch de longa vida moram num lugar só,
+[`lib/branches.mjs`](lib/branches.mjs) — antes eram três listas, e o `contexto.mjs` nem tinha lista:
+caía em `main`. Na troca o diff passou a ver `develop` e o resto não.
+
+**A transição não é uniforme**, e por isso nada aqui é um nome único — é preferência entre o que
+existe em cada repo. Medido no dia:
+
+| No remoto | Repos |
+|---|---|
+| `develop` + `main`, `stage` apagada | crohc-server, contas-service, crohc-view, workflow-manager, migrate-mongo… |
+| `develop` + `master` | drmarvin-integration-client |
+| ainda `stage` + `main` | evidencia-loader, rivio-deployment-cortex |
+| `desenv` | drmarvin-core-js, ambiente-docker-desenvolvimento |
+| `stg` | nenhum ainda |
+
+**A base observada conta só branch de chamado.** O cartão "Branch certa e chamado" vota a base nos
+últimos PRs mesclados, e no UND-2304 mandou a branch contra a `stage` já apagada — "0 commit(s) na
+branch" e "base sem consenso (stage:4 develop:2 main:2) — confirmar" num PR certo para `develop`. Os
+PRs para `main` eram da própria migração (`chore/rename-stage-develop-main`, que foi para `main` e
+`develop` juntos). Agora entram na conta só PRs cuja branch tem ID de chamado, **sem** sufixo de
+destino (`UND-2030-main` é hotfix mandado de propósito), e cuja base ainda existe. Sem nenhum, a
+queda é a integração que existe no repo, e não mais `main`.
+
+**A detecção da Implantação prefere `develop`**, e só cai em `stage` onde ela não existe. `stg` nunca
+vira destino de produção, nem quando é o `origin/HEAD` do remoto. **A PR de release usa o par do
+catálogo**: ela abria sempre `stage → main`, inclusive no repo que implanta em `master` — o corpo
+descrevia um par e a PR abria outro.
+
+**Falta o degrau `stg`**: a fila ainda é um par por repo (integração → produção). Com `stg` são duas
+promoções que podem estar pendentes ao mesmo tempo, e isso pede outra forma para a aba.
+
+Depois de atualizar: o catálogo detectado antes da troca segue com `origin/stage → origin/main` nos
+repos que migraram. **Reinicie a tela e clique em Detectar** na aba Implantação — linha `manual` não
+é tocada.
 
 ## Implantação: o fetch também avança as branches locais
 

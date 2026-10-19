@@ -20,6 +20,7 @@ import lint from './lib/lint.mjs';
 import { corridas, caminhoEstado, meta } from './lib/db.mjs';
 import comparacao from './lib/comparacao.mjs';
 import implantacao from './lib/implantacao.mjs';
+import juiz from './lib/juiz.mjs';
 import sessoes from './lib/sessoes.mjs';
 import builds from './lib/builds.mjs';
 import prs from './lib/prs.mjs';
@@ -76,7 +77,7 @@ const MODELO_DA_SESSAO = () => {
 
 // O prompt da implantação. Fixo aqui pelo mesmo motivo do outro: o cliente só escolhe os repos, e
 // página local montando prompt é injeção. O inventário vem pronto — o agente não precisa varrer.
-const PROMPT_IMPLANTACAO = (repos, inventario) => `Analise a implantação de stage para main destes repos: ${repos}.
+const PROMPT_IMPLANTACAO = (repos, inventario) => `Analise a implantação destes repos, da integração para produção (o par de branches de cada um está no inventário): ${repos}.
 
 O inventário já está levantado. NÃO refaça git log nem gh; leia o código quando precisar entender uma mudança.
 
@@ -670,9 +671,12 @@ class Servidor {
     async abrirPrDeRelease(projeto, res) {
         const d = await implantacao.detalhe(projeto);
         if (!d) {
-            return this.json(res, { ok: false, erro: 'sem origin/main ou origin/stage neste repo' });
+            return this.json(res, { ok: false, erro: 'sem o par de branches deste repo (veja o catálogo da Implantação)' });
         }
-        const jaTem = await implantacao.prAberta(projeto);
+        // O par do catálogo, e não `stage → main` fixo: sem ele a PR saía para `main` num repo que
+        // implanta em `master`, e o corpo descrevia um par diferente do que a PR abria.
+        const par = { origem: d.origem.replace(/^origin\//, ''), destino: d.destino.replace(/^origin\//, '') };
+        const jaTem = await implantacao.prAberta(projeto, par.destino, par.origem);
         if (jaTem) {
             return this.json(res, { ok: false, erro: `já existe a PR #${jaTem.number}`, url: jaTem.url });
         }
@@ -690,7 +694,7 @@ class Servidor {
             '',
             'https://claude.ai/code/session_01DT4ir9PryhV3UDBxCrzdJG'
         ].filter(Boolean).join('\n');
-        const r = await implantacao.abrirPr(projeto, { titulo, corpo });
+        const r = await implantacao.abrirPr(projeto, { ...par, titulo, corpo });
         this.registrar('implantacao', r.ok ? 'pr-aberta' : 'pr-falhou', `${projeto} ${r.url || r.erro}`);
         return this.json(res, { ...r, projeto, titulo });
     }
@@ -717,7 +721,7 @@ class Servidor {
         const partes = await Promise.all(projetos.map(async p => {
             const d = await implantacao.detalhe(p);
             if (!d) {
-                return `### ${p}\n  (sem origin/main ou origin/stage)`;
+                return `### ${p}\n  (sem o par de branches no catálogo)`;
             }
             return `### ${p}  —  ${d.commits} commits, ${d.arquivos} arquivos, +${d.adicionadas} -${d.removidas}`
                 + `\n  chamados: ${d.ids.join(', ') || '(nenhum ID nos títulos)'}`
@@ -727,6 +731,45 @@ class Servidor {
                 + `\n  commits:\n${d.listaDeCommits.map(c => `    ${c.hash} ${c.titulo} (${c.autor}, ${c.data.slice(0, 10)})`).join('\n')}`;
         }));
         this._rodarAgente('implantação', partes.join('\n\n'), Date.now(), PROMPT_IMPLANTACAO(projetos.join(', '), partes.join('\n\n')));
+    }
+
+    // A skill the-judge sobre a PR do chamado, sem publicar nada (ver `lib/juiz.mjs`). Só de localhost
+    // pelo mesmo motivo da corrida do agente, e uma por vez: são minutos de modelo.
+    async perguntarAoJuiz(chamado, projeto, res, remoto) {
+        if (!ehLocal(remoto)) {
+            return this.json(res, { ok: false, erro: 'o juiz só roda na máquina do servidor' });
+        }
+        if (!/^[A-Z]{2,5}-\d+$/.test(chamado || '') || !/^[\w.-]+$/.test(projeto || '') || !existsSync(join(WORKSPACE, projeto, '.git'))) {
+            return this.json(res, { ok: false, erro: 'chamado ou repo inválido' });
+        }
+        if (this.juizRodando) {
+            return this.json(res, { ok: false, erro: `o juiz já está julgando ${this.juizRodando.chamado} em ${this.juizRodando.projeto}` });
+        }
+        this.juizRodando = { chamado, projeto, desde: Date.now() };
+        this.juizEventos = [];
+        const aviso = ev => {
+            this.juizEventos.push({ passo: this.juizEventos.length + 1, em: new Date().toISOString(), ...ev });
+            this.avisar({ tipo: 'juiz', fase: 'andando', chamado, projeto, passo: this.juizEventos.length, ...ev });
+        };
+        this.json(res, { ok: true, aviso: 'acompanhe pelo SSE' });
+        this.registrar('juiz', 'inicio', `${chamado} ${projeto}`);
+        try {
+            aviso({ texto: 'levantando a PR, o diff, as revisões anteriores, a varredura e o lint…' });
+            const ctx = await juiz.preparar(projeto, chamado);
+            if (ctx.erro) {
+                throw new Error(ctx.erro);
+            }
+            aviso({ texto: `PR #${ctx.pr.number} · ${ctx.arquivos.length} arquivo(s) · rodando o juiz (só leitura)…` });
+            const modelo = MODELO_DA_SESSAO();
+            const r = await juiz.julgar(ctx, { modelo: modelo === 'default do CLI' ? null : modelo, aoEvento: aviso });
+            this.registrar('juiz', r.ok ? 'fim' : 'erro', `${chamado} ${projeto} PR #${ctx.pr.number} ${r.findings?.verdict || r.erro} em ${r.segundos}s`);
+            this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: r.ok, veredito: r.findings?.verdict || null, texto: r.erro || 'terminou' });
+        } catch (e) {
+            this.registrar('juiz', 'erro', `${chamado} ${projeto} ${e.message}`);
+            this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: false, texto: e.message });
+        } finally {
+            this.juizRodando = null;
+        }
     }
 
     // Só de localhost. O token protege o acesso; isto protege a CAPACIDADE: pela LAN a tela é para
@@ -1062,7 +1105,7 @@ class Servidor {
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
             const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
                 TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace(),
-                this.linkDaRede());
+                this.linkDaRede(), Boolean(juiz.skill()));
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -1109,7 +1152,7 @@ class Servidor {
         if (url.pathname === '/api/implantacao-detalhe') {
             const projeto = q.get('projeto');
             return this.emCacheAsync(`impl|${projeto}`,
-                () => implantacao.detalhe(projeto).then(d => d || { projeto, erro: 'sem origin/main ou origin/stage' }),
+                () => implantacao.detalhe(projeto).then(d => d || { projeto, erro: 'sem o par de branches deste repo no catálogo' }),
                 60000).then(v => this.json(res, v));
         }
         if (url.pathname === '/api/builds') {
@@ -1193,6 +1236,18 @@ class Servidor {
         }
         if (url.pathname === '/api/agente') {
             return this.agente(q.get('chamado'), res, req.socket.remoteAddress);
+        }
+        if (url.pathname === '/api/juiz') {
+            return this.perguntarAoJuiz(q.get('chamado'), q.get('projeto'), res, req.socket.remoteAddress);
+        }
+        if (url.pathname === '/api/juiz-resultado') {
+            const vivo = this.juizRodando?.chamado === q.get('chamado') && this.juizRodando?.projeto === q.get('projeto');
+            return this.json(res, {
+                disponivel: Boolean(juiz.skill()),
+                rodando: this.juizRodando || null,
+                eventos: vivo ? this.juizEventos : [],
+                resultado: juiz.ultimo(q.get('chamado'), q.get('projeto'))
+            });
         }
         if (url.pathname === '/api/eventos') {
             return this.eventos(req, res);
