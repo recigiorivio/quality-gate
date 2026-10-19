@@ -17,6 +17,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
 <title>Qualidade — conferência por chamado</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=${versao}">
 <link rel="stylesheet" href="/estilo.css?v=${versao}">
+<link rel="stylesheet" href="/quadro.css?v=${versao}">
 </head><body>
 <aside>
   <h1 id="titulo-barra"><span class="mago" aria-hidden="true">🧙</span>

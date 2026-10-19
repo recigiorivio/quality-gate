@@ -25,6 +25,7 @@ import sessoes from './lib/sessoes.mjs';
 import builds from './lib/builds.mjs';
 import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
+import { lerQuadro, abrirNoApp } from './lib/whiteboard.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
 import { CONFIGS, comCaminhos } from './lib/configs.mjs';
@@ -1362,6 +1363,21 @@ class Servidor {
         }
         if (url.pathname === '/api/pontos') {
             return this.json(res, { pontos: this.pontos.para(q.get('chamado'), q.get('projeto')) });
+        }
+        if (url.pathname === '/api/whiteboard') {
+            const chave = `whiteboard:${q.get('chamado')}:${q.get('projeto')}`;
+            return this.emCacheAsync(chave, () => lerQuadro({ chamado: q.get('chamado'), projeto: q.get('projeto') }), 15000)
+                .then(dados => this.json(res, dados));
+        }
+        if (url.pathname === '/api/whiteboard-abrir') {
+            const sessao = q.get('sessao') || '';
+            if (sessao && !/^[0-9a-f-]{36}$/i.test(sessao)) {
+                return this.json(res, { ok: false, erro: 'id de quadro inválido' });
+            }
+            this.cache.delete(`whiteboard:${q.get('chamado')}:${q.get('projeto')}`);
+            return abrirNoApp(sessao)
+                .then(() => this.json(res, { ok: true }))
+                .catch(erro => this.json(res, { ok: false, erro: erro.code === 'ENOENT' ? 'comando whiteboard não instalado' : erro.message }));
         }
         if (url.pathname === '/api/ponto-remover') {
             const r = this.pontos.remover(q.get('id'));

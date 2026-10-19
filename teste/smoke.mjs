@@ -838,9 +838,9 @@ test('cerca de código aberta e não fechada não vaza', () => {
 // comportamento. Este olha a única coisa que dá para afirmar sem abrir navegador: toda classe que o
 // JS ESCREVE no HTML tem regra em algum lugar da folha.
 test('toda classe que a tela escreve tem regra no CSS', () => {
-    const css = readFileSync(join(RAIZ, 'web/estilo.css'), 'utf8');
+    const css = ['web/estilo.css', 'web/quadro.css'].map(f => readFileSync(join(RAIZ, f), 'utf8')).join('\n');
     const usadas = new Set();
-    for (const arquivo of ['web/app.js', 'web/pagina.mjs', 'web/markdown.js']) {
+    for (const arquivo of ['web/app.js', 'web/pagina.mjs', 'web/markdown.js', 'web/quadro.js']) {
         const fonte = readFileSync(join(RAIZ, arquivo), 'utf8');
         // Só atributo literal: classe montada com ${} depende de dado e não dá para conferir aqui.
         for (const m of fonte.matchAll(/class="([^"$]*)"/g)) {

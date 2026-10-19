@@ -14,3 +14,13 @@ Custo medido: 6 ms para 179 linhas.
 Para atualizar: copiar de novo de um `node_modules/acorn/dist/acorn.mjs` e anotar a versão aqui.
 
 A licença do acorn (MIT) está em `acorn-LICENSE`.
+
+## dev.fast Whiteboard (adaptado, não copiado inteiro)
+
+`web/quadro.css` e os tempos em `web/quadro.js` adaptam o visual do quadro do
+[dev.fast Whiteboard](https://github.com/devdotfast/whiteboard), commit `ec7022b`: a grade de pontos
+(`--board-grid`), o azul de destaque (`#5b7cff`), a curva `motion.enter` e os tempos do traço
+(`draw-motion.stylex.ts`). O diagramador do fluxo é próprio: o app usa o `elkjs`, que é dependência
+grande e de outra licença (EPL-2.0).
+
+A licença do Whiteboard (MIT) está em `whiteboard-LICENSE`.

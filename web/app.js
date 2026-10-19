@@ -1,5 +1,6 @@
 import { realcar, novoEstado, linguagemDe } from './realce.js';
 import { mdParaHtml } from './markdown.js';
+import { quadroParaHtml } from './quadro.js';
 
 // Cliente da tela. Arquivo próprio de propósito: quando isto vivia dentro de um template literal,
 // qualquer backtick ou ${} em comentário quebrava a página inteira — aconteceu duas vezes.
@@ -842,9 +843,21 @@ async function abrir(chip, forcar = false) {
   alvo.innerHTML = `
     <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
     <div id="cartoes"></div>
-    <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
-    <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>`;
+    <div class="abas-conteudo" role="tablist" aria-label="conteúdo do repo">
+      <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-quadro" aria-controls="painel-quadro"
+        aria-selected="false" onclick="trocarAbaConteudo('quadro')">Whiteboard <span class="aba-nota" id="nota-quadro"></span></button>
+      <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-diff" aria-controls="painel-diff"
+        aria-selected="true" onclick="trocarAbaConteudo('diff')">Diff</button>
+    </div>
+    <div class="painel-quadro" id="painel-quadro" role="tabpanel" aria-labelledby="aba-conteudo-quadro" hidden>
+      <div class="quadro-vazio">procurando o quadro do Whiteboard…</div>
+    </div>
+    <div id="painel-diff" role="tabpanel" aria-labelledby="aba-conteudo-diff">
+      <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
+      <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>
+    </div>`;
   pintarAbasDoAtual(token);
+  carregarQuadro(token);
 
   api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref, chamado: atual.chamado }).then(d => {
     if (token !== geracao) { return; }
@@ -887,6 +900,87 @@ async function abrir(chip, forcar = false) {
     }
     pintarAbasDoAtual(token);
   });
+}
+
+// Versões de quadro já mostradas nesta aba do navegador: o traço anima uma vez por versão.
+const quadrosDesenhados = new Set();
+
+function carregarQuadro(token) {
+  api('/api/whiteboard', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
+    if (token !== geracao) { return; }
+    atual.quadroResp = r;
+    let preferida = null;
+    try { preferida = localStorage.getItem('qualidade:aba-conteudo'); } catch { /* sem storage, vale o padrão */ }
+    if (r.quadro && preferida !== 'diff') {
+      trocarAbaConteudo('quadro', false);
+    } else {
+      pintarQuadro();
+    }
+  });
+}
+
+function trocarAbaConteudo(qual, lembrar = true) {
+  for (const tipo of ['quadro', 'diff']) {
+    document.getElementById(`aba-conteudo-${tipo}`)?.setAttribute('aria-selected', String(tipo === qual));
+    const painel = document.getElementById(`painel-${tipo}`);
+    if (painel) { painel.hidden = tipo !== qual; }
+  }
+  if (lembrar) {
+    try { localStorage.setItem('qualidade:aba-conteudo', qual); } catch { /* sem storage, sem memória */ }
+  }
+  if (qual === 'quadro') { pintarQuadro(); }
+}
+
+function mensagemSemQuadro(r) {
+  if (r.estado === 'sem-comando') {
+    return '<b>O comando whiteboard não está instalado.</b><span>Instale o app dev.fast Whiteboard e marque o Claude Code na tela de instalação.</span>';
+  }
+  if (r.estado === 'app-fechado') {
+    return '<b>O Whiteboard está fechado e não há leitura guardada.</b>'
+      + '<button type="button" onclick="abrirWhiteboard(false)">Abrir em segundo plano</button>';
+  }
+  if (r.estado === 'erro') {
+    return `<b>Não deu para ler o quadro.</b><span>${esc(r.erro || '')}</span>`;
+  }
+  return `<b>Nenhum quadro do Whiteboard para ${esc(atual.chamado)} em ${esc(atual.projeto)}.</b>`
+    + '<span>Peça ao agente para explicar o PR no whiteboard.</span>';
+}
+
+// Só desenha com a aba à vista: escondida, a animação do traço rodaria sem ninguém ver.
+function pintarQuadro() {
+  const painel = document.getElementById('painel-quadro');
+  const r = atual?.quadroResp;
+  if (!painel || !r) { return; }
+  const q = r.quadro;
+  document.getElementById('nota-quadro').textContent = q ? `v${q.version}` : '';
+  if (painel.hidden) { return; }
+  const chave = q ? `${q.sessionId}:${q.version}:${r.estado}` : r.estado;
+  if (painel.dataset.chave === chave) { return; }
+  painel.dataset.chave = chave;
+  if (!q) {
+    painel.innerHTML = `<div class="quadro-vazio">${mensagemSemQuadro(r)}</div>`;
+    return;
+  }
+  const animar = !quadrosDesenhados.has(`${q.sessionId}:${q.version}`);
+  quadrosDesenhados.add(`${q.sessionId}:${q.version}`);
+  const lido = new Date(r.lidoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const situacao = r.estado === 'ao-vivo' ? `lido às ${lido}` : `<span class="quadro-aviso">app fechado · última leitura às ${lido}</span>`;
+  painel.innerHTML = `<div class="quadro-cabeca"><b>${esc(q.title || 'Whiteboard')}</b><span>v${q.version} · ${situacao}</span>`
+    + '<span class="espaco"></span>'
+    + (r.estado === 'app-fechado' ? '<button type="button" onclick="abrirWhiteboard(false)">Atualizar</button>' : '')
+    + '<button type="button" onclick="abrirWhiteboard(true)">Abrir no Whiteboard ↗</button></div>'
+    + quadroParaHtml(q.document, { animar, linkDoId: id => (window.LINEAR ? urlDoLinear(id) : null) });
+}
+
+// Sem foco, sobe o app em segundo plano e relê; com foco, abre este quadro na frente.
+async function abrirWhiteboard(focar) {
+  const sessao = focar ? atual?.quadroResp?.quadro?.sessionId || '' : '';
+  const r = await api('/api/whiteboard-abrir', { sessao, chamado: atual.chamado, projeto: atual.projeto });
+  if (!r.ok) {
+    avisarNaTela(r.erro || 'não deu para abrir o Whiteboard');
+    return;
+  }
+  if (!focar) { carregarQuadro(geracao); }
 }
 
 function pintarAbasDoAtual(token) {
@@ -2936,7 +3030,8 @@ Object.assign(window, {
   abrirModalAnalise, copiarAnalise, atualizarImplantacao,
   copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
-  abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos
+  abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos,
+  trocarAbaConteudo, abrirWhiteboard
 });
 // Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });

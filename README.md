@@ -649,6 +649,25 @@ configurado diz **"nenhum linter configurado"** em vez de fingir que passou.
   idênticas repetida no diff, e nome de método novo que já aparece em outro arquivo (`git grep`, não
   memória)
 
+## Aba Whiteboard: a explicação ao lado do diff
+
+Acima do diff há duas abas, **Whiteboard** e **Diff**. A primeira mostra o quadro que o agente
+escreveu no [dev.fast Whiteboard](https://github.com/devdotfast/whiteboard) para o PR: o quê e por
+quê, o fluxo de decisões desenhado e o caminho antes × depois. **Sem o código**: o trecho vira só
+`arquivo · linhas`, porque o código já está na aba ao lado.
+
+- **De onde vem:** `lib/whiteboard.mjs` chama `whiteboard api session_list` e `session_get`, o mesmo
+  contrato que o agente usa, e escolhe o quadro do chamado pela branch (ou pelo título que começa
+  com o ID) no repo aberto. `UND-23` não casa com `UND-2304`.
+- **Com o app fechado:** a tela mostra a última leitura, guardada em `<estado>/whiteboards/`, com
+  "app fechado · última leitura às HH:MM" e um botão que sobe o app em segundo plano e relê.
+- **Desenho:** `web/quadro.js` é puro como o `markdown.js` e testado em `teste/whiteboard.mjs`. O
+  fluxo é diagramado aqui (camadas pelo caminho mais longo, aresta longa contorna pelo lado): o app
+  usa o `elkjs`, que seria dependência nova. O visual e os tempos do traço vêm do app (MIT); ver
+  `vendor/LEIA-ME.md`.
+- **Qual aba abre:** a Whiteboard, quando existe quadro, a menos que você tenha escolhido a Diff da
+  última vez. O traço anima uma vez por versão do quadro, e só com a aba à vista.
+
 ## O estado fica num `qualidade.db`, não mais em JSON
 
 Quatro coisas que a tela e as ferramentas guardam vivem em tabelas de um SQLite em

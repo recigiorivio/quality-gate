@@ -1,0 +1,89 @@
+/* Abas Whiteboard | Diff e o quadro desenhado. Grade, azul e tempos adaptados do dev.fast
+   Whiteboard (MIT, vendor/whiteboard-LICENSE): draw-motion e motion.enter do app. */
+.painel-quadro{--q-fundo:#f6f7fb;--q-grade:#d3d7e2;--q-superficie:#fff;--q-linha:#c5cad6;--q-aresta:#6f7786;
+  --q-acento:#5b7cff;--q-acento-suave:rgba(91,124,255,.10);--q-acento-borda:rgba(91,124,255,.5);
+  --q-entrada:cubic-bezier(.2,.7,.2,1);--q-pouso:680ms;--q-traco:420ms;--q-linha-t:450ms;--q-rotulo:160ms}
+@media(prefers-color-scheme:dark){.painel-quadro{--q-fundo:#0c0f15;--q-grade:#1f2532;--q-superficie:#131823;
+  --q-linha:#3a4252;--q-aresta:#8a92a1;--q-acento-suave:#1a2240;--q-acento-borda:rgba(91,124,255,.6)}}
+
+.abas-conteudo{display:flex;gap:2px;border-bottom:1px solid var(--linha);margin:18px 0 0}
+.aba-conteudo{font:inherit;font-weight:600;font-size:11px;line-height:1;text-transform:uppercase;
+  letter-spacing:.11em;color:var(--fraco);background:none;border:0;border-bottom:2px solid transparent;
+  padding:10px 12px 9px;margin-bottom:-1px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.aba-conteudo:hover{color:var(--fg)}
+.aba-conteudo[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--acento)}
+.aba-conteudo:focus-visible{outline:2px solid var(--acento);outline-offset:2px;border-radius:4px}
+.aba-nota{font-weight:500;letter-spacing:0;text-transform:none;font-size:10.5px;color:var(--fraco)}
+.aba-nota:empty{display:none}
+
+.painel-quadro{margin-top:14px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;
+  background-color:var(--q-fundo);background-image:radial-gradient(var(--q-grade) 1px,transparent 1.2px);
+  background-size:24px 24px;background-position:12px 12px}
+.quadro-cabeca{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:12px 16px;
+  background:var(--q-superficie);border-bottom:1px solid var(--linha);font-size:12px;color:var(--fraco)}
+.quadro-cabeca b{color:var(--fg);font-size:13px;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.quadro-cabeca .espaco{flex:1}
+.quadro-cabeca button{font:inherit;font-size:12px;padding:5px 10px;border-radius:7px;cursor:pointer;
+  border:1px solid var(--linha);background:var(--q-superficie);color:var(--fg)}
+.quadro-cabeca button:hover{border-color:var(--q-acento-borda)}
+.quadro-aviso{color:var(--aviso)}
+.quadro-vazio{padding:28px 20px;font-size:13px;color:var(--fraco);display:grid;gap:10px;justify-items:start}
+.quadro-vazio b{color:var(--fg)}
+
+.quadro{padding:22px 24px 30px;display:grid;gap:18px;max-width:900px;color:var(--fg)}
+.q-secao{display:grid;gap:12px}
+.q-secao-titulo{margin:6px 0 0;font-size:18px;line-height:1.25;font-weight:650;letter-spacing:-.01em}
+details.q-secao>summary{cursor:pointer;list-style:none}
+.q-md{font-size:14.5px;line-height:1.6;max-width:72ch}
+.q-md p{margin:0 0 10px}.q-md p:last-child{margin-bottom:0}
+.q-md code,.q-trecho-onde,.q-pilha code{font-family:ui-monospace,"Geist Mono",Menlo,monospace;font-size:.88em;
+  background:var(--q-acento-suave);border-radius:4px;padding:1px 5px}
+.q-aviso{border:1px solid var(--q-acento-borda);background:var(--q-superficie);border-radius:10px;
+  padding:12px 14px;display:grid;gap:6px;max-width:72ch}
+.q-aviso.q-tom-warning{border-color:var(--aviso)}.q-aviso.q-tom-danger{border-color:var(--erro)}
+.q-aviso.q-tom-success{border-color:var(--ok)}
+.q-aviso-titulo{margin:0;font-weight:600;font-size:13.5px}
+.q-trecho{margin:0;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;font-size:13px;color:var(--fraco)}
+.q-codigo pre{margin:0;padding:12px;border-radius:8px;background:var(--q-superficie);border:1px solid var(--linha);overflow-x:auto}
+.q-divisor{border:0;border-top:1px dashed var(--q-linha);margin:4px 0}
+.q-fora{margin:0;font-size:12.5px;color:var(--fraco);font-style:italic}
+
+.q-fluxo,.q-pilhas,.q-sequencia,.q-dados{margin:0;background:var(--q-superficie);border:1px solid var(--linha);
+  border-radius:12px;padding:14px 16px 16px;display:grid;gap:10px}
+.q-fluxo-titulo{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fraco)}
+.q-fluxo-area{overflow-x:auto}
+.q-fluxo svg{display:block;width:100%;height:auto;margin:0 auto}
+.q-fluxo-desc{margin:0;font-size:13px;color:var(--fraco)}
+.q-no-forma{fill:var(--q-superficie);stroke:var(--q-linha);stroke-width:1.4}
+.q-decision .q-no-forma{fill:var(--q-acento-suave);stroke:var(--q-acento)}
+.q-terminal .q-no-forma{stroke:var(--q-aresta);stroke-width:1.6}
+.q-no-texto{font-size:13px;fill:var(--fg);font-weight:500}
+.q-aresta{fill:none;stroke:var(--q-aresta);stroke-width:1.5}
+.q-tracejada{stroke-dasharray:5 4}
+.q-ponta{fill:var(--q-aresta)}
+.q-rotulo-aresta{font-size:12px;font-weight:600;fill:var(--fraco);paint-order:stroke;stroke:var(--q-superficie);
+  stroke-width:5px;stroke-linejoin:round}
+
+.q-pilhas-colunas{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.q-pilha-coluna{min-width:0}
+.q-pilha-rotulo{margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fraco)}
+.q-pilha{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.q-passo{margin-left:calc(var(--nivel,0) * 16px);padding:6px 10px;border:1px solid var(--linha);border-radius:7px;
+  font-family:ui-monospace,"Geist Mono",Menlo,monospace;font-size:12.5px;display:grid;gap:2px;min-width:0;overflow-wrap:anywhere}
+.q-passo small{font-family:inherit;font-size:11.5px;color:var(--fraco)}
+.q-passo.q-novo{border-color:var(--q-acento);background:var(--q-acento-suave)}
+.q-passo.q-saiu{border-style:dashed;color:var(--fraco)}
+.q-sequencia ol,.q-dados ul{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px}
+.q-ator{font-weight:600}.q-seq-seta{margin:0 6px;color:var(--fraco)}.q-seq-rotulo{margin-left:8px;color:var(--fraco)}
+
+/* Chegada e traço, só na primeira vez que esta versão do quadro aparece. */
+@media(prefers-reduced-motion:no-preference){
+  .q-anim .q-bloco{animation:q-pousa var(--q-pouso) var(--q-entrada) both;animation-delay:var(--d,0ms)}
+  .q-anim .q-no .q-no-forma{stroke-dasharray:1;animation:q-traca var(--q-traco) var(--q-entrada) both;animation-delay:var(--d,0ms)}
+  .q-anim .q-no .q-no-texto{animation:q-surge var(--q-rotulo) ease both;animation-delay:calc(var(--d,0ms) + 220ms)}
+  .q-anim .q-aresta:not(.q-tracejada){stroke-dasharray:1;animation:q-traca var(--q-linha-t) var(--q-entrada) both;animation-delay:var(--d,0ms)}
+  .q-anim .q-tracejada,.q-anim .q-rotulo-aresta{animation:q-surge var(--q-rotulo) ease both;animation-delay:var(--d,0ms)}
+}
+@keyframes q-pousa{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes q-traca{from{stroke-dashoffset:1;fill-opacity:0;opacity:.4}60%{fill-opacity:0}to{stroke-dashoffset:0;fill-opacity:1;opacity:1}}
+@keyframes q-surge{from{opacity:0}to{opacity:1}}
