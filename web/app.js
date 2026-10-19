@@ -845,14 +845,14 @@ async function abrir(chip, forcar = false) {
     <div id="cartoes"></div>
     <div class="abas-conteudo" role="tablist" aria-label="conteúdo do repo">
       <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-quadro" aria-controls="painel-quadro"
-        aria-selected="false" onclick="trocarAbaConteudo('quadro')">Whiteboard <span class="aba-nota" id="nota-quadro"></span></button>
+        aria-selected="${abaConteudo === 'quadro'}" onclick="trocarAbaConteudo('quadro')">Whiteboard <span class="aba-nota" id="nota-quadro"></span></button>
       <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-diff" aria-controls="painel-diff"
-        aria-selected="true" onclick="trocarAbaConteudo('diff')">Diff</button>
+        aria-selected="${abaConteudo === 'diff'}" onclick="trocarAbaConteudo('diff')">Diff</button>
     </div>
-    <div class="painel-quadro" id="painel-quadro" role="tabpanel" aria-labelledby="aba-conteudo-quadro" hidden>
+    <div class="painel-quadro" id="painel-quadro" role="tabpanel" aria-labelledby="aba-conteudo-quadro"${abaConteudo === 'quadro' ? '' : ' hidden'}>
       <div class="quadro-vazio">procurando o quadro do Whiteboard…</div>
     </div>
-    <div id="painel-diff" role="tabpanel" aria-labelledby="aba-conteudo-diff">
+    <div id="painel-diff" role="tabpanel" aria-labelledby="aba-conteudo-diff"${abaConteudo === 'diff' ? '' : ' hidden'}>
       <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
       <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>
     </div>`;
@@ -904,31 +904,32 @@ async function abrir(chip, forcar = false) {
 
 // Versões de quadro já mostradas nesta aba do navegador: o traço anima uma vez por versão.
 const quadrosDesenhados = new Set();
+// A Whiteboard abre primeiro; a última escolha vem do servidor, igual no navegador e no app do Mac.
+let abaConteudo = window.PREFERENCIAS?.abaConteudo === 'diff' ? 'diff' : 'quadro';
 
 function carregarQuadro(token) {
   api('/api/whiteboard', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
     if (token !== geracao) { return; }
     atual.quadroResp = r;
-    let preferida = null;
-    try { preferida = localStorage.getItem('qualidade:aba-conteudo'); } catch { /* sem storage, vale o padrão */ }
-    if (r.quadro && preferida !== 'diff') {
-      trocarAbaConteudo('quadro', false);
-    } else {
-      pintarQuadro();
-    }
+    pintarQuadro();
   });
 }
 
-function trocarAbaConteudo(qual, lembrar = true) {
+function trocarAbaConteudo(qual) {
+  abaConteudo = qual;
   for (const tipo of ['quadro', 'diff']) {
     document.getElementById(`aba-conteudo-${tipo}`)?.setAttribute('aria-selected', String(tipo === qual));
     const painel = document.getElementById(`painel-${tipo}`);
     if (painel) { painel.hidden = tipo !== qual; }
   }
-  if (lembrar) {
-    try { localStorage.setItem('qualidade:aba-conteudo', qual); } catch { /* sem storage, sem memória */ }
-  }
+  guardarPreferencia('aba-conteudo', qual);
   if (qual === 'quadro') { pintarQuadro(); }
+}
+
+// Fora da fila do `api`: atrás das chamadas lentas a escolha se perdia quando a página fechava antes.
+function guardarPreferencia(chave, valor) {
+  const p = new URLSearchParams(window.TOKEN ? { chave, valor, t: window.TOKEN } : { chave, valor });
+  fetch(`/api/preferencia?${p}`, { keepalive: true }).catch(() => { /* sem servidor, vale só nesta página */ });
 }
 
 function mensagemSemQuadro(r) {
@@ -1537,7 +1538,7 @@ const VEREDITOS = {
 
 function botaoJuiz(chamado) {
   return window.JUIZ ? `<button class="tr-agente tr-juiz" id="btn-juiz" onclick="perguntarAoJuiz('${chamado}')"
-      title="revisa a PR do repo aberto com a skill the-judge e mostra aqui — nada é publicado nem commitado">
+      title="revisa a PR do repo aberto (sem PR, o código local) com a skill the-judge e mostra aqui — nada é publicado nem commitado">
       <span class="tr-cog" aria-hidden="true">⚖️</span><span>Pergunte ao The Judge</span></button>` : '';
 }
 
@@ -1646,9 +1647,9 @@ function renderModalJuiz(j) {
     corpo = '<p class="vazio">Nenhum julgamento ainda.</p>';
   }
   const meta = r && !j.rodando
-    ? [`PR #${r.pr.numero}`, r.pr.estado?.toLowerCase(), `${r.segundos}s`, esc(r.modelo || ''),
-      new Date(r.fim).toLocaleString('pt-BR')].filter(Boolean).join(' · ')
-    : 'a PR do chamado neste repo, revisada pela skill the-judge';
+    ? [r.pr.numero ? `PR #${r.pr.numero}` : esc(r.pr.rotulo || 'código local'), r.pr.numero ? r.pr.estado?.toLowerCase() : null,
+      `${r.segundos}s`, esc(r.modelo || ''), new Date(r.fim).toLocaleString('pt-BR')].filter(Boolean).join(' · ')
+    : 'a PR do chamado neste repo (sem PR, o código local), revisada pela skill the-judge';
   return `<div class="me-cabeca">
       <div><div class="me-titulo">⚖️ The Judge${v ? ` <span class="ju-veredito v-${v[1]}">${v[0]} · ${esc(f.verdict)}</span>` : ''}</div>
         <div class="me-sub">${esc(j.projeto)} · ${meta}</div></div>

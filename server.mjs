@@ -755,15 +755,15 @@ class Servidor {
         this.json(res, { ok: true, aviso: 'acompanhe pelo SSE' });
         this.registrar('juiz', 'inicio', `${chamado} ${projeto}`);
         try {
-            aviso({ texto: 'levantando a PR, o diff, as revisões anteriores, a varredura e o lint…' });
+            aviso({ texto: 'levantando a PR (ou, sem PR, o código local), o diff, a varredura e o lint…' });
             const ctx = await juiz.preparar(projeto, chamado);
             if (ctx.erro) {
                 throw new Error(ctx.erro);
             }
-            aviso({ texto: `PR #${ctx.pr.number} · ${ctx.arquivos.length} arquivo(s) · rodando o juiz (só leitura)…` });
+            aviso({ texto: `${juiz.rotulo(ctx.pr)} · ${ctx.arquivos.length} arquivo(s) · rodando o juiz (só leitura)…` });
             const modelo = MODELO_DA_SESSAO();
             const r = await juiz.julgar(ctx, { modelo: modelo === 'default do CLI' ? null : modelo, aoEvento: aviso });
-            this.registrar('juiz', r.ok ? 'fim' : 'erro', `${chamado} ${projeto} PR #${ctx.pr.number} ${r.findings?.verdict || r.erro} em ${r.segundos}s`);
+            this.registrar('juiz', r.ok ? 'fim' : 'erro', `${chamado} ${projeto} ${juiz.rotulo(ctx.pr)} ${r.findings?.verdict || r.erro} em ${r.segundos}s`);
             this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: r.ok, veredito: r.findings?.verdict || null, texto: r.erro || 'terminou' });
         } catch (e) {
             this.registrar('juiz', 'erro', `${chamado} ${projeto} ${e.message}`);
@@ -1106,7 +1106,7 @@ class Servidor {
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
             const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
                 TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace(),
-                this.linkDaRede(), Boolean(juiz.skill()));
+                this.linkDaRede(), Boolean(juiz.skill()), { abaConteudo: meta('pref:aba-conteudo') });
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -1368,6 +1368,15 @@ class Servidor {
             const chave = `whiteboard:${q.get('chamado')}:${q.get('projeto')}`;
             return this.emCacheAsync(chave, () => lerQuadro({ chamado: q.get('chamado'), projeto: q.get('projeto') }), 15000)
                 .then(dados => this.json(res, dados));
+        }
+        // No banco e não no localStorage: a escolha vale igual no navegador e no app do Mac.
+        if (url.pathname === '/api/preferencia') {
+            const permitidas = { 'aba-conteudo': ['quadro', 'diff'] };
+            if (!permitidas[q.get('chave')]?.includes(q.get('valor'))) {
+                return this.json(res, { ok: false, erro: 'preferência inválida' });
+            }
+            meta(`pref:${q.get('chave')}`, q.get('valor'));
+            return this.json(res, { ok: true });
         }
         if (url.pathname === '/api/whiteboard-abrir') {
             const sessao = q.get('sessao') || '';

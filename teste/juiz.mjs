@@ -8,7 +8,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Juiz } from '../lib/juiz.mjs';
@@ -103,4 +104,49 @@ test('o portão de verdade da skill aceita um julgamento mínimo bem formado', {
     const r = await new Juiz()._portao(instalada, dir);
     assert.equal(r.ok, true, r.saida);
     assert.ok(existsSync(join(dir, 'findings.json')));
+});
+
+// Repo de verdade, sem remoto: o `gh` falha, e isso vale como "sem PR".
+function repoSemPr(ws, nome) {
+    const raiz = join(ws, nome);
+    mkdirSync(raiz, { recursive: true });
+    const git = (...a) => execFileSync('git', ['-C', raiz, ...a], { stdio: 'pipe' });
+    git('init', '-q', '-b', 'UND-7');
+    git('config', 'user.email', 'teste@teste');
+    git('config', 'user.name', 'teste');
+    writeFileSync(join(raiz, 'a.js'), 'const a = 1;\n');
+    git('add', '.');
+    git('commit', '-qm', 'base');
+    return raiz;
+}
+
+test('sem PR, o juiz julga o código local: alterado e novo não rastreado, com o diff e as cópias', async () => {
+    const ws = pasta('ws-juiz-local');
+    comSkill(ws);
+    const raiz = repoSemPr(ws, 'repo-do-teste');
+    writeFileSync(join(raiz, 'a.js'), 'const a = 2;\n');
+    writeFileSync(join(raiz, 'b.js'), 'const b = 3;\n');
+    const juiz = new Juiz({ workspace: ws, casa: ws });
+    const ctx = await juiz.preparar('repo-do-teste', 'UND-7');
+    assert.ok(!ctx.erro, ctx.erro);
+    assert.equal(ctx.pr.local, true);
+    assert.equal(ctx.pr.sujo, true);
+    assert.deepEqual(ctx.arquivos.map(a => a.caminho).sort(), ['a.js', 'b.js']);
+    assert.ok(existsSync(join(ctx.dir, 'pr', 'b.js')), 'o arquivo novo é copiado para o juiz ler');
+    const diff = readFileSync(join(ctx.dir, 'pr.diff'), 'utf8');
+    assert.match(diff, /\+const a = 2;/);
+    assert.match(diff, /\+const b = 3;/);
+    const prompt = juiz.prompt(ctx);
+    assert.match(prompt, /NÃO há PR/);
+    assert.match(prompt, /Código local, sem PR/);
+    assert.doesNotMatch(prompt, /HEAD da PR/);
+    assert.equal(juiz.rotulo(ctx.pr), 'código local UND-7');
+});
+
+test('sem PR e sem diferença, o juiz diz que não há nada a julgar', async () => {
+    const ws = pasta('ws-juiz-vazio');
+    comSkill(ws);
+    repoSemPr(ws, 'repo-limpo');
+    const r = await new Juiz({ workspace: ws, casa: ws }).preparar('repo-limpo', 'UND-7');
+    assert.match(r.erro, /nada a julgar: UND-7 não difere de .* em repo-limpo/);
 });

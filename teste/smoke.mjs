@@ -147,6 +147,17 @@ test('a casca HTML sobe e referencia o app', async () => {
     assert.match(corpo, /window\.VERSAO = '\d+'/);
 });
 
+// A Whiteboard abre primeiro, e a escolha de aba volta pela casca: no app do Mac o localStorage não
+// era a memória certa, e a página precisa nascer na aba escolhida em vez de trocar depois.
+test('a escolha da aba Whiteboard | Diff fica no servidor e volta na casca', async () => {
+    assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'xpto' })).corpo.ok, false);
+    assert.equal((await pegar('/api/preferencia', { chave: 'outra', valor: 'diff' })).corpo.ok, false);
+    assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'diff' })).corpo.ok, true);
+    assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"diff"\}/);
+    assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'quadro' })).corpo.ok, true);
+    assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"quadro"\}/);
+});
+
 test('os estáticos são servidos e o caminho não escapa da pasta web', async () => {
     for (const arquivo of ['/estilo.css', '/app.js', '/realce.js']) {
         const { status, corpo } = await pegar(arquivo);
@@ -779,6 +790,16 @@ test('cada commit da implantação traz os pais', async () => {
 // Testado de perto porque erra em SILÊNCIO: marcação que não casa vira parágrafo, e parágrafo é
 // exatamente o que a pessoa esperava ver. Foi assim que a citação passou — `esc` já tinha trocado
 // `>` por `&gt;` antes de a regra procurar `>`, e nenhum blockquote saía da tela.
+// O quadro do UND-2264 saiu com `UND-2264" target="_blank"…` na tela: o ID dentro do link escrito
+// (no rótulo e na URL do Linear) era ligado de novo, por cima do <a> que já existia.
+test('ID dentro de link escrito não vira link de novo; o solto vira', () => {
+    const html = mdParaHtml('Ver [UND-2264](https://linear.app/x/issue/UND-2264/y) e UND-9.', id => `https://l/${id}`);
+    assert.equal((html.match(/<a /g) || []).length, 2);
+    assert.match(html, /<a href="https:\/\/linear\.app\/x\/issue\/UND-2264\/y" target="_blank" rel="noopener">UND-2264<\/a>/);
+    assert.match(html, /<a href="https:\/\/l\/UND-9" target="_blank" rel="noopener">UND-9<\/a>/);
+    assert.doesNotMatch(html, /" target="_blank" rel="noopener">UND-2264"/);
+});
+
 test('o markdown da análise vira HTML', () => {
     const html = mdParaHtml([
         '## Ordem',

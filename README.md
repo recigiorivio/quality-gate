@@ -380,6 +380,12 @@ ou em `~/.claude/skills/the-judge`), a trilha ganha um segundo botão, embaixo d
 modal: o veredito (aprova, comenta, pede mudanças), o resumo, os comentários de linha com
 `arquivo:linha` e as evidências. Sem a skill o botão não aparece.
 
+**Sem PR, ele julga o código local.** O chamado ainda sem PR (ou um repo sem remoto no GitHub, onde o
+`gh` falha) não é mais erro: o alvo vira o checkout, com o diff contra a **mesma base da aba Diff**, as
+alterações não commitadas e os arquivos novos não rastreados (que o `git diff` sozinho não mostra). O
+modal diz "código local <branch>" no lugar de "PR #N", e o prompt avisa que não há descrição de PR
+para o Pass E checar. Sem diferença nenhuma contra a base, a resposta é "nada a julgar".
+
 **Nada é publicado nem commitado.** A skill termina publicando a revisão no GitHub (passo 7, o
 `post_review.py`); aqui ela para no passo 6, e a garantia não depende do prompt:
 
@@ -668,8 +674,11 @@ quê, o fluxo de decisões desenhado e o caminho antes × depois. **Sem o códig
   fluxo é diagramado aqui (camadas pelo caminho mais longo, aresta longa contorna pelo lado): o app
   usa o `elkjs`, que seria dependência nova. O visual e os tempos do traço vêm do app (MIT); ver
   `vendor/LEIA-ME.md`.
-- **Qual aba abre:** a Whiteboard, quando existe quadro, a menos que você tenha escolhido a Diff da
-  última vez. O traço anima uma vez por versão do quadro, e só com a aba à vista.
+- **Qual aba abre:** a Whiteboard é a primeira e já nasce ativa, com ou sem quadro; clicar numa aba
+  grava a escolha (`/api/preferencia`, chave `pref:aba-conteudo` na `meta` do `qualidade.db`), e a
+  próxima abertura nasce nela. No banco e não no `localStorage` para valer igual no navegador e no app
+  do Mac, e embutida na casca para a página não piscar na outra aba. O traço anima uma vez por versão
+  do quadro, e só com a aba à vista.
 
 ## O estado fica num `qualidade.db`, não mais em JSON
 

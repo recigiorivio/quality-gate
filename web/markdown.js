@@ -26,16 +26,21 @@ export function mdParaHtml(texto, linkDoId = () => null) {
         .map((parte, i) => (i % 2 ? `<code>${parte.slice(1, -1)}</code>` : foraDeCodigo(parte)))
         .join('');
 
+    // O ID do chamado vira link pelo mesmo motivo que na trilha: é a única coisa no texto que
+    // leva para fora, e copiar e colar à mão é o atrito que faz ninguém conferir.
+    const ligarIds = s => s.replace(/\b[A-Z]{2,5}-\d+\b/g, id => {
+        const url = linkDoId(id);
+        return url ? `<a href="${url}" target="_blank" rel="noopener">${id}</a>` : id;
+    });
+    // ID só fora do link escrito: `[UND-1](…/issue/UND-1/…)` era ligado de novo por cima do próprio <a>.
     const foraDeCodigo = s => s
         .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
         .replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<i>$2</i>')
-        .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        // O ID do chamado vira link pelo mesmo motivo que na trilha: é a única coisa no texto que
-        // leva para fora, e copiar e colar à mão é o atrito que faz ninguém conferir.
-        .replace(/\b[A-Z]{2,5}-\d+\b/g, id => {
-            const url = linkDoId(id);
-            return url ? `<a href="${url}" target="_blank" rel="noopener">${id}</a>` : id;
-        });
+        .split(/(\[[^\]]+\]\(https?:[^)\s]+\))/)
+        .map((parte, i) => (i % 2
+            ? parte.replace(/^\[([^\]]+)\]\((https?:[^)\s]+)\)$/, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+            : ligarIds(parte)))
+        .join('');
 
     const fecharP = () => {
         if (paragrafo.length) {

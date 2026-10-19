@@ -1,9 +1,9 @@
 /* Abas Whiteboard | Diff e o quadro desenhado. Grade, azul e tempos adaptados do dev.fast
    Whiteboard (MIT, vendor/whiteboard-LICENSE): draw-motion e motion.enter do app. */
-.painel-quadro{--q-fundo:#f6f7fb;--q-grade:#d3d7e2;--q-superficie:#fff;--q-linha:#c5cad6;--q-aresta:#6f7786;
+.painel-quadro{--q-fundo:#f6f7fb;--q-grade:#e4e7ee;--q-superficie:#fff;--q-linha:#c5cad6;--q-aresta:#6f7786;
   --q-acento:#5b7cff;--q-acento-suave:rgba(91,124,255,.10);--q-acento-borda:rgba(91,124,255,.5);
   --q-entrada:cubic-bezier(.2,.7,.2,1);--q-pouso:680ms;--q-traco:420ms;--q-linha-t:450ms;--q-rotulo:160ms}
-@media(prefers-color-scheme:dark){.painel-quadro{--q-fundo:#0c0f15;--q-grade:#1f2532;--q-superficie:#131823;
+@media(prefers-color-scheme:dark){.painel-quadro{--q-fundo:#0c0f15;--q-grade:#1b2029;--q-superficie:#131823;
   --q-linha:#3a4252;--q-aresta:#8a92a1;--q-acento-suave:#1a2240;--q-acento-borda:rgba(91,124,255,.6)}}
 
 .abas-conteudo{display:flex;gap:2px;border-bottom:1px solid var(--linha);margin:18px 0 0}
@@ -16,9 +16,8 @@
 .aba-nota{font-weight:500;letter-spacing:0;text-transform:none;font-size:10.5px;color:var(--fraco)}
 .aba-nota:empty{display:none}
 
-.painel-quadro{margin-top:14px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;
-  background-color:var(--q-fundo);background-image:radial-gradient(var(--q-grade) 1px,transparent 1.2px);
-  background-size:24px 24px;background-position:12px 12px}
+/* Fundo liso atrás do texto: o pontilhado atrapalhava a leitura. A grade fica só na área do diagrama. */
+.painel-quadro{margin-top:14px;border:1px solid var(--linha);border-radius:12px;overflow:hidden;background:var(--q-fundo)}
 .quadro-cabeca{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:12px 16px;
   background:var(--q-superficie);border-bottom:1px solid var(--linha);font-size:12px;color:var(--fraco)}
 .quadro-cabeca b{color:var(--fg);font-size:13px;font-weight:600;min-width:0;overflow-wrap:anywhere}
@@ -51,7 +50,8 @@ details.q-secao>summary{cursor:pointer;list-style:none}
 .q-fluxo,.q-pilhas,.q-sequencia,.q-dados{margin:0;background:var(--q-superficie);border:1px solid var(--linha);
   border-radius:12px;padding:14px 16px 16px;display:grid;gap:10px}
 .q-fluxo-titulo{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fraco)}
-.q-fluxo-area{overflow-x:auto}
+.q-fluxo-area{overflow-x:auto;border-radius:8px;background-image:radial-gradient(var(--q-grade) 1px,transparent 1.2px);
+  background-size:24px 24px;background-position:12px 12px}
 .q-fluxo svg{display:block;width:100%;height:auto;margin:0 auto}
 .q-fluxo-desc{margin:0;font-size:13px;color:var(--fraco)}
 .q-no-forma{fill:var(--q-superficie);stroke:var(--q-linha);stroke-width:1.4}
