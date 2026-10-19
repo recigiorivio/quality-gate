@@ -1,9 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="quality-gate">
-  <!-- A linha vertical é a divisão antes|depois do diff, que é a única interação central da tela.
-       Aos 16px ela desaparece e o ícone degrada para um check limpo — legível é mais importante
-       que distintivo naquele tamanho. -->
+  <!-- O check do diff com o chapéu do mago: aos 16px sobram o check e a mancha do chapéu, os dois legíveis. -->
   <rect width="64" height="64" rx="15" fill="#7D70E4"/>
   <rect x="30.5" y="9" width="3" height="46" rx="1.5" fill="#fff" opacity=".32"/>
-  <path d="M17 34 L27 44 L47 21" fill="none" stroke="#fff" stroke-width="7.5"
+  <path d="M19 37 L28 46 L47 24" fill="none" stroke="#fff" stroke-width="7.5"
         stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M5 27 C10 22 13 15 15 8 C16 5 18.5 3.5 21.5 4.5 C19.5 6.5 19 9 19.5 12 C20.5 17 23 22 28 27 Z" fill="#24177A"/>
+  <ellipse cx="16.5" cy="27" rx="12" ry="3" fill="#24177A"/>
+  <path d="M7 25.4 C13 24.2 20 24.2 26 25.4 L27 27 C20 25.8 13 25.8 6 27 Z" fill="#F5C542"/>
+  <path d="M15.5 13 L16.6 16 L19.6 17 L16.6 18 L15.5 21 L14.4 18 L11.4 17 L14.4 16 Z" fill="#FFE08A"/>
 </svg>

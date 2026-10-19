@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Grade de ícone do macOS: corpo de 824 px num canvas de 1024. O painel antes|depois e o selo
-       são o mesmo par do favicon (a divisória e o check), com volume para aguentar o Dock. -->
+  <!-- O quadro antes|depois com o check, e o mago das "Magias do Mago" ao lado, varinha no quadro. -->
   <!-- Sombra em camadas, e não `feDropShadow`: o renderizador de SVG do `sips` ignora filtro. -->
   <defs>
     <linearGradient id="fundo" x1="0" y1="0" x2=".55" y2="1">
@@ -24,6 +23,18 @@
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="1" stop-color="#E7E4F8"/>
     </linearGradient>
+    <linearGradient id="chapeu" x1="0" y1="0" x2=".3" y2="1">
+      <stop offset="0" stop-color="#3D2BA8"/>
+      <stop offset="1" stop-color="#1F136B"/>
+    </linearGradient>
+    <linearGradient id="barba" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E4E0F7"/>
+    </linearGradient>
+    <linearGradient id="ouro" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE08A"/>
+      <stop offset="1" stop-color="#F2B630"/>
+    </linearGradient>
   </defs>
 
   <g fill="#1A0F55">
@@ -35,37 +46,60 @@
   <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="3"/>
 
   <g fill="#1E0F70" opacity=".055">
-    <rect x="214" y="242" width="596" height="512" rx="60"/>
-    <rect x="213" y="246" width="598" height="514" rx="61"/>
-    <rect x="212" y="250" width="600" height="516" rx="62"/>
-    <rect x="211" y="255" width="602" height="518" rx="63"/>
-    <rect x="210" y="260" width="604" height="520" rx="64"/>
-    <rect x="208" y="266" width="608" height="522" rx="66"/>
+    <rect x="380" y="202" width="492" height="464" rx="54"/>
+    <rect x="379" y="207" width="494" height="466" rx="55"/>
+    <rect x="378" y="213" width="496" height="468" rx="56"/>
+    <rect x="376" y="220" width="500" height="470" rx="58"/>
   </g>
-  <rect x="214" y="236" width="596" height="512" rx="60" fill="url(#painel)"/>
-  <rect x="509" y="284" width="6" height="416" rx="3" fill="#DCD8F3"/>
+  <rect x="380" y="196" width="492" height="464" rx="54" fill="url(#painel)"/>
+  <rect x="623" y="236" width="6" height="384" rx="3" fill="#DCD8F3"/>
 
-  <rect x="262" y="300" width="196" height="34" rx="17" fill="#D9D5EF"/>
-  <rect x="262" y="372" width="214" height="34" rx="17" fill="#F28B8B"/>
-  <rect x="262" y="444" width="150" height="34" rx="17" fill="#D9D5EF"/>
-  <rect x="262" y="516" width="182" height="34" rx="17" fill="#D9D5EF"/>
-  <rect x="262" y="588" width="120" height="34" rx="17" fill="#D9D5EF"/>
+  <rect x="414" y="246" width="150" height="30" rx="15" fill="#D9D5EF"/>
+  <rect x="414" y="306" width="170" height="30" rx="15" fill="#F28B8B"/>
+  <rect x="414" y="366" width="120" height="30" rx="15" fill="#D9D5EF"/>
+  <rect x="414" y="426" width="140" height="30" rx="15" fill="#D9D5EF"/>
+  <rect x="414" y="486" width="100" height="30" rx="15" fill="#D9D5EF"/>
 
-  <rect x="548" y="300" width="196" height="34" rx="17" fill="#D9D5EF"/>
-  <rect x="548" y="372" width="214" height="34" rx="17" fill="#6BD6A4"/>
-  <rect x="548" y="444" width="170" height="34" rx="17" fill="#6BD6A4"/>
+  <rect x="654" y="246" width="160" height="30" rx="15" fill="#D9D5EF"/>
+  <rect x="654" y="306" width="180" height="30" rx="15" fill="#6BD6A4"/>
+  <rect x="654" y="366" width="140" height="30" rx="15" fill="#6BD6A4"/>
 
   <g fill="#1E0F70" opacity=".06">
-    <circle cx="718" cy="708" r="158"/>
-    <circle cx="718" cy="712" r="159"/>
-    <circle cx="718" cy="717" r="160"/>
-    <circle cx="718" cy="722" r="161"/>
-    <circle cx="718" cy="728" r="162"/>
+    <circle cx="772" cy="644" r="128"/>
+    <circle cx="772" cy="649" r="129"/>
+    <circle cx="772" cy="655" r="130"/>
+    <circle cx="772" cy="661" r="131"/>
   </g>
-  <circle cx="718" cy="704" r="158" fill="url(#aro)"/>
-  <circle cx="718" cy="704" r="132" fill="url(#selo)"/>
-  <path d="M652 710 L700 757 L786 660" fill="none" stroke="#0B7A48" stroke-opacity=".35" stroke-width="44"
-        stroke-linecap="round" stroke-linejoin="round" transform="translate(0 6)"/>
-  <path d="M652 710 L700 757 L786 660" fill="none" stroke="#fff" stroke-width="44"
+  <circle cx="772" cy="640" r="128" fill="url(#aro)"/>
+  <circle cx="772" cy="640" r="106" fill="url(#selo)"/>
+  <path d="M719 645 L758 682 L826 605" fill="none" stroke="#0B7A48" stroke-opacity=".35" stroke-width="36"
+        stroke-linecap="round" stroke-linejoin="round" transform="translate(0 5)"/>
+  <path d="M719 645 L758 682 L826 605" fill="none" stroke="#fff" stroke-width="36"
         stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g fill="#1E0F70" opacity=".07">
+    <ellipse cx="276" cy="884" rx="130" ry="18"/>
+    <path d="M190 622 C186 712 204 800 256 858 C276 882 300 882 320 858 C372 800 390 712 386 622 Z" transform="translate(6 10)"/>
+  </g>
+
+  <path d="M368 772 L476 566" stroke="#2A1B10" stroke-width="20" stroke-linecap="round"/>
+  <path d="M452 612 L476 566" stroke="#FFF6D6" stroke-width="20" stroke-linecap="round"/>
+  <path d="M482 520 L492 548 L520 556 L492 566 L482 594 L472 566 L444 556 L472 548 Z" fill="url(#ouro)"/>
+  <path d="M528 470 L533 485 L548 490 L533 495 L528 510 L523 495 L508 490 L523 485 Z" fill="#FFE9A8"/>
+  <path d="M430 492 L434 503 L445 507 L434 511 L430 522 L426 511 L415 507 L426 503 Z" fill="#FFE9A8"/>
+
+  <path d="M190 622 C186 712 204 800 256 858 C276 882 300 882 320 858 C372 800 390 712 386 622 Z" fill="url(#barba)"/>
+  <circle cx="288" cy="600" r="72" fill="#F7D5B8"/>
+  <circle cx="246" cy="622" r="14" fill="#F2A7A0" opacity=".55"/>
+  <circle cx="330" cy="622" r="14" fill="#F2A7A0" opacity=".55"/>
+  <circle cx="262" cy="598" r="9" fill="#2A1B10"/>
+  <circle cx="314" cy="598" r="9" fill="#2A1B10"/>
+  <path d="M236 650 C258 628 278 632 288 648 C298 632 318 628 340 650 C316 668 300 662 288 654 C276 662 260 668 236 650 Z" fill="#FFFFFF"/>
+
+  <path d="M140 548 C204 468 236 360 258 262 C268 218 296 196 338 204 C312 228 304 262 310 302 C324 392 360 470 424 548 Z" fill="url(#chapeu)"/>
+  <ellipse cx="282" cy="548" rx="156" ry="36" fill="url(#chapeu)"/>
+  <path d="M160 528 C230 512 334 512 404 528 L414 548 C334 532 230 532 150 548 Z" fill="url(#ouro)"/>
+  <path d="M262 400 L269 420 L289 427 L269 434 L262 454 L255 434 L235 427 L255 420 Z" fill="url(#ouro)"/>
+  <path d="M322 452 L327 466 L341 471 L327 476 L322 490 L317 476 L303 471 L317 466 Z" fill="url(#ouro)"/>
+  <path d="M290 316 L294 327 L305 331 L294 335 L290 346 L286 335 L275 331 L286 327 Z" fill="#FFE9A8"/>
 </svg>
