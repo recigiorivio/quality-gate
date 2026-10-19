@@ -56,7 +56,7 @@ function comandoFalso(nome, corpo) {
     return caminho;
 }
 
-test('acha o quadro pela branch ou pelo título, no repo certo, e o mais recente', () => {
+test('acha o quadro pela branch ou pelo título; o do repo aberto ganha do mais recente de outro repo', () => {
     const lista = [
         sessao({ sessionId: 'a', createdAt: '2026-10-19T09:00:00Z' }),
         sessao({ sessionId: 'b', createdAt: '2026-10-19T11:00:00Z', origin: {}, title: 'UND-2304 segunda versão' }),
@@ -64,7 +64,9 @@ test('acha o quadro pela branch ou pelo título, no repo certo, e o mais recente
         sessao({ sessionId: 'd', createdAt: '2026-10-19T13:00:00Z', repositoryName: 'contas-service', repositoryPath: '/x/contas-service' })
     ];
     assert.equal(escolherQuadro(lista, { chamado: 'UND-2304', projeto: 'crohc-server' }).sessionId, 'b');
-    assert.equal(escolherQuadro(lista, { chamado: 'UND-2304', projeto: 'migrate-mongo' }), null);
+    assert.equal(escolherQuadro(lista, { chamado: 'UND-2304', projeto: 'migrate-mongo' }).sessionId, 'd',
+        'repo do chamado sem quadro próprio cai para o mais recente do chamado, em qualquer repo');
+    assert.equal(escolherQuadro(lista, { chamado: 'UND-9', projeto: 'crohc-server' }), null);
 });
 
 test('UND-23 não casa com o quadro do UND-2304', () => {
@@ -80,6 +82,9 @@ test('lê ao vivo pelo comando e guarda a leitura; com o app fechado, devolve a 
     const vivo = await lerQuadro({ chamado: 'UND-2304', projeto: 'crohc-server' });
     assert.equal(vivo.estado, 'ao-vivo');
     assert.equal(vivo.quadro.document.length, documento.length);
+    assert.equal(vivo.repo, 'crohc-server');
+    assert.equal((await lerQuadro({ chamado: 'UND-2304', projeto: 'contas-service' })).repo, 'crohc-server',
+        'aberto noutro repo do chamado, avisa de qual repo é o quadro');
 
     process.env.QUALIDADE_WHITEBOARD = comandoFalso('wb-fechado',
         'echo "Whiteboard \\`stable\\` is not running. No Whiteboard is running."; exit 1');

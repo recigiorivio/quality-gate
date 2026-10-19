@@ -23,6 +23,9 @@ comparacoes.json
 # log das corridas do agente: estado local
 corridas/
 
+# última leitura de cada quadro do Whiteboard (aba Whiteboard com o app fechado): estado local
+whiteboards/
+
 # dump de `banco.mjs exportar`: é o MESMO conteúdo local do banco, em JSON
 exportado/
 

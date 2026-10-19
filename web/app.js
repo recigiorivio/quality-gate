@@ -952,7 +952,8 @@ function pintarQuadro() {
   const r = atual?.quadroResp;
   if (!painel || !r) { return; }
   const q = r.quadro;
-  document.getElementById('nota-quadro').textContent = q ? `v${q.version}` : '';
+  const deOutroRepo = q && r.repo && r.repo !== atual.projeto ? r.repo : null;
+  document.getElementById('nota-quadro').textContent = q ? `v${q.version}${deOutroRepo ? ` · ${deOutroRepo}` : ''}` : '';
   if (painel.hidden) { return; }
   const chave = q ? `${q.sessionId}:${q.version}:${r.estado}` : r.estado;
   if (painel.dataset.chave === chave) { return; }
@@ -965,7 +966,8 @@ function pintarQuadro() {
   quadrosDesenhados.add(`${q.sessionId}:${q.version}`);
   const lido = new Date(r.lidoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const situacao = r.estado === 'ao-vivo' ? `lido às ${lido}` : `<span class="quadro-aviso">app fechado · última leitura às ${lido}</span>`;
-  painel.innerHTML = `<div class="quadro-cabeca"><b>${esc(q.title || 'Whiteboard')}</b><span>v${q.version} · ${situacao}</span>`
+  const origem = deOutroRepo ? ` · <span class="quadro-aviso">quadro do ${esc(deOutroRepo)}</span>` : '';
+  painel.innerHTML = `<div class="quadro-cabeca"><b>${esc(q.title || 'Whiteboard')}</b><span>v${q.version} · ${situacao}${origem}</span>`
     + '<span class="espaco"></span>'
     + (r.estado === 'app-fechado' ? '<button type="button" onclick="abrirWhiteboard(false)">Atualizar</button>' : '')
     + '<button type="button" onclick="abrirWhiteboard(true)">Abrir no Whiteboard ↗</button></div>'

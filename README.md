@@ -658,7 +658,10 @@ quê, o fluxo de decisões desenhado e o caminho antes × depois. **Sem o códig
 
 - **De onde vem:** `lib/whiteboard.mjs` chama `whiteboard api session_list` e `session_get`, o mesmo
   contrato que o agente usa, e escolhe o quadro do chamado pela branch (ou pelo título que começa
-  com o ID) no repo aberto. `UND-23` não casa com `UND-2304`.
+  com o ID). `UND-23` não casa com `UND-2304`. O do repo aberto ganha; sem ele, vale o mais recente
+  do chamado em outro repo, com "quadro do <repo>" no cabeçalho: um chamado de 5 repos costuma ter
+  um quadro só, e a tela abre o primeiro repo da lista (UND-2264: quadro no crohc-server, tela no
+  contas-service).
 - **Com o app fechado:** a tela mostra a última leitura, guardada em `<estado>/whiteboards/`, com
   "app fechado · última leitura às HH:MM" e um botão que sobe o app em segundo plano e relê.
 - **Desenho:** `web/quadro.js` é puro como o `markdown.js` e testado em `teste/whiteboard.mjs`. O
