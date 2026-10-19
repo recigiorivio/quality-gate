@@ -160,6 +160,23 @@ test('a escolha da aba Whiteboard | Diff fica no servidor e volta na casca', asy
     assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"quadro"\}/);
 });
 
+test('a subaba de Análises (Checagens | The Judge) também volta na casca', async () => {
+    assert.equal((await pegar('/api/preferencia', { chave: 'sub-analises', valor: 'diff' })).corpo.ok, false);
+    assert.equal((await pegar('/api/preferencia', { chave: 'sub-analises', valor: 'juiz' })).corpo.ok, true);
+    assert.match((await pegar('/')).corpo, /"subAnalises":"juiz"/);
+    assert.equal((await pegar('/api/preferencia', { chave: 'sub-analises', valor: 'checagens' })).corpo.ok, true);
+    assert.match((await pegar('/')).corpo, /"subAnalises":"checagens"/);
+});
+
+test('o (i) lê as dependências pelo processo da tela, sem a checagem de porta', async () => {
+    const { status, corpo } = await pegar('/api/dependencias');
+    assert.equal(status, 200);
+    assert.ok(corpo.itens.length > 5);
+    assert.ok(!corpo.itens.some(i => i.nome === 'porta 4100'));
+    assert.equal(typeof corpo.faltando, 'number');
+    assert.match((await pegar('/')).corpo, /id="info-dependencias"/);
+});
+
 test('os estáticos são servidos e o caminho não escapa da pasta web', async () => {
     for (const arquivo of ['/estilo.css', '/app.js', '/realce.js']) {
         const { status, corpo } = await pegar(arquivo);
@@ -1154,6 +1171,25 @@ test('desligar um repo vira manual e a detecção não religa', async () => {
             catalogoDoBanco.remover(alvo);
             await impl.catalogo.detectar();
         }
+    }
+});
+
+// O `stage` virou `develop` e o fetch --prune apagou o velho: o par gravado ficou apontando para o nada,
+// o `rev-list` falhava e o repo saía da fila sem aviso — 33 de 36 sumiram assim em 19/10/2026.
+test('par detectado com branch que sumiu é redetectado, não some da fila', async () => {
+    const impl = new Implantacao();
+    if (!impl.catalogo.listar().length) {
+        await impl.catalogo.detectar();
+    }
+    const alvo = impl.catalogo.listar().find(r => r.ativo && r.fonte === 'detectado');
+    assert.ok(alvo, 'catálogo sem repo detectado para o teste');
+    try {
+        catalogoDoBanco.gravarDetectados(impl.catalogo.listar().map(r => (r.projeto === alvo.projeto
+            ? { ...r, origem: 'origin/branch-que-sumiu' } : r)));
+        await impl.resumo();
+        assert.equal(impl.catalogo.listar().find(r => r.projeto === alvo.projeto).origem, alvo.origem);
+    } finally {
+        await impl.catalogo.detectar();
     }
 });
 

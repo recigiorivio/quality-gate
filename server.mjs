@@ -27,6 +27,7 @@ import prs from './lib/prs.mjs';
 import linear from './lib/linear.mjs';
 import { lerQuadro, abrirNoApp } from './lib/whiteboard.mjs';
 import { avisoDoSistema } from './lib/notificacao.mjs';
+import { Dependencias } from './lib/dependencias.mjs';
 import { pagina } from './web/pagina.mjs';
 import { aplicarEnv, CAMINHO_ENV } from './lib/env.mjs';
 import { CONFIGS, comCaminhos } from './lib/configs.mjs';
@@ -1138,7 +1139,7 @@ class Servidor {
             // chamadas seguintes o levam sozinhas — sem cookie e sem sessão para manter.
             const corpo = pagina(this.qualidade.esqueleto(), this.versaoDosAssets(),
                 TOKEN ? q.get('t') || '' : '', ehLocal(req.socket.remoteAddress), linear.workspace(),
-                this.linkDaRede(), Boolean(juiz.skill()), { abaConteudo: meta('pref:aba-conteudo') });
+                this.linkDaRede(), Boolean(juiz.skill()), { abaConteudo: meta('pref:aba-conteudo'), subAnalises: meta('pref:sub-analises') || undefined });
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
             return res.end(corpo);
         }
@@ -1403,12 +1404,20 @@ class Servidor {
         }
         // No banco e não no localStorage: a escolha vale igual no navegador e no app do Mac.
         if (url.pathname === '/api/preferencia') {
-            const permitidas = { 'aba-conteudo': ['quadro', 'diff', 'analises'] };
+            const permitidas = { 'aba-conteudo': ['quadro', 'diff', 'analises'], 'sub-analises': ['checagens', 'juiz'] };
             if (!permitidas[q.get('chave')]?.includes(q.get('valor'))) {
                 return this.json(res, { ok: false, erro: 'preferência inválida' });
             }
             meta(`pref:${q.get('chave')}`, q.get('valor'));
             return this.json(res, { ok: true });
+        }
+        // No processo da tela, com o PATH do serviço: é o que o mago e o juiz vão de fato encontrar.
+        if (url.pathname === '/api/dependencias') {
+            if (q.get('de-novo')) {
+                this.cache.delete('dependencias');
+            }
+            return this.emCacheAsync('dependencias', () => new Dependencias({ raiz: RAIZ, workspace: WORKSPACE, naTela: true }).listar(), 60000)
+                .then(r => this.json(res, r));
         }
         if (url.pathname === '/api/whiteboard-abrir') {
             const sessao = q.get('sessao') || '';

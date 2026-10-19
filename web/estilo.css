@@ -1094,3 +1094,54 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
 #modal-juiz{width:min(1000px,calc(100vw - 40px))}
 #modal-juiz .ma-texto{max-width:none}
 #modal-juiz .ma-pe>span{flex:1 1 auto}
+/* Subabas de Análises: pílulas, para não competir com as abas de pasta logo acima. */
+.subabas{display:inline-flex;gap:2px;padding:3px;margin:0 0 14px;border:1px solid var(--linha);border-radius:9px;background:var(--painel)}
+.subaba{font:inherit;font-weight:600;font-size:12px;line-height:1;color:var(--fraco);background:transparent;border:0;
+  border-radius:6px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.subaba:hover{color:var(--fg)}
+.subaba[aria-selected="true"]{color:var(--fg);background:var(--cartao);box-shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 1px var(--linha)}
+.subaba:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
+.subaba[aria-selected="true"] .aba-nota{background:var(--linha)}
+
+/* Acordeões de linha inteira: o título não corta mais em 215px, e o detalhe cabe ao lado dele. */
+.painel-analises #cartoes{grid-template-columns:minmax(0,1fr);gap:5px}
+.painel-analises .linha1{padding:9px 12px;gap:8px}
+.painel-analises .linha1 .titulo{flex:0 1 auto;font-size:12.5px}
+.det-linha{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:11.5px;color:var(--fraco);margin-left:4px}
+details[open]>.linha1 .det-linha{visibility:hidden}
+
+/* The Judge em texto corrido, na largura do painel. */
+.ju-cabeca{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 4px}
+.ju-cabeca .ju-veredito{margin-left:0}
+.ju-cabeca .me-copiar{font-size:10.5px;padding:3px 9px}
+.ju-pedir{margin:4px 4px 0;font-size:11px;padding:5px 11px}
+.ju-painel .ma-texto{max-width:none}
+
+/* O (i) das dependências: discreto no canto, só ganha cor no hover. */
+#info-dependencias{position:fixed;right:10px;bottom:10px;z-index:5;width:20px;height:20px;padding:0;border-radius:50%;
+  border:1px solid color-mix(in srgb,var(--fraco) 55%,transparent);background:var(--cartao);color:var(--fraco);opacity:.85;
+  box-shadow:0 1px 3px rgba(0,0,0,.12);cursor:pointer;font:italic 700 12px/18px Georgia,serif;text-align:center;
+  transition:opacity .12s,color .12s,border-color .12s}
+#info-dependencias:hover,#info-dependencias:focus-visible{opacity:1;color:var(--acento);border-color:var(--acento);outline:none}
+#info-dependencias.dp-botao-falta,#info-dependencias.dp-botao-aviso{opacity:1;color:#fff;font:700 12px/18px -apple-system,system-ui,sans-serif}
+#info-dependencias.dp-botao-falta{background:var(--erro);border-color:var(--erro)}
+#info-dependencias.dp-botao-aviso{background:var(--aviso);border-color:var(--aviso)}
+#info-dependencias.dp-botao-falta:hover,#info-dependencias.dp-botao-aviso:hover{color:#fff;filter:brightness(1.1)}
+#modal-dependencias{border:1px solid var(--linha);border-radius:12px;padding:0;width:min(640px,calc(100vw - 40px));
+  max-height:calc(100vh - 60px);background:var(--cartao);color:var(--fg);box-shadow:0 18px 50px rgba(0,0,0,.22);
+  display:flex;flex-direction:column;overflow:hidden}
+#modal-dependencias::backdrop{background:rgba(20,18,40,.38);backdrop-filter:blur(2px)}
+#modal-dependencias .ma-pe>span{flex:1 1 auto}
+.dp-grupo{margin:14px 0 2px;font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--fraco)}
+.dp-item{display:grid;grid-template-columns:16px minmax(0,1fr);gap:8px;padding:7px 0;border-top:1px solid var(--linha)}
+.dp-grupo+.dp-item{border-top:0}
+.dp-marca{font-weight:700;text-align:center;line-height:1.5}
+.dp-ok .dp-marca{color:var(--ok)}
+.dp-aviso .dp-marca{color:var(--aviso)}
+.dp-falta .dp-marca{color:var(--erro)}
+.dp-nome{font-weight:600;font-size:12.5px;overflow-wrap:anywhere}
+.dp-papel{font-size:11.5px;color:var(--fraco)}
+.dp-nota{font-size:11.5px;margin-top:2px;color:var(--fraco)}
+.dp-aviso .dp-nota{color:var(--aviso)}
+.dp-falta .dp-nota{color:var(--erro)}

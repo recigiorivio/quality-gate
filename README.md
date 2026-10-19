@@ -27,7 +27,7 @@ Ele clona, lê o [`instalacao/SKILL.md`](instalacao/SKILL.md) e conduz. À mão 
 cd <a pasta que contém os seus clones git>
 git clone https://github.com/recigiorivio/quality-gate.git
 cd quality-gate
-node instalacao/verificar.mjs   # diz o que falta; não acessa a rede
+node instalacao/verificar.mjs   # diz o que falta; o mesmo que o (i) do canto da tela mostra
 npm start                       # e abra a URL que ele imprime
 ```
 
@@ -396,8 +396,11 @@ erro; nenhum repo julgado é erro, nunca aprovação. O consolidado fica em
 
 **O último julgamento aparece na aba Análises** como o cartão "The Judge" (o de todos os repos; sem
 ele, o do repo aberto): aprova é OK, comenta é aviso, pede mudanças é atenção, e por isso ele entra na
-linha do veredito e na nota da aba. Por dentro, uma linha por repo e os 5 primeiros comentários; o
-cartão se refaz sozinho quando uma corrida termina.
+linha do veredito e na nota da aba. Por dentro, uma linha por repo; o cartão se refaz sozinho quando
+uma corrida termina. **O parecer inteiro fica na subaba The Judge**, ao lado de Checagens, em texto
+corrido como no modal: a tabela dos repos, o parecer de cada um e os comentários de linha. O cartão
+cortava cada comentário em 140 caracteres e partia o caminho do arquivo no meio. A subaba escolhida
+volta como a aba, pelo servidor (`pref:sub-analises`).
 
 **Nada é publicado nem commitado.** A skill termina publicando a revisão no GitHub (passo 7, o
 `post_review.py`); aqui ela para no passo 6, e a garantia não depende do prompt:
@@ -668,10 +671,28 @@ configurado diz **"nenhum linter configurado"** em vez de fingir que passou.
   idênticas repetida no diff, e nome de método novo que já aparece em outro arquivo (`git grep`, não
   memória)
 
+## O (i) do canto: as dependências
+
+No canto de baixo, à direita, um **(i)** apagado abre a lista do que a ferramenta usa: o que é
+obrigatório (node, git, o parser, a pasta dos repos), o recomendado (`gh` autenticado, linters, o
+`claude`) e o opcional (skill the-judge com `python3`, comando `whiteboard`, `.env` de stage, hook,
+serviço, app). Cada linha diz **para que serve** e, quando falta, **o que rodar**. Quando há o que
+ver, o (i) vira **!**: vermelho se falta algo obrigatório, amarelo se há algum aviso. A conferência
+sai 2,5s depois da abertura, para o `gh auth status` não disputar a fila com o conteúdo.
+
+As checagens moram em `lib/dependencias.mjs`, e o `instalacao/verificar.mjs` só imprime a mesma
+lista. A diferença é **quem confere**: na tela, o próprio processo da tela, com o PATH do serviço.
+É o PATH que o mago e o juiz vão encontrar, e ele não é o do terminal: o `gh` em
+`/opt/homebrew/bin` pode existir no terminal e faltar no serviço. Na tela não há a checagem de porta
+(a porta é dela), e o item do serviço diz se aquela tela é a do LaunchAgent ou uma aberta à mão. A
+lib não importa nada que puxe `node:sqlite`: num Node velho o `verificar.mjs` precisa rodar para
+dizer que o Node é velho.
+
 ## Aba Whiteboard: a explicação ao lado do diff
 
 O repo aberto tem três abas: **Whiteboard**, **Diff** e **Análises** (a linha do veredito e os
-cartões das checagens, que antes ficavam acima do diff). Cada aba diz na própria nota o que tem dentro: a versão
+cartões das checagens, que antes ficavam acima do diff; com a skill the-judge instalada, duas subabas:
+**Checagens**, um cartão por linha inteira com o detalhe ao lado do título, e **The Judge**). Cada aba diz na própria nota o que tem dentro: a versão
 do quadro, "N arquivos · +A −R", e na Análises quantos pedem atenção ou aviso, "ok" só depois de
 todos os cartões responderem. A Whiteboard mostra o quadro que o agente
 escreveu no [dev.fast Whiteboard](https://github.com/devdotfast/whiteboard) para o PR: o quê e por

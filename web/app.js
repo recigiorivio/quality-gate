@@ -224,13 +224,13 @@ function cartao(i) {
       <div class="linha1"><span class="tag">${ROTULO[i.status]}</span>
       <span class="titulo">${esc(i.titulo)}</span></div></div>`;
   }
-  // Em 4 por linha não cabe título + detalhe na mesma linha, então recolhido mostra só o título e o
-  // detalhe desce para o corpo, junto da evidência.
+  // Uma linha inteira por cartão: recolhido mostra o detalhe ao lado do título, aberto ele desce para o corpo.
   const corpo = [i.detalhe ? `<p class="det">${esc(i.detalhe)}</p>` : '']
     .concat(i.evidencia.length ? `<ul>${i.evidencia.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : '')
     .join('');
   const resumo = `<span class="tag">${ROTULO[i.status]}</span>
     <span class="titulo">${esc(i.titulo)}</span>
+    ${i.detalhe ? `<span class="det-linha">${esc(i.detalhe)}</span>` : ''}
     ${i.pontoId ? `<button class="tirar" title="tirar este ponto da lista"
       onclick="tirarPonto(event,'${i.pontoId}')">×</button>` : ''}`;
   if (!corpo) {
@@ -856,8 +856,18 @@ async function abrir(chip, forcar = false) {
       <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>
     </div>
     <div class="painel-analises" id="painel-analises" role="tabpanel" aria-labelledby="aba-conteudo-analises"${abaConteudo === 'analises' ? '' : ' hidden'}>
-      <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
-      <div id="cartoes"></div>
+      ${window.JUIZ ? `<div class="subabas" role="tablist" aria-label="análises">
+        <button type="button" class="subaba" role="tab" id="subaba-checagens" aria-controls="sub-checagens"
+          aria-selected="${subAnalises === 'checagens'}" onclick="trocarSubAnalises('checagens')">Checagens <span class="aba-nota" id="nota-checagens"></span></button>
+        <button type="button" class="subaba" role="tab" id="subaba-juiz" aria-controls="sub-juiz"
+          aria-selected="${subAnalises === 'juiz'}" onclick="trocarSubAnalises('juiz')">⚖️ The Judge <span class="aba-nota" id="nota-juiz"></span></button>
+      </div>` : ''}
+      <div id="sub-checagens" role="tabpanel"${subAnalises === 'checagens' ? '' : ' hidden'}>
+        <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
+        <div id="cartoes"></div>
+      </div>
+      ${window.JUIZ ? `<section class="ju-painel" id="sub-juiz" role="tabpanel"${subAnalises === 'juiz' ? '' : ' hidden'}>
+        <p class="vazio">procurando o último julgamento…</p></section>` : ''}
     </div>`;
   pintarAbasDoAtual(token);
   carregarQuadro(token);
@@ -923,6 +933,7 @@ function notaDoDiff(d) {
 const quadrosDesenhados = new Set();
 // A Whiteboard abre primeiro; a última escolha vem do servidor, igual no navegador e no app do Mac.
 let abaConteudo = ['diff', 'analises'].includes(window.PREFERENCIAS?.abaConteudo) ? window.PREFERENCIAS.abaConteudo : 'quadro';
+let subAnalises = window.JUIZ && window.PREFERENCIAS?.subAnalises === 'juiz' ? 'juiz' : 'checagens';
 
 function carregarQuadro(token) {
   api('/api/whiteboard', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
@@ -941,6 +952,16 @@ function trocarAbaConteudo(qual) {
   }
   guardarPreferencia('aba-conteudo', qual);
   if (qual === 'quadro') { pintarQuadro(); }
+}
+
+function trocarSubAnalises(qual) {
+  subAnalises = qual;
+  for (const tipo of ['checagens', 'juiz']) {
+    document.getElementById(`subaba-${tipo}`)?.setAttribute('aria-selected', String(tipo === qual));
+    const painel = document.getElementById(`sub-${tipo}`);
+    if (painel) { painel.hidden = tipo !== qual; }
+  }
+  guardarPreferencia('sub-analises', qual);
 }
 
 // Fora da fila do `api`: atrás das chamadas lentas a escolha se perdia quando a página fechava antes.
@@ -1073,6 +1094,8 @@ function notaDasAnalises(itens) {
   // "ok" só com tudo respondido: com cartão ainda consultando, seria aprovação antes da resposta.
   const consultando = itens.some(i => i.status === 'carregando');
   nota.innerHTML = partes.length ? partes.join(' · ') : consultando ? 'consultando…' : '<span class="nota-mais">ok</span>';
+  const daSubaba = document.getElementById('nota-checagens');
+  if (daSubaba) { daSubaba.innerHTML = nota.innerHTML; }
 }
 
 // O mesmo resumo de uma linha que a rotina escreve no fim: contagens e, depois do travessão, o pior
@@ -1654,7 +1677,9 @@ function carregarJuizNasAnalises(token) {
     .then(r => {
       if (token !== geracao) { return; }
       itensDoAtual.juiz = r.resultado ? [cartaoDoJuiz(r.resultado)] : [];
+      itensDoAtual.julgamento = r.resultado;
       pintarAbasDoAtual(token);
+      pintarJulgamento(r.resultado, r.rodando);
     });
 }
 
@@ -1664,21 +1689,47 @@ function cartaoDoJuiz(r) {
   const achados = r.findings?.findings || [];
   const partes = (r.partes || []).map(p => `${p.projeto}: ${p.ok ? `${VEREDITOS[p.verdict]?.[0] || p.verdict} · ${p.achados} achado(s)`
     : p.pulado ? 'pulado, nada a julgar' : `não julgado — ${p.erro || 'sem motivo'}`}`);
-  const comentarios = achados.slice(0, 5).map(a => `${a.path || ''}${a.line ? `:${a.line}` : ''} — `
-    + String(a.body || '').split('\n')[0].replace(/^\S+\s/, '').slice(0, 140));
   return {
     id: 'juiz', grupo: 'atencao', titulo: 'The Judge',
     status: r.ok ? (STATUS_DO_VEREDITO[veredito] || 'manual') : 'indisponivel',
     detalhe: r.ok
       ? `${VEREDITOS[veredito]?.[0] || veredito} · ${achados.length} achado(s) · ${r.pr?.rotulo || r.projeto} · ${quando}`
       : `não terminou: ${r.erro || 'sem motivo'} · ${quando}`,
-    evidencia: [...partes, ...comentarios, ...(achados.length > 5 ? [`+${achados.length - 5} no modal do The Judge`] : [])]
+    evidencia: [...partes, ...(r.ok ? ['o julgamento inteiro está na subaba The Judge'] : [])]
   };
 }
 
+// O parecer inteiro na subaba The Judge, em texto corrido como no modal: o cartão de Checagens só resume.
+function pintarJulgamento(r, rodando) {
+  const alvo = document.getElementById('sub-juiz');
+  if (!alvo || !atual) { return; }
+  const julgando = rodando?.chamado === atual.chamado;
+  const v = r?.ok && VEREDITOS[r.findings?.verdict];
+  const nota = document.getElementById('nota-juiz');
+  if (nota) {
+    nota.innerHTML = julgando ? 'julgando…' : v ? `<span class="${NOTA_DO_VEREDITO[r.findings.verdict]}">${v[0]}</span>`
+      : r ? '<span class="nota-menos">não terminou</span>' : '';
+  }
+  if (!r && !julgando) {
+    alvo.innerHTML = `<p class="vazio">Nenhum julgamento deste chamado ainda.</p>
+      <button class="me-copiar ju-pedir" onclick="perguntarAoJuiz('${atual.chamado}')">Pergunte ao The Judge</button>`;
+    return;
+  }
+  const meta = r ? [r.pr?.rotulo || r.projeto, `${r.segundos}s`, r.modelo, new Date(r.fim).toLocaleString('pt-BR')].filter(Boolean).join(' · ') : '';
+  const corpo = !r ? '' : r.ok ? renderJulgamento(r) : `<p class="ju-erro">não terminou: ${esc(r.erro || 'sem motivo')}</p>`;
+  alvo.innerHTML = `<div class="ju-cabeca">${v ? `<span class="ju-veredito v-${v[1]}">${v[0]} · ${esc(r.findings.verdict)}</span>` : ''}
+      <span class="carimbo">${esc(meta)}</span>
+      <button class="me-copiar" onclick="perguntarAoJuiz('${atual.chamado}')" title="abre o modal do The Judge, com copiar e julgar de novo">abrir no modal</button></div>
+    ${julgando ? `<p class="ju-andando"><span class="giro" aria-hidden="true"></span>julgando${r ? ' de novo — abaixo está o julgamento anterior' : '…'}</p>` : ''}
+    ${corpo}`;
+}
+
+const NOTA_DO_VEREDITO = { APPROVE: 'nota-mais', COMMENT: 'nota-aviso', REQUEST_CHANGES: 'nota-menos' };
 function aoEventoDoJuiz(d) {
   if (d.fase === 'fim' && atual?.chamado === d.chamado) {
     carregarJuizNasAnalises(geracao);
+  } else if (atual?.chamado === d.chamado && !document.querySelector('#sub-juiz .ju-andando')) {
+    pintarJulgamento(itensDoAtual.julgamento, { chamado: d.chamado });
   }
   marcarBotaoJuiz(d.fase !== 'fim');
   const meu = juizAberto && juizAberto.chamado === d.chamado && juizAberto.projeto === d.projeto;
@@ -1998,6 +2049,8 @@ function iniciarTela() {
   carregarChamados();
   escutarEventos();
   carregarSessoes();
+  // Depois da primeira carga: a conferência roda `gh auth status`, e não deve disputar a fila com o conteúdo.
+  setTimeout(() => marcarBotaoDependencias(), 2500);
   // Sessão abre e fecha sem avisar ninguém: sem esta releitura o contador vira number velho.
   setInterval(() => { if (!document.hidden) { carregarSessoes(); } }, 30000);
   setInterval(() => { if (!document.hidden && visao === 'implantacao') { carregarBuilds(); } }, 30000);
@@ -2109,7 +2162,7 @@ async function atualizarImplantacao(evento) {
   avisarNaTela(`${r.repos} repos buscados em ${r.segundos}s`
     + (r.avancadas?.length ? ` · ${r.avancadas.length} branch(es) local(is) avançada(s)` : '')
     + (locaisImplantacao.length ? ` · ${locaisImplantacao.length} não avançada(s)` : '')
-    + (r.semRefs?.length ? ` · ${r.semRefs.length} sem main/stage no remoto` : ''));
+    + (r.semRefs?.length ? ` · ${r.semRefs.length} sem as branches do par no remoto` : ''));
   return true;
 }
 
@@ -2168,9 +2221,12 @@ function linhaImplantacao(f) {
   // Implantado é ESTADO, não ausência: a linha fica, com ✓ e o motivo. É a mesma regra que já
   // vale para a branch mesclada na tela de chamado — o fim do trabalho tem que aparecer como fim,
   // não como lista vazia.
+  // O par na própria linha: repo que ainda não migrou para `develop` tem de aparecer como exceção, não como igual aos outros.
+  const de = String(f.origem || '').replace(/^origin\//, '');
+  const para = String(f.destino || 'main').replace(/^origin\//, '');
   const sub = f.implantado
-    ? `✓ já está na main${f.atras ? ` · main ${f.atras} à frente` : ''} — nada a enviar`
-    : `${f.commits} commit(s)${f.atras ? ` · main ${f.atras} à frente` : ''}${
+    ? `✓ ${de} já está na ${para}${f.atras ? ` · ${para} ${f.atras} à frente` : ''} — nada a enviar`
+    : `${f.commits} commit(s) ${de} → ${para}${f.atras ? ` · ${para} ${f.atras} à frente` : ''}${
       d ? ` · ${d.arquivos} arq · ${d.ids.length} chamado(s)` : ''}`;
   return `<div class="impl-linha ${marcado ? 'escolhido' : ''} ${f.implantado ? 'implantado' : ''}"
         data-p="${f.projeto}">
@@ -2321,6 +2377,60 @@ function renderModalAnalise(c, carregando) {
     <div class="ma-pe">
       <span>O texto é do agente — confira o que ele afirma antes de mesclar.</span>
       ${c?.resumo ? '<button class="me-copiar" onclick="copiarAnalise()">copiar</button>' : ''}
+    </div>`;
+}
+
+const MARCA_DA_DEPENDENCIA = { ok: '✓', aviso: '!', falta: '✗' };
+
+// O (i) do canto: o que a ferramenta usa, para que serve cada coisa e o que fazer quando falta.
+async function abrirModalDependencias(deNovo = false) {
+  let m = document.getElementById('modal-dependencias');
+  if (!m) {
+    m = document.createElement('dialog');
+    m.id = 'modal-dependencias';
+    m.addEventListener('click', e => { if (e.target === m) { m.close(); } });
+    m.addEventListener('close', () => m.remove());
+    document.body.appendChild(m);
+    m.showModal();
+  }
+  m.innerHTML = renderModalDependencias(null);
+  const r = await api('/api/dependencias', deNovo ? { 'de-novo': 1 } : {});
+  m.innerHTML = renderModalDependencias(r);
+  marcarBotaoDependencias(r);
+}
+
+// O (i) vira ! quando há o que ver: vermelho se falta algo obrigatório, amarelo se há aviso.
+async function marcarBotaoDependencias(r) {
+  const b = document.getElementById('info-dependencias');
+  const dados = r || await api('/api/dependencias', {});
+  if (!b || !dados?.itens) { return; }
+  const estado = dados.faltando ? 'falta' : dados.avisos ? 'aviso' : 'ok';
+  b.className = estado === 'ok' ? '' : `dp-botao-${estado}`;
+  b.textContent = estado === 'ok' ? 'i' : '!';
+  b.title = estado === 'falta' ? `${dados.faltando} dependência(s) obrigatória(s) faltando — clique para ver`
+    : estado === 'aviso' ? `${dados.avisos} aviso(s) nas dependências — clique para ver` : 'dependências da ferramenta';
+}
+
+function renderModalDependencias(r) {
+  const grupos = [...new Set((r?.itens || []).map(i => i.grupo))];
+  const item = i => `<div class="dp-item dp-${i.estado}">
+      <span class="dp-marca" title="${i.estado}">${MARCA_DA_DEPENDENCIA[i.estado] || '?'}</span>
+      <div><div class="dp-nome">${esc(i.nome)}</div><div class="dp-papel">${esc(i.papel)}</div>
+        ${i.nota ? `<div class="dp-nota">${esc(i.nota)}</div>` : ''}</div>
+    </div>`;
+  const corpo = !r ? girando(120) : !r.itens ? `<p class="ju-erro">${esc(r.erro || 'não consegui conferir')}</p>`
+    : grupos.map(g => `<div class="dp-grupo">${esc(g)}</div>${r.itens.filter(i => i.grupo === g).map(item).join('')}`).join('');
+  const resumo = !r?.itens ? 'conferindo…' : r.faltando ? `${r.faltando} obrigatória(s) faltando`
+    : r.avisos ? `${r.avisos} aviso(s)` : 'tudo no lugar';
+  return `<div class="me-cabeca">
+      <div><div class="me-titulo">Dependências</div>
+        <div class="me-sub">${resumo} · conferido pela própria tela, com o PATH do serviço, não o do seu terminal</div></div>
+      <button class="pa-fechar" onclick="document.getElementById('modal-dependencias').close()" title="fechar (Esc)">×</button>
+    </div>
+    <div class="ma-corpo">${corpo}</div>
+    <div class="ma-pe">
+      <span>${r?.desde ? `conferido às ${new Date(r.desde).toLocaleTimeString('pt-BR')} · ` : ''}no terminal: <code>node instalacao/verificar.mjs</code></span>
+      ${r ? '<button class="me-copiar" onclick="abrirModalDependencias(true)">conferir de novo</button>' : ''}
     </div>`;
 }
 
@@ -3143,7 +3253,7 @@ Object.assign(window, {
   copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos,
-  trocarAbaConteudo, abrirWhiteboard, copiarDoQuadro
+  trocarAbaConteudo, trocarSubAnalises, abrirWhiteboard, copiarDoQuadro, abrirModalDependencias, marcarBotaoDependencias
 });
 // Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });

@@ -70,6 +70,7 @@ export function pagina(esqueleto, versao = '', token = '', local = true, linear 
   <button id="trilha-toggle" onclick="alternarMenu()" title="recolher/expandir">›</button>
   <div id="trilha-corpo"></div>
 </div>
+<button id="info-dependencias" type="button" onclick="abrirModalDependencias()" title="dependências da ferramenta" aria-label="dependências da ferramenta">i</button>
 <script>window.ESQUELETO = ${JSON.stringify(esqueleto)};</script>
 <script>window.VERSAO = '${versao}'; window.LINEAR = '${linear}'; window.TOKEN = '${token}'; window.LOCAL = ${local}; window.REDE = '${rede}'; window.JUIZ = ${juiz}; window.PREFERENCIAS = ${JSON.stringify(preferencias).replace(/</g, '\\u003c')};</script>
 <script type="module" src="/app.js?v=${versao}"></script>
