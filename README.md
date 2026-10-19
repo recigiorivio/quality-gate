@@ -386,6 +386,19 @@ alterações não commitadas e os arquivos novos não rastreados (que o `git dif
 modal diz "código local <branch>" no lugar de "PR #N", e o prompt avisa que não há descrição de PR
 para o Pass E checar. Sem diferença nenhuma contra a base, a resposta é "nada a julgar".
 
+**Todos os repos do chamado, num julgamento só.** O botão julga cada repo com a branch do chamado
+(a lista da trilha, três de cada vez, são minutos de modelo cada) e junta: o veredito é o **pior**
+deles, o resumo de cada repo vem em sequência, e os comentários de linha trazem o repo na frente do
+caminho (`crohc-server/src/...`). Uma tabela no topo do modal diz, por repo, o alvo (PR ou código
+local), o veredito, quantos achados e o tempo. Repo sem diferença aparece como **pulado**, não como
+erro; nenhum repo julgado é erro, nunca aprovação. O consolidado fica em
+`corridas/juiz/<chamado>__todos__<data>/`, e cada repo continua com a pasta dele.
+
+**O último julgamento aparece na aba Análises** como o cartão "The Judge" (o de todos os repos; sem
+ele, o do repo aberto): aprova é OK, comenta é aviso, pede mudanças é atenção, e por isso ele entra na
+linha do veredito e na nota da aba. Por dentro, uma linha por repo e os 5 primeiros comentários; o
+cartão se refaz sozinho quando uma corrida termina.
+
 **Nada é publicado nem commitado.** A skill termina publicando a revisão no GitHub (passo 7, o
 `post_review.py`); aqui ela para no passo 6, e a garantia não depende do prompt:
 
@@ -657,10 +670,21 @@ configurado diz **"nenhum linter configurado"** em vez de fingir que passou.
 
 ## Aba Whiteboard: a explicação ao lado do diff
 
-Acima do diff há duas abas, **Whiteboard** e **Diff**. A primeira mostra o quadro que o agente
+O repo aberto tem três abas: **Whiteboard**, **Diff** e **Análises** (a linha do veredito e os
+cartões das checagens, que antes ficavam acima do diff). Cada aba diz na própria nota o que tem dentro: a versão
+do quadro, "N arquivos · +A −R", e na Análises quantos pedem atenção ou aviso, "ok" só depois de
+todos os cartões responderem. A Whiteboard mostra o quadro que o agente
 escreveu no [dev.fast Whiteboard](https://github.com/devdotfast/whiteboard) para o PR: o quê e por
-quê, o fluxo de decisões desenhado e o caminho antes × depois. **Sem o código**: o trecho vira só
-`arquivo · linhas`, porque o código já está na aba ao lado.
+quê, o fluxo de decisões desenhado e o caminho antes × depois, no visual do app: texto em serifa,
+tabela e código em mono, avisos tingidos pelo tom.
+
+- **Trechos de código:** cada `code_peek` mostra o código **do commit a que o quadro está preso**,
+  numerado e com o realce da tela, num cartão que abre e fecha. O servidor lê com `git show
+  <commit>:<arquivo>` (`anexarTrechos` em `lib/whiteboard.mjs`); o repo é o que **tem o commit**,
+  porque o quadro cita outros repos por um id do Whiteboard, e mapear esse id exigiria registrar repo
+  no app. No UND-2264 os 4 trechos vêm de 3 repos (crohc-server, contas-service, workflow-manager).
+  Commit que não está em nenhum repo do workspace vira aviso no lugar do código. Teto de 200 linhas.
+- **Bloco de código** (`code`): selo da linguagem (PLAIN sem ela), título, "N linhas" e copiar.
 
 - **De onde vem:** `lib/whiteboard.mjs` chama `whiteboard api session_list` e `session_get`, o mesmo
   contrato que o agente usa, e escolhe o quadro do chamado pela branch (ou pelo título que começa

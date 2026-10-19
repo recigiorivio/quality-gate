@@ -702,16 +702,15 @@ async function abrirChamado(chamado, projetoPedido = null) {
     const alvo = document.getElementById('tr-chamado');
     if (alvo) {
       const quando = l?.atualizadoEm ? new Date(l.atualizadoEm).toLocaleDateString('pt-BR') : null;
+      // O título já está no cabeçalho, ao lado do ID: aqui ficam só o estágio e o link.
+      const estagio = `<span class="tr-estagio e-${estagioDe(l?.status)}"
+                title="${l?.status ? esc(l.status) : 'estágio não sabido — o cache do Linear não tem status'}"></span>`;
       alvo.innerHTML = `
         <div class="tr-titulo">Chamado</div>
-        <div class="tr-nome">
-          <span class="tr-estagio e-${estagioDe(l?.status)}"
-                title="${l?.status ? esc(l.status) : 'estágio não sabido — o cache do Linear não tem status'}"></span>
-          <span>${esc(l?.titulo || chamado)}</span>
-        </div>
         ${l?.url ? `<a class="tr-linear" href="${l.url}" target="_blank" rel="noopener"
             title="abrir ${chamado} no Linear${quando ? ` · dado lido em ${quando}` : ''}">
-            <span class="tl-marca">L</span><span>${chamado} no Linear</span><span class="tl-seta">↗</span></a>` : ''}
+            ${estagio}<span class="tl-marca">L</span><span>${chamado} no Linear</span><span class="tl-seta">↗</span></a>`
+    : `<div class="tr-nome">${estagio}<span>${esc(chamado)}</span></div>`}
         ${quando ? `<div class="tr-nota">lido em ${quando}</div>` : ''}`;
     }
     // Todas as abertas, listadas — é o que estava na barra antes da trilha, e é o que se persegue.
@@ -813,7 +812,7 @@ async function mostrar(chamado) {
 // A prioridade é o diff: o esqueleto e a lista de arquivos entram primeiro, e os cartões preenchem
 // conforme chegam. Nada espera por nada.
 // Abre um repo. O cabeçalho de identidade não vive mais aqui — está na área de menu do chamado.
-// Aqui fica o veredito numa linha, as abas, e o diff.
+// Aqui ficam as abas: o quadro, o diff e as análises (o veredito numa linha e os cartões).
 async function abrir(chip, forcar = false) {
   // Reabrir o repo que já está aberto refazia tudo: 2 pedidos de /api/arquivos e cada arquivo aberto
   // pintado em dobro. `recarregar` e `tirarPonto` passam `forcar` porque aí é para refazer mesmo.
@@ -835,19 +834,19 @@ async function abrir(chip, forcar = false) {
   q.set('projeto', atual.projeto);
   history.replaceState(null, '', `${location.pathname}?${q}`);
   const token = ++geracao;
-  itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [] };
+  itensDoAtual = { locais: [], remotos: [], pontos: [], lint: [], juiz: [] };
   const alvo = document.getElementById('conteudo');
   alvo.className = '';
   // Clicar numa branch começa do topo: antes a página ficava onde estava, ou saltava para o meio.
   document.querySelector('main').scrollTop = 0;
   alvo.innerHTML = `
-    <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
-    <div id="cartoes"></div>
     <div class="abas-conteudo" role="tablist" aria-label="conteúdo do repo">
       <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-quadro" aria-controls="painel-quadro"
-        aria-selected="${abaConteudo === 'quadro'}" onclick="trocarAbaConteudo('quadro')">Whiteboard <span class="aba-nota" id="nota-quadro"></span></button>
+        aria-selected="${abaConteudo === 'quadro'}" onclick="trocarAbaConteudo('quadro')">${ICONE_QUADRO}Whiteboard <span class="aba-nota" id="nota-quadro"></span></button>
       <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-diff" aria-controls="painel-diff"
-        aria-selected="${abaConteudo === 'diff'}" onclick="trocarAbaConteudo('diff')">Diff</button>
+        aria-selected="${abaConteudo === 'diff'}" onclick="trocarAbaConteudo('diff')">${ICONE_DIFF}Diff <span class="aba-nota" id="nota-diff"></span></button>
+      <button type="button" class="aba-conteudo" role="tab" id="aba-conteudo-analises" aria-controls="painel-analises"
+        aria-selected="${abaConteudo === 'analises'}" onclick="trocarAbaConteudo('analises')">${ICONE_ANALISES}Análises <span class="aba-nota" id="nota-analises"></span></button>
     </div>
     <div class="painel-quadro" id="painel-quadro" role="tabpanel" aria-labelledby="aba-conteudo-quadro"${abaConteudo === 'quadro' ? '' : ' hidden'}>
       <div class="quadro-vazio">procurando o quadro do Whiteboard…</div>
@@ -855,9 +854,14 @@ async function abrir(chip, forcar = false) {
     <div id="painel-diff" role="tabpanel" aria-labelledby="aba-conteudo-diff"${abaConteudo === 'diff' ? '' : ' hidden'}>
       <h3 class="secao">Diff — antes | depois <span class="carimbo" id="carimbo"></span></h3>
       <div id="arquivos" aria-busy="true">${esqCodigo(4)}</div>
+    </div>
+    <div class="painel-analises" id="painel-analises" role="tabpanel" aria-labelledby="aba-conteudo-analises"${abaConteudo === 'analises' ? '' : ' hidden'}>
+      <div class="veredito" id="veredito">${esq('esq-linha esq-l1')}</div>
+      <div id="cartoes"></div>
     </div>`;
   pintarAbasDoAtual(token);
   carregarQuadro(token);
+  carregarJuizNasAnalises(token);
 
   api('/api/arquivos', { projeto: atual.projeto, ref: atual.ref, chamado: atual.chamado }).then(d => {
     if (token !== geracao) { return; }
@@ -865,6 +869,7 @@ async function abrir(chip, forcar = false) {
     atual.dados = d;
     montarArquivos(d);
     marcarCarimbo(d);
+    notaDoDiff(d);
   });
   api('/api/qualidade', { chamado: atual.chamado, projeto: atual.projeto, ref: atual.ref }).then(q => {
     if (token !== geracao) { return; }
@@ -902,10 +907,22 @@ async function abrir(chip, forcar = false) {
   });
 }
 
+const ICONE_QUADRO = '<svg class="aba-icone" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="9" rx="1.5"/><path d="M4.5 9l2.5-3 2 2 2.5-3M6 14l2-2.5 2 2.5"/></svg>';
+const ICONE_ANALISES = '<svg class="aba-icone" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M5 8.2l2 2 4-4.4"/></svg>';
+const ICONE_DIFF ='<svg class="aba-icone" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2" width="5.5" height="12" rx="1"/><rect x="9" y="2" width="5.5" height="12" rx="1"/><path d="M3 6h2.5M10.5 6h2.5M11.75 4.75v2.5M3 10h2.5"/></svg>';
+
+function notaDoDiff(d) {
+  const nota = document.getElementById('nota-diff');
+  if (!nota || !Array.isArray(d.arquivos)) { return; }
+  const mais = d.arquivos.reduce((a, f) => a + (f.adicionadas || 0), 0);
+  const menos = d.arquivos.reduce((a, f) => a + (f.removidas || 0), 0);
+  nota.innerHTML = `${d.arquivos.length} arquivo${d.arquivos.length === 1 ? '' : 's'} · <span class="nota-mais">+${mais}</span> <span class="nota-menos">−${menos}</span>`;
+}
+
 // Versões de quadro já mostradas nesta aba do navegador: o traço anima uma vez por versão.
 const quadrosDesenhados = new Set();
 // A Whiteboard abre primeiro; a última escolha vem do servidor, igual no navegador e no app do Mac.
-let abaConteudo = window.PREFERENCIAS?.abaConteudo === 'diff' ? 'diff' : 'quadro';
+let abaConteudo = ['diff', 'analises'].includes(window.PREFERENCIAS?.abaConteudo) ? window.PREFERENCIAS.abaConteudo : 'quadro';
 
 function carregarQuadro(token) {
   api('/api/whiteboard', { chamado: atual.chamado, projeto: atual.projeto }).then(r => {
@@ -917,7 +934,7 @@ function carregarQuadro(token) {
 
 function trocarAbaConteudo(qual) {
   abaConteudo = qual;
-  for (const tipo of ['quadro', 'diff']) {
+  for (const tipo of ['quadro', 'diff', 'analises']) {
     document.getElementById(`aba-conteudo-${tipo}`)?.setAttribute('aria-selected', String(tipo === qual));
     const painel = document.getElementById(`painel-${tipo}`);
     if (painel) { painel.hidden = tipo !== qual; }
@@ -976,7 +993,17 @@ function pintarQuadro() {
   if (animar) { revelarAoRolar(painel); }
 }
 
-const UNIDADES_DO_QUADRO = '.q-secao-titulo,.q-md,.q-aviso,.q-trecho,.q-codigo,.q-fluxo,.q-pilhas,.q-sequencia,.q-dados';
+const UNIDADES_DO_QUADRO = '.q-secao-titulo,.q-md,.q-aviso,.q-peek-figura,.q-codigo,.q-fluxo,.q-pilhas,.q-sequencia,.q-dados';
+
+async function copiarDoQuadro(botao) {
+  const linhas = [...botao.closest('.q-codigo').querySelectorAll('.q-src')].map(td => td.textContent.replace(/ /g, ''));
+  try {
+    await navigator.clipboard.writeText(linhas.join('\n'));
+    avisarNaTela('código copiado');
+  } catch {
+    avisarNaTela('não deu para copiar daqui');
+  }
+}
 
 // Cada parte anima ao entrar na tela; as que entram juntas chegam uma depois da outra.
 function revelarAoRolar(painel) {
@@ -1028,10 +1055,24 @@ function pintarAbasDoAtual(token) {
   const fixos = new Set(ESQUELETO.map(e => e.id));
   const todos = ESQUELETO.map(e => conhecidos.find(i => i.id === e.id) || e)
     .concat(conhecidos.filter(i => !fixos.has(i.id)))
-    .concat(itensDoAtual.pontos);
+    .concat(itensDoAtual.juiz || [], itensDoAtual.pontos);
   desenharCartoes(todos);
   escreverVeredito(todos);
+  notaDasAnalises(todos);
   tirarOverlay();
+}
+
+// Na aba fechada, o que pede atenção tem de aparecer na própria aba, senão ninguém abre.
+function notaDasAnalises(itens) {
+  const nota = document.getElementById('nota-analises');
+  if (!nota) { return; }
+  const atencao = itens.filter(i => i.status === 'atencao').length;
+  const aviso = itens.filter(i => i.status === 'aviso').length;
+  const partes = [atencao && `<span class="nota-menos">${atencao} atenção</span>`,
+    aviso && `<span class="nota-aviso">${aviso} aviso${aviso === 1 ? '' : 's'}</span>`].filter(Boolean);
+  // "ok" só com tudo respondido: com cartão ainda consultando, seria aprovação antes da resposta.
+  const consultando = itens.some(i => i.status === 'carregando');
+  nota.innerHTML = partes.length ? partes.join(' · ') : consultando ? 'consultando…' : '<span class="nota-mais">ok</span>';
 }
 
 // O mesmo resumo de uma linha que a rotina escreve no fim: contagens e, depois do travessão, o pior
@@ -1558,7 +1599,7 @@ const VEREDITOS = {
 
 function botaoJuiz(chamado) {
   return window.JUIZ ? `<button class="tr-agente tr-juiz" id="btn-juiz" onclick="perguntarAoJuiz('${chamado}')"
-      title="revisa a PR do repo aberto (sem PR, o código local) com a skill the-judge e mostra aqui — nada é publicado nem commitado">
+      title="revisa cada repo do chamado (a PR, ou sem PR o código local) com a skill the-judge e junta tudo aqui — nada é publicado nem commitado">
       <span class="tr-cog" aria-hidden="true">⚖️</span><span>Pergunte ao The Judge</span></button>` : '';
 }
 
@@ -1572,11 +1613,9 @@ function marcarBotaoJuiz(rodando) {
   }
 }
 
+// Todos os repos com a branch do chamado, num julgamento só: o servidor julga cada um e junta.
 async function perguntarAoJuiz(chamado) {
-  const projeto = atual?.projeto;
-  if (!projeto) {
-    return avisarNaTela('abra um repo do chamado primeiro');
-  }
+  const projeto = 'todos';
   juizAberto = { chamado, projeto, carregando: true };
   abrirModalJuiz();
   const r = await api('/api/juiz-resultado', { chamado, projeto });
@@ -1604,7 +1643,43 @@ async function julgarDeNovo() {
   }
 }
 
+const STATUS_DO_VEREDITO = { APPROVE: 'ok', COMMENT: 'aviso', REQUEST_CHANGES: 'atencao' };
+
+// O último julgamento vira cartão nas Análises: o de todos os repos, ou na falta dele o do repo aberto.
+function carregarJuizNasAnalises(token) {
+  if (!window.JUIZ || !atual) { return; }
+  const { chamado, projeto } = atual;
+  api('/api/juiz-resultado', { chamado, projeto: 'todos' })
+    .then(r => (r.resultado ? r : api('/api/juiz-resultado', { chamado, projeto })))
+    .then(r => {
+      if (token !== geracao) { return; }
+      itensDoAtual.juiz = r.resultado ? [cartaoDoJuiz(r.resultado)] : [];
+      pintarAbasDoAtual(token);
+    });
+}
+
+function cartaoDoJuiz(r) {
+  const quando = new Date(r.fim).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const veredito = r.findings?.verdict;
+  const achados = r.findings?.findings || [];
+  const partes = (r.partes || []).map(p => `${p.projeto}: ${p.ok ? `${VEREDITOS[p.verdict]?.[0] || p.verdict} · ${p.achados} achado(s)`
+    : p.pulado ? 'pulado, nada a julgar' : `não julgado — ${p.erro || 'sem motivo'}`}`);
+  const comentarios = achados.slice(0, 5).map(a => `${a.path || ''}${a.line ? `:${a.line}` : ''} — `
+    + String(a.body || '').split('\n')[0].replace(/^\S+\s/, '').slice(0, 140));
+  return {
+    id: 'juiz', grupo: 'atencao', titulo: 'The Judge',
+    status: r.ok ? (STATUS_DO_VEREDITO[veredito] || 'manual') : 'indisponivel',
+    detalhe: r.ok
+      ? `${VEREDITOS[veredito]?.[0] || veredito} · ${achados.length} achado(s) · ${r.pr?.rotulo || r.projeto} · ${quando}`
+      : `não terminou: ${r.erro || 'sem motivo'} · ${quando}`,
+    evidencia: [...partes, ...comentarios, ...(achados.length > 5 ? [`+${achados.length - 5} no modal do The Judge`] : [])]
+  };
+}
+
 function aoEventoDoJuiz(d) {
+  if (d.fase === 'fim' && atual?.chamado === d.chamado) {
+    carregarJuizNasAnalises(geracao);
+  }
   marcarBotaoJuiz(d.fase !== 'fim');
   const meu = juizAberto && juizAberto.chamado === d.chamado && juizAberto.projeto === d.projeto;
   if (!meu || !document.getElementById('modal-juiz')) {
@@ -1669,10 +1744,10 @@ function renderModalJuiz(j) {
   const meta = r && !j.rodando
     ? [r.pr.numero ? `PR #${r.pr.numero}` : esc(r.pr.rotulo || 'código local'), r.pr.numero ? r.pr.estado?.toLowerCase() : null,
       `${r.segundos}s`, esc(r.modelo || ''), new Date(r.fim).toLocaleString('pt-BR')].filter(Boolean).join(' · ')
-    : 'a PR do chamado neste repo (sem PR, o código local), revisada pela skill the-judge';
+    : 'cada repo do chamado (a PR, ou sem PR o código local), revisado pela skill the-judge';
   return `<div class="me-cabeca">
       <div><div class="me-titulo">⚖️ The Judge${v ? ` <span class="ju-veredito v-${v[1]}">${v[0]} · ${esc(f.verdict)}</span>` : ''}</div>
-        <div class="me-sub">${esc(j.projeto)} · ${meta}</div></div>
+        <div class="me-sub">${esc(j.projeto === 'todos' ? `${j.chamado} · todos os repos` : j.projeto)} · ${meta}</div></div>
       <button class="pa-fechar" onclick="document.getElementById('modal-juiz').close()" title="fechar (Esc)">×</button>
     </div>
     <div class="ma-corpo">${corpo}</div>
@@ -1706,8 +1781,22 @@ function renderJulgamento(r) {
     ? `<a href="${esc(ev.ref)}" target="_blank" rel="noopener">${esc(ev.ref)}</a>`
     : `<code>${esc(ev.type || '')}: ${esc(ev.ref || '')}</code>`).join(' · ')}</div>` : ''}
     </div>`).join('');
-  return `${portao}<div class="ma-texto">${mdParaHtml(f.summary || '', linkDoId)}</div>
+  return `${portao}${tabelaDasPartes(r.partes)}<div class="ma-texto">${mdParaHtml(f.summary || '', linkDoId)}</div>
     ${achados ? `<h3 class="ju-titulo">Comentários de linha (${f.findings.length})</h3>${achados}` : ''}`;
+}
+
+// Um repo por linha no julgamento consolidado: o que foi julgado, o veredito de cada um e o que ficou de fora.
+function tabelaDasPartes(partes) {
+  if (!Array.isArray(partes) || !partes.length) { return ''; }
+  const linha = p => {
+    const v = VEREDITOS[p.verdict];
+    const situacao = p.ok && v ? `<span class="ju-veredito v-${v[1]}">${v[0]}</span>`
+      : p.pulado ? '<span class="ju-sev">pulado</span>' : `<span class="ju-sev">${esc(p.erro || 'não julgado')}</span>`;
+    return `<tr><td><code>${esc(p.projeto)}</code></td><td>${esc(p.rotulo || '—')}</td><td>${situacao}</td>`
+      + `<td>${p.ok ? p.achados : '—'}</td><td>${p.segundos ?? '—'}${p.segundos != null ? 's' : ''}</td></tr>`;
+  };
+  return `<table class="ju-partes"><thead><tr><th>repo</th><th>alvo</th><th>veredito</th><th>achados</th><th>tempo</th></tr></thead>
+    <tbody>${partes.map(linha).join('')}</tbody></table>`;
 }
 
 async function copiarJulgamento() {
@@ -3054,7 +3143,7 @@ Object.assign(window, {
   copiarLink, abrirModalSessoes, abrirModalBuilds, atualizarModalBuilds, carregarBuilds, trocarJanelaBuilds, salvarBoasVindas,
   trocarVisao, abrirConfig, salvarConfig,
   abrirRepos, detectarRepos, salvarRepos, mexerNoRepo, removerRepo, adicionarRepo, filtrarRepos,
-  trocarAbaConteudo, abrirWhiteboard
+  trocarAbaConteudo, abrirWhiteboard, copiarDoQuadro
 });
 // Lidas pelos onclick da engrenagem e do botão de voltar, que moram no HTML.
 Object.defineProperty(window, 'visao', { get: () => visao });

@@ -738,15 +738,23 @@ class Servidor {
 
     // A skill the-judge sobre a PR do chamado, sem publicar nada (ver `lib/juiz.mjs`). Só de localhost
     // pelo mesmo motivo da corrida do agente, e uma por vez: são minutos de modelo.
+    // `projeto = 'todos'` julga cada repo com a branch do chamado (3 de cada vez) e junta num julgamento só.
     async perguntarAoJuiz(chamado, projeto, res, remoto) {
         if (!ehLocal(remoto)) {
             return this.json(res, { ok: false, erro: 'o juiz só roda na máquina do servidor' });
         }
-        if (!/^[A-Z]{2,5}-\d+$/.test(chamado || '') || !/^[\w.-]+$/.test(projeto || '') || !existsSync(join(WORKSPACE, projeto, '.git'))) {
+        const todos = projeto === 'todos';
+        if (!/^[A-Z]{2,5}-\d+$/.test(chamado || '') || !/^[\w.-]+$/.test(projeto || '') || (!todos && !existsSync(join(WORKSPACE, projeto, '.git')))) {
             return this.json(res, { ok: false, erro: 'chamado ou repo inválido' });
         }
         if (this.juizRodando) {
             return this.json(res, { ok: false, erro: `o juiz já está julgando ${this.juizRodando.chamado} em ${this.juizRodando.projeto}` });
+        }
+        const repos = todos
+            ? ((await this.workspace.chamados()).find(c => c.chamado === chamado)?.repos || []).map(r => r.projeto)
+            : [projeto];
+        if (!repos.length) {
+            return this.json(res, { ok: false, erro: `nenhum repo com a branch ${chamado}` });
         }
         this.juizRodando = { chamado, projeto, desde: Date.now() };
         this.juizEventos = [];
@@ -755,23 +763,45 @@ class Servidor {
             this.avisar({ tipo: 'juiz', fase: 'andando', chamado, projeto, passo: this.juizEventos.length, ...ev });
         };
         this.json(res, { ok: true, aviso: 'acompanhe pelo SSE' });
-        this.registrar('juiz', 'inicio', `${chamado} ${projeto}`);
+        this.registrar('juiz', 'inicio', `${chamado} ${todos ? repos.join(',') : projeto}`);
+        const inicio = Date.now();
         try {
-            aviso({ texto: 'levantando a PR (ou, sem PR, o código local), o diff, a varredura e o lint…' });
-            const ctx = await juiz.preparar(projeto, chamado);
-            if (ctx.erro) {
-                throw new Error(ctx.erro);
-            }
-            aviso({ texto: `${juiz.rotulo(ctx.pr)} · ${ctx.arquivos.length} arquivo(s) · rodando o juiz (só leitura)…` });
-            const modelo = MODELO_DA_SESSAO();
-            const r = await juiz.julgar(ctx, { modelo: modelo === 'default do CLI' ? null : modelo, aoEvento: aviso });
-            this.registrar('juiz', r.ok ? 'fim' : 'erro', `${chamado} ${projeto} ${juiz.rotulo(ctx.pr)} ${r.findings?.verdict || r.erro} em ${r.segundos}s`);
-            this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: r.ok, veredito: r.findings?.verdict || null, texto: r.erro || 'terminou' });
+            const partes = [];
+            const fila = [...repos.entries()];
+            await Promise.all(Array.from({ length: Math.min(3, repos.length) }, async () => {
+                while (fila.length) {
+                    const [i, repo] = fila.shift();
+                    partes[i] = await this._julgarRepo(chamado, repo, todos ? ev => aviso({ ...ev, texto: `[${repo}] ${ev.texto || ''}` }) : aviso);
+                }
+            }));
+            const r = todos ? juiz.consolidar(chamado, partes, { inicio, modelo: partes.find(p => p.resultado)?.resultado.modelo }) : partes[0].resultado;
+            const erro = r?.erro || partes[0].erro;
+            this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: Boolean(r?.ok), veredito: r?.findings?.verdict || null, texto: erro || 'terminou' });
         } catch (e) {
             this.registrar('juiz', 'erro', `${chamado} ${projeto} ${e.message}`);
             this.avisar({ tipo: 'juiz', fase: 'fim', chamado, projeto, ok: false, texto: e.message });
         } finally {
             this.juizRodando = null;
+        }
+    }
+
+    // Um repo: devolve o julgamento, ou o motivo de não ter julgado. "Nada a julgar" é pular, não erro.
+    async _julgarRepo(chamado, projeto, aviso) {
+        try {
+            aviso({ texto: 'levantando a PR (ou, sem PR, o código local), o diff, a varredura e o lint…' });
+            const ctx = await juiz.preparar(projeto, chamado);
+            if (ctx.erro) {
+                this.registrar('juiz', 'pulado', `${chamado} ${projeto} ${ctx.erro}`);
+                return { projeto, erro: ctx.erro, pulado: /nada a julgar/.test(ctx.erro) };
+            }
+            aviso({ texto: `${juiz.rotulo(ctx.pr)} · ${ctx.arquivos.length} arquivo(s) · rodando o juiz (só leitura)…` });
+            const modelo = MODELO_DA_SESSAO();
+            const r = await juiz.julgar(ctx, { modelo: modelo === 'default do CLI' ? null : modelo, aoEvento: aviso });
+            this.registrar('juiz', r.ok ? 'fim' : 'erro', `${chamado} ${projeto} ${juiz.rotulo(ctx.pr)} ${r.findings?.verdict || r.erro} em ${r.segundos}s`);
+            return { projeto, resultado: r };
+        } catch (e) {
+            this.registrar('juiz', 'erro', `${chamado} ${projeto} ${e.message}`);
+            return { projeto, erro: e.message };
         }
     }
 
@@ -1373,7 +1403,7 @@ class Servidor {
         }
         // No banco e não no localStorage: a escolha vale igual no navegador e no app do Mac.
         if (url.pathname === '/api/preferencia') {
-            const permitidas = { 'aba-conteudo': ['quadro', 'diff'] };
+            const permitidas = { 'aba-conteudo': ['quadro', 'diff', 'analises'] };
             if (!permitidas[q.get('chave')]?.includes(q.get('valor'))) {
                 return this.json(res, { ok: false, erro: 'preferência inválida' });
             }

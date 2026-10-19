@@ -198,7 +198,10 @@ body.trilha-recolhida #trilha-toggle{transform:rotate(180deg)}
 #trilha-corpo{padding:12px 14px 40px}
 body.trilha-recolhida #trilha-corpo{display:none}
 
-.tr-secao{margin-bottom:20px}
+.tr-secao{margin-bottom:16px}
+/* Um fio entre as seções da trilha; a que ainda não recebeu dado some, senão o fio sai dobrado. */
+.tr-secao + .tr-secao{border-top:1px solid var(--linha);padding-top:14px}
+.tr-secao:empty{display:none}
 .tr-titulo{font-weight:600;font-size:9px;line-height:1;text-transform:uppercase;letter-spacing:.12em;color:var(--fraco);
   margin-bottom:9px}
 .tr-chips{display:flex;flex-direction:column;gap:4px}
@@ -1067,6 +1070,11 @@ body.com-barra .painel:hover::-webkit-scrollbar-thumb{background-color:var(--fra
 .ju-veredito.v-ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}
 .ju-veredito.v-aviso{background:color-mix(in srgb,var(--aviso) 16%,transparent);color:var(--aviso)}
 .ju-veredito.v-erro{background:color-mix(in srgb,var(--erro) 14%,transparent);color:var(--erro)}
+.ju-partes{width:100%;border-collapse:collapse;margin:12px 0 4px;font-size:12px}
+.ju-partes th{text-align:left;font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--fraco);padding:6px 8px;border-bottom:1px solid var(--linha)}
+.ju-partes td{padding:7px 8px;border-bottom:1px solid var(--linha);vertical-align:top}
+.ju-partes .ju-veredito{margin-left:0}
 .ju-gate{margin:14px 0 2px;font-size:11px;font-weight:600}
 .ju-gate.ok{color:var(--ok)}
 .ju-gate.erro{color:var(--erro)}

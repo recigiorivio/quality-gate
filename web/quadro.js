@@ -1,6 +1,7 @@
 // O quadro do dev.fast Whiteboard virando HTML. Puro como o markdown.js (dado entra, HTML sai, sem
 // DOM), para ser testável no `node --test`. Tempos do traço adaptados do Whiteboard (MIT).
 import { mdParaHtml } from './markdown.js';
+import { realcar, novoEstado, linguagemDe } from './realce.js';
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
@@ -259,6 +260,45 @@ function lenteDeDados(c) {
     return `<figure class="q-dados">${c.title ? `<figcaption class="q-fluxo-titulo">${esc(c.title)}</figcaption>` : ''}<ul>${lojas}</ul><ul>${usos}</ul></figure>`;
 }
 
+const APELIDOS = { javascript: 'js', typescript: 'ts', python: 'py', shell: 'sh', bash: 'sh' };
+const ICONE_COPIAR = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M3 11V3.5A1.5 1.5 0 0 1 4.5 2H11"/></svg>';
+const selo = caminho => (String(caminho).split('.').pop() || '').slice(0, 4).toUpperCase();
+
+function linhasNumeradas(linhas, inicio, ling) {
+    const estado = novoEstado();
+    return `<table class="q-linhas"><tbody>${linhas.map((l, i) => `<tr><td class="q-num">${inicio + i}</td>`
+        + `<td class="q-src">${l ? realcar(l, ling, estado) : '&nbsp;'}</td></tr>`).join('')}</tbody></table>`;
+}
+
+// O código vem do servidor (`trecho`, lido no commit do quadro); sem ele, fica a referência e o motivo.
+function trechoDeCodigo(c) {
+    const caminho = (/^(?:head|base|diff)\/(.+?)(?:#|$)/.exec(c.source || '') || [])[1] || String(c.source || '');
+    const t = c.trecho;
+    const legenda = c.caption ? `<figcaption class="q-peek-legenda">${esc(c.caption)}</figcaption>` : '';
+    const cabeca = meta => `<span class="q-selo">${esc(selo(caminho))}</span><code class="q-peek-arquivo">${esc(caminho)}</code>`
+        + `<span class="q-peek-meta">${esc(meta)}</span>`;
+    if (!t?.linhas) {
+        const onde = localDoTrecho(c.source).split(' · ').slice(1).join(' · ');
+        return `<figure class="q-peek-figura"><div class="q-peek"><div class="q-peek-cabeca">${cabeca(onde)}</div>`
+            + `${t?.erro ? `<p class="q-peek-erro">${esc(t.erro)}</p>` : ''}</div>${legenda}</figure>`;
+    }
+    const intervalo = t.fim > t.inicio ? `linhas ${t.inicio}–${t.fim}` : `linha ${t.inicio}`;
+    return `<figure class="q-peek-figura"><details class="q-peek" open><summary class="q-peek-cabeca">`
+        + `<span class="q-chev" aria-hidden="true"></span>${cabeca(`${t.repo} · ${intervalo}`)}</summary>`
+        + `<div class="q-peek-corpo">${linhasNumeradas(t.linhas, t.inicio, linguagemDe(caminho))}</div></details>${legenda}</figure>`;
+}
+
+function blocoDeCodigo(c) {
+    const linhas = String(c.text ?? '').replace(/\n$/, '').split('\n');
+    const nome = String(c.language || '').toLowerCase();
+    const ling = nome && !['text', 'plain', 'plaintext'].includes(nome) ? linguagemDe(`x.${APELIDOS[nome] || nome}`) : null;
+    return `<figure class="q-codigo"><div class="q-codigo-cabeca"><span class="q-selo">${esc(ling ? nome.toUpperCase() : 'PLAIN')}</span>`
+        + `<span class="q-codigo-titulo">${esc(c.caption || '')}</span>`
+        + `<span class="q-codigo-meta">${linhas.length} linha${linhas.length === 1 ? '' : 's'}</span>`
+        + `<button type="button" class="q-copiar" onclick="copiarDoQuadro(this)" title="copiar" aria-label="copiar">${ICONE_COPIAR}</button></div>`
+        + `<div class="q-codigo-corpo">${linhasNumeradas(linhas, 1, ling)}</div></figure>`;
+}
+
 function bloco(c, ctx) {
     switch (c?.type) {
     case 'section': {
@@ -273,9 +313,9 @@ function bloco(c, ctx) {
         return `<aside class="q-aviso q-tom-${esc(c.tone || 'info')}">${c.title ? `<p class="q-aviso-titulo">${esc(c.title)}</p>` : ''}`
             + `${(c.children || []).map(f => bloco(f, ctx)).join('')}</aside>`;
     case 'code_peek':
-        return `<p class="q-trecho"><span class="q-trecho-onde">${esc(localDoTrecho(c.source))}</span>${c.caption ? `<span>${esc(c.caption)}</span>` : ''}</p>`;
+        return trechoDeCodigo(c);
     case 'code':
-        return `<figure class="q-codigo"><pre><code>${esc(c.text)}</code></pre>${c.caption ? `<figcaption>${esc(c.caption)}</figcaption>` : ''}</figure>`;
+        return blocoDeCodigo(c);
     case 'divider':
         return '<hr class="q-divisor">';
     case 'flow_diagram':

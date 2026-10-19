@@ -1,14 +1,16 @@
-// A aba Whiteboard: achar o quadro do chamado, ler pelo comando, sobreviver ao app fechado e desenhar
-// o documento sem o código. O comando é um script falso: a suíte não depende do app instalado.
+// A aba Whiteboard: achar o quadro do chamado, ler pelo comando, sobreviver ao app fechado, ler o
+// código dos trechos no commit do quadro e desenhar o documento. O comando é um script falso: a suíte
+// não depende do app instalado.
 //
 // uso: npm test
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { escolherQuadro, lerQuadro } from '../lib/whiteboard.mjs';
+import { anexarTrechos, escolherQuadro, lerQuadro } from '../lib/whiteboard.mjs';
 import { desenharFluxo, quadroParaHtml, localDoTrecho } from '../web/quadro.js';
 import { recusarEstadoDeProducao } from './anteparo.mjs';
 
@@ -104,7 +106,7 @@ test('sem o comando instalado, e com chamado inválido, não quebra', async () =
     assert.deepEqual(await lerQuadro({ chamado: 'UND-1', projeto: '../x' }), { estado: 'sem-quadro' });
 });
 
-test('o documento vira HTML sem o código: o trecho mostra só arquivo e linhas', () => {
+test('o documento vira HTML: markdown, aviso e o trecho sem código lido mostra arquivo e linhas', () => {
     const html = quadroParaHtml(documento);
     assert.match(html, /<h3 class="q-secao-titulo">O quê \/ por quê<\/h3>/);
     assert.match(html, /<code>resolverIdCliente<\/code>/);
@@ -113,9 +115,48 @@ test('o documento vira HTML sem o código: o trecho mostra só arquivo e linhas'
     assert.match(html, /<b>sem o Cliente Selector<\/b>/);
     assert.doesNotMatch(html, /\*\*/);
     assert.match(html, /q-aviso q-tom-info/);
-    assert.match(html, /application\.controller\.js · linhas 23–30/);
+    assert.match(html, /<code class="q-peek-arquivo">src\/app\/components\/application\/application\.controller\.js<\/code><span class="q-peek-meta">linhas 23–30<\/span>/);
     assert.match(html, /software_map: só no app do Whiteboard/);
     assert.equal(localDoTrecho('base/src/x.js#L7'), 'src/x.js · linha 7');
+});
+
+test('trecho com código lido e bloco de código: numerados, com selo, realce e copiar', () => {
+    const html = quadroParaHtml([
+        { type: 'code_peek', source: 'head/src/a.js#L10-L11', caption: 'legenda',
+            trecho: { repo: 'crohc-server', commit: 'abc12345', inicio: 10, fim: 11, linhas: ['const a = 1;', '<b>'] } },
+        { type: 'code', caption: 'Linha do tempo', text: 'v1:5  v2:3\nlegenda\n' }
+    ]);
+    assert.match(html, /<details class="q-peek" open>/);
+    assert.match(html, /<span class="q-peek-meta">crohc-server · linhas 10–11<\/span>/);
+    assert.match(html, /<td class="q-num">10<\/td><td class="q-src">.*const/);
+    assert.match(html, /<td class="q-num">11<\/td><td class="q-src">.*&lt;.*b.*&gt;/, 'o código é escapado');
+    assert.doesNotMatch(html, /<td class="q-src"><b>/);
+    assert.match(html, /<span class="q-selo">PLAIN<\/span><span class="q-codigo-titulo">Linha do tempo<\/span><span class="q-codigo-meta">2 linhas<\/span>/);
+    assert.match(html, /onclick="copiarDoQuadro\(this\)"/);
+});
+
+test('o código do trecho vem do commit do quadro, no repo que tem o commit', async () => {
+    const ws = mkdtempSync(join(pasta, 'ws-'));
+    const outro = join(ws, 'outro-repo');
+    mkdirSync(outro);
+    const git = (...a) => execFileSync('git', ['-C', outro, ...a], { encoding: 'utf8' });
+    git('init', '-q');
+    git('config', 'user.email', 't@t');
+    git('config', 'user.name', 't');
+    mkdirSync(join(outro, 'src'));
+    writeFileSync(join(outro, 'src/a.js'), 'linha 1\nlinha 2\nlinha 3\n');
+    git('add', '.');
+    git('commit', '-qm', 'x');
+    const sha = git('rev-parse', 'HEAD').trim();
+    writeFileSync(join(outro, 'src/a.js'), 'mudou depois\n');
+    const quadro = { pins: { repositoryId: 'principal', head: 'f'.repeat(40) }, document: [
+        { type: 'code_peek', source: 'head/src/a.js#L2-L3', pins: { repositoryId: 'outro', head: sha } },
+        { type: 'code_peek', source: 'head/src/a.js#L1', pins: { repositoryId: 'outro', head: '0'.repeat(40) } }
+    ] };
+    await anexarTrechos(quadro, null, { workspace: ws });
+    assert.deepEqual(quadro.document[0].trecho.linhas, ['linha 2', 'linha 3'], 'lê do commit, não da árvore de trabalho');
+    assert.equal(quadro.document[0].trecho.repo, 'outro-repo');
+    assert.match(quadro.document[1].trecho.erro, /não está em nenhum repo/);
 });
 
 test('o fluxo desenha todos os nós e arestas, sem coordenada inválida', () => {

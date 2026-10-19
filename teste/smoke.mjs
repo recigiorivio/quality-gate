@@ -154,6 +154,8 @@ test('a escolha da aba Whiteboard | Diff fica no servidor e volta na casca', asy
     assert.equal((await pegar('/api/preferencia', { chave: 'outra', valor: 'diff' })).corpo.ok, false);
     assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'diff' })).corpo.ok, true);
     assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"diff"\}/);
+    assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'analises' })).corpo.ok, true);
+    assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"analises"\}/);
     assert.equal((await pegar('/api/preferencia', { chave: 'aba-conteudo', valor: 'quadro' })).corpo.ok, true);
     assert.match((await pegar('/')).corpo, /window\.PREFERENCIAS = \{"abaConteudo":"quadro"\}/);
 });

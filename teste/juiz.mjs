@@ -150,3 +150,31 @@ test('sem PR e sem diferença, o juiz diz que não há nada a julgar', async () 
     const r = await new Juiz({ workspace: ws, casa: ws }).preparar('repo-limpo', 'UND-7');
     assert.match(r.erro, /nada a julgar: UND-7 não difere de .* em repo-limpo/);
 });
+
+const julgado = (verdict, achados = []) => ({
+    ok: true, pr: { rotulo: 'PR #1' }, segundos: 30, findings: { verdict, summary: `resumo ${verdict}`, findings: achados }
+});
+
+test('todos os repos num julgamento só: veredito do pior, comentário com o repo, pulado não é erro', () => {
+    const ws = pasta('ws-consolidar');
+    const juiz = new Juiz({ workspace: ws, casa: ws });
+    const r = juiz.consolidar('UND-8', [
+        { projeto: 'a', resultado: julgado('APPROVE') },
+        { projeto: 'b', resultado: julgado('REQUEST_CHANGES', [{ id: 'F1', path: 'src/x.js', line: 3, severity: 'blocker', body: '🔴 x' }]) },
+        { projeto: 'c', erro: 'nada a julgar: UND-8 não difere de origin/develop', pulado: true }
+    ]);
+    assert.equal(r.ok, true);
+    assert.equal(r.findings.verdict, 'REQUEST_CHANGES');
+    assert.deepEqual(r.findings.findings.map(f => [f.id, f.path]), [['b:F1', 'b/src/x.js']]);
+    assert.deepEqual(r.partes.map(p => [p.projeto, p.ok, p.pulado]), [['a', true, false], ['b', true, false], ['c', false, true]]);
+    assert.match(r.findings.summary, /# c\n\nPulado: nada a julgar/);
+    assert.equal(juiz.ultimo('UND-8', 'todos').findings.verdict, 'REQUEST_CHANGES');
+});
+
+test('nenhum repo julgado: o consolidado é erro, nunca aprovação', () => {
+    const ws = pasta('ws-consolidar-vazio');
+    const r = new Juiz({ workspace: ws, casa: ws }).consolidar('UND-9', [{ projeto: 'a', erro: 'gh caiu' }]);
+    assert.equal(r.ok, false);
+    assert.equal(r.findings, null);
+    assert.match(r.erro, /nenhum repo/);
+});
