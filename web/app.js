@@ -778,7 +778,7 @@ function pintarPrs(r, chamado) {
 function botaoRecarregarPrs(desde) {
   const lido = desde ? `status lido às ${new Date(desde).toLocaleTimeString('pt-BR')} — ` : '';
   return `<button class="tr-recarregar" id="btn-recarregar-prs" onclick="recarregarPrs(event)"
-    title="${lido}rever o status das PRs no GitHub">⟳</button>`;
+    title="${lido}rever o status das PRs no GitHub"><span class="tr-recarregar-icone" aria-hidden="true">⟳</span>atualizar</button>`;
 }
 
 // O status vem do `gh` com cache de 5 min que devolve o velho e atualiza por trás: o ⟳ pula o cache.

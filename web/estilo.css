@@ -2,12 +2,12 @@
   --t-fun:#1f5fbf;--t-prop:#7a4fbf;--t-ope:#57606a;--t-mar:#9a6700;
   --bg:#fff;--painel:#f7f7f8;--cartao:#fff;--fg:#1c1c1e;--fraco:#6b6b70;--linha:#e3e3e6;
   --acento:#7D70E4;--ok:#1a7f37;--aviso:#b8860b;--erro:#cf222e;--neutro:#6b6b70;
-  --add:#e6ffec;--rem:#ffebe9;--vazio:#fafafa}
+  --add:#e6ffec;--rem:#ffebe9;--vazio:#fafafa;--azul:#1f6feb}
 @media(prefers-color-scheme:dark){:root{--t-com:#8b949e;--t-str:#7ee787;--t-num:#ffa657;
   --t-key:#d2a8ff;--t-tip:#79c0ff;--t-fun:#a5d6ff;--t-prop:#d2a8ff;--t-ope:#a9b1ba;--t-mar:#e3b341;
   --bg:#17171a;--painel:#1e1e22;--cartao:#1e1e22;--fg:#e9e9ec;
   --fraco:#8e8e95;--linha:#2e2e34;--ok:#3fb950;--aviso:#d29922;--erro:#f85149;--neutro:#8e8e95;
-  --add:#123420;--rem:#3d1a1a;--vazio:#1b1b1f}}
+  --add:#123420;--rem:#3d1a1a;--vazio:#1b1b1f;--azul:#58a6ff}}
 *{box-sizing:border-box}html,body{height:100%}
 /* `hidden` é atributo, e a regra do navegador para ele é só `display:none` — qualquer `display`
    declarado aqui ganha dela por especificidade. O JS esconde cabeçalho, trilha e as sanfonas por
@@ -1146,8 +1146,10 @@ details[open]>.linha1 .det-linha{visibility:hidden}
 .dp-aviso .dp-nota{color:var(--aviso)}
 .dp-falta .dp-nota{color:var(--erro)}
 
-/* O ⟳ do título "Pull requests": relê o status no GitHub sem o cache de 5 min. */
-.tr-recarregar{margin-left:auto;background:none;border:0;color:var(--fraco);cursor:pointer;font-size:12px;line-height:1;
-  padding:1px 3px;border-radius:4px;text-transform:none;letter-spacing:0}
-.tr-recarregar:hover,.tr-recarregar:focus-visible{color:var(--acento);background:var(--linha);outline:none}
-.tr-recarregar.girando{animation:girar .8s linear infinite;color:var(--acento)}
+/* O ⟳ do título "Pull requests": relê o status no GitHub sem o cache de 5 min. Com texto e borda, porque só o ícone ninguém achava. */
+.tr-recarregar{margin-left:auto;display:inline-flex;align-items:center;gap:4px;background:var(--cartao);
+  border:1px solid color-mix(in srgb,var(--azul) 45%,transparent);color:var(--azul);cursor:pointer;
+  font:600 10px/1 -apple-system,system-ui,sans-serif;padding:3px 7px;border-radius:999px;text-transform:none;letter-spacing:0}
+.tr-recarregar:hover,.tr-recarregar:focus-visible{background:var(--azul);color:#fff;border-color:var(--azul);outline:none}
+.tr-recarregar-icone{display:inline-block;font-size:11px}
+.tr-recarregar.girando .tr-recarregar-icone{animation:girar .8s linear infinite}
