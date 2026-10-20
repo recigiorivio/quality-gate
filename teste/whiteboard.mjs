@@ -10,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { anexarTrechos, escolherQuadro, lerQuadro } from '../lib/whiteboard.mjs';
+import { anexarTrechos, escolherQuadro, lerImagemGuardada, lerQuadro, subirImagem } from '../lib/whiteboard.mjs';
 import { desenharFluxo, quadroParaHtml, localDoTrecho } from '../web/quadro.js';
 import { recusarEstadoDeProducao } from './anteparo.mjs';
 
@@ -175,6 +175,38 @@ test('ciclo no fluxo não trava e a aresta de volta também aparece', () => {
     const svg = desenharFluxo(ciclo);
     assert.equal((svg.match(/class="q-aresta/g) || []).length, 2);
     assert.doesNotMatch(svg, /NaN|Infinity/);
+});
+
+test('a imagem do quadro é desenhada pela cópia guardada; id inválido ou sem cópia não serve nada', () => {
+    const id = '0f1e2d3c-4b5a-4968-8776-655443322110';
+    const html = quadroParaHtml([{ type: 'image', assetId: id, alt: 'listagem "antes"', caption: 'Antes: em aberto' }]);
+    assert.match(html, new RegExp(`<img src="/api/whiteboard-imagem\\?id=${id}" alt="listagem &quot;antes&quot;"`));
+    assert.match(html, /<figcaption>Antes: em aberto<\/figcaption>/);
+    assert.match(html, /onerror=".*image: só no app do Whiteboard\./, 'sem a cópia, volta ao aviso de antes');
+    assert.equal(lerImagemGuardada('../../qualidade.db'), null);
+    assert.equal(lerImagemGuardada(id), null);
+});
+
+test('subir imagem vai pela entrada do comando e deixa a cópia que a tela serve', async () => {
+    writeFileSync(join(pasta, 'lista-imagem.json'), JSON.stringify([sessao({ pins: { repositoryId: 'REPO-1' } })]));
+    process.env.QUALIDADE_WHITEBOARD = comandoFalso('wb-imagem',
+        `case "$2" in session_list) cat "${pasta}/lista-imagem.json";; session_upload) cat > "${pasta}/upload.json"; echo '{"kind":"image"}';; esac`);
+    const png = join(pasta, 'mockup.png');
+    writeFileSync(png, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+
+    const id = await subirImagem({ sessao: sessao().sessionId, arquivo: png });
+
+    const enviado = JSON.parse(execFileSync('cat', [join(pasta, 'upload.json')]).toString());
+    assert.equal(enviado.id, id);
+    assert.equal(enviado.kind, 'image');
+    assert.equal(enviado.repositoryId, 'REPO-1', 'o repositório é o do quadro');
+    assert.equal(Buffer.from(enviado.base64, 'base64').length, 7);
+    const guardada = lerImagemGuardada(id);
+    assert.equal(guardada.tipo, 'image/png');
+    assert.deepEqual([...guardada.conteudo], [0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+
+    await assert.rejects(subirImagem({ sessao: sessao().sessionId, arquivo: join(pasta, 'lista-imagem.json') }), /não suportada/);
+    await assert.rejects(subirImagem({ sessao: 'outro', arquivo: png }), /não encontrado/);
 });
 
 test('a animação só entra quando pedida', () => {

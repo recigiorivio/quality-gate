@@ -706,6 +706,11 @@ tabela e código em mono, avisos tingidos pelo tom.
   no app. No UND-2264 os 4 trechos vêm de 3 repos (crohc-server, contas-service, workflow-manager).
   Commit que não está em nenhum repo do workspace vira aviso no lugar do código. Teto de 200 linhas.
 - **Bloco de código** (`code`): selo da linguagem (PLAIN sem ela), título, "N linhas" e copiar.
+- **Imagem** (`image`): o Whiteboard guarda a imagem do quadro, mas não a devolve pela API. Quem
+  sobe por `node ferramentas/whiteboard-imagem.mjs <sessionId> <arquivo.png>` (`subirImagem` em
+  `lib/whiteboard.mjs`) deixa uma cópia em `<estado>/whiteboards/imagens/<id>.<ext>`, e a tela serve
+  essa cópia em `/api/whiteboard-imagem`. Imagem subida direto pelo `session_upload` fica só no app,
+  e a tela mostra o aviso de antes. Entrou no UND-1939, para os mockups do plano aparecerem no quadro.
 
 - **De onde vem:** `lib/whiteboard.mjs` chama `whiteboard api session_list` e `session_get`, o mesmo
   contrato que o agente usa, e escolhe o quadro do chamado pela branch (ou pelo título que começa

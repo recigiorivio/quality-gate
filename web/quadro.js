@@ -299,6 +299,13 @@ function blocoDeCodigo(c) {
         + `<div class="q-codigo-corpo">${linhasNumeradas(linhas, 1, ling)}</div></figure>`;
 }
 
+// A imagem vem da cópia que `subirImagem` guardou; sem cópia, o erro de carga volta ao aviso de antes.
+function imagem(c) {
+    const aviso = "this.replaceWith(Object.assign(document.createElement('p'),{className:'q-fora',textContent:'image: só no app do Whiteboard.'}))";
+    return `<figure class="q-imagem"><img src="/api/whiteboard-imagem?id=${encodeURIComponent(c.assetId || '')}" alt="${esc(c.alt || '')}"`
+        + ` loading="lazy" onerror="${aviso}">${c.caption ? `<figcaption>${esc(c.caption)}</figcaption>` : ''}</figure>`;
+}
+
 function bloco(c, ctx) {
     switch (c?.type) {
     case 'section': {
@@ -326,6 +333,8 @@ function bloco(c, ctx) {
         return sequencia(c);
     case 'database_lens':
         return lenteDeDados(c);
+    case 'image':
+        return imagem(c);
     default:
         return `<p class="q-fora">${esc(c?.type || 'bloco')}: só no app do Whiteboard.</p>`;
     }

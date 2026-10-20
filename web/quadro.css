@@ -93,6 +93,9 @@ details.q-secao>summary{cursor:pointer;list-style:none}
 .q-peek-erro{margin:0;padding:10px 14px;font-family:var(--q-mono);font-size:10.8px;color:var(--fraco)}
 .q-divisor{border:0;border-top:1px dashed var(--q-linha);margin:4px 0}
 .q-fora{margin:0;font-size:11.2px;color:var(--fraco);font-style:italic}
+.q-imagem{margin:0;display:grid;gap:6px}
+.q-imagem img{display:block;max-width:100%;height:auto;border:1px solid var(--linha);border-radius:8px;background:#fff}
+.q-imagem figcaption{font-size:12px;color:var(--fraco)}
 
 .q-fluxo,.q-pilhas,.q-sequencia,.q-dados{margin:0;background:var(--q-superficie);border:1px solid var(--linha);
   border-radius:12px;padding:14px 16px 16px;display:grid;gap:10px;font-family:"Inter",system-ui,-apple-system,sans-serif}
